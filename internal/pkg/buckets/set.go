@@ -2,8 +2,16 @@ package buckets
 
 import (
 	"fmt"
-
+	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
+)
+
+type ResourceType int
+
+const (
+	INPUT  ResourceType = iota
+	CREATE              = iota
+	OUTPUT              = iota
 )
 
 // setCmd represents the set command
@@ -18,6 +26,33 @@ This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("set called")
+
+		prompt := promptui.Select{
+			Label: "Select resource type",
+			Items: []string{"Input", "Create", "Output"},
+		}
+
+		_, result, err := prompt.Run()
+
+		if err != nil {
+			fmt.Printf("Prompt failed %v\n", err)
+			return
+		}
+
+		var resourceType ResourceType
+
+		switch result {
+		case "Input":
+			resourceType = INPUT
+		case "Create":
+			resourceType = CREATE
+		case "Output":
+			resourceType = OUTPUT
+		default:
+			resourceType = INPUT
+		}
+
+		fmt.Printf("You choose %q\n", resourceType)
 	},
 }
 
