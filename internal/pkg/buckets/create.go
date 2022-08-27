@@ -3,6 +3,7 @@ package buckets
 import (
 	"fmt"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 	"os"
 )
 
@@ -30,12 +31,17 @@ var createCmd = &cobra.Command{
 			os.Mkdir(args[0], 0755)
 			os.Mkdir(args[0]+"/.b", 0755)
 
-			config := []byte(`config for bucket: ` + args[0])
-			os.WriteFile(args[0]+"/.b/config", config, 0644)
+			//viper.SetConfigName("config")
+			viper.SetConfigType("yaml")
+			//viper.AddConfigPath("./" + args[0] + "/.b/")
+			viper.Set("name", args[0])
+			err := viper.SafeWriteConfigAs("./" + args[0] + "/.b/config.yaml")
+			if err != nil {
+				fmt.Println(err)
+				os.Exit(1)
+			}
 
 		}
-
-		// Create the directory/bucket
 
 	},
 }
