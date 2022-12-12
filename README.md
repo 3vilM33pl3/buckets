@@ -41,8 +41,14 @@ Initialize bucket repository
 `bucket create [name]`
 Create a bucket for content
 
+`bucket expect bucket [name]`
+Expect the existence of a bucket with specified name 
+
 `bucket expect set file [type] [bucket directory]`
 Set what file to expect in bucket
+
+`bucket check`
+Check if all expectations are met. If not, print what is missing.
 
 `bucket link [from bucket directory] [to bucket directory]`
 Create a one way link between two buckets

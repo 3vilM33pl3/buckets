@@ -1,6 +1,7 @@
 package buckets
 
 import (
+	"buckets/internal/pkg/rules"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -9,28 +10,25 @@ import (
 // expectCmd represents the expect command
 var expectCmd = &cobra.Command{
 	Use:   "expect",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+	Short: "What should the bucket expect?",
+	Long: `What should the bucket expect? This command will help you set up bucket rules
+and expectations. 
+Example: 'bucket expect bucket Flower' will set a rule to expect a bucket named Flower.
+`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("expect called")
+		if len(args) == 0 {
+			fmt.Println("Not enough arguments")
+		}
+
+		if args[0] == "bucket" {
+			rule := rules.NewRule("bucket", args[1])
+			rule.Save()
+
+		}
+
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(expectCmd)
-
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// expectCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// expectCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }
