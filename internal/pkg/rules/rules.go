@@ -54,9 +54,12 @@ func (r *Rule) Save() {
 
 }
 
+const colorRed = "\033[0;31m "
+const colorNone = "\033[0m"
+
 func (r *Rule) Check() bool {
 	if _, err := os.Stat(r.Name); os.IsNotExist(err) {
-		fmt.Printf("Bucket %s does not exist\n", r.Name)
+		fmt.Printf(colorRed+"Bucket '%s' does not exist\n "+colorNone, r.Name)
 	}
 	return false
 }
