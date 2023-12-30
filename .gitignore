@@ -1,0 +1,25 @@
+# Compiled files
+/target/
+
+# Remove Cargo.lock from gitignore if creating an executable, keep it for libraries
+# Cargo.lock
+
+# Editor and IDE files
+**/*.rs.bk
+**/*.swp
+.vscode/
+.idea/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Custom directories
+# /custom_dir/
