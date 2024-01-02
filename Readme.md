@@ -11,11 +11,11 @@ will automatically move the output of that bucket to the next bucket in the work
 ### Example
 Let's say you want to create a 3D model for a game. The model needs concept art and textures.
 For this you can create two buckets with expectations. The first bucket contains concept art and the second bucket 
-the contains the 3D model. The first bucket has two expectations:
+contains the 3D model. The first bucket has two expectations:
 1. The bucket has concept art
 2. The concept art is approved by the art director
 
-The second bucket has two expectations:
+The second bucket has three expectations:
 1. There is concept art for the model
 1. The bucket has a 3D model
 1. There are textures for the model
