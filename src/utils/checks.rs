@@ -1,7 +1,5 @@
-use std::path::{Path, PathBuf};
 use std::fs;
-
-
+use std::path::{Path, PathBuf};
 
 /// Searches for a directory with the given name in the parent directories.
 ///
@@ -28,7 +26,10 @@ pub fn find_directory_in_parents(start_path: &Path, target_dir_name: &str) -> Op
 }
 
 pub fn is_directory_empty(dir_path: &Path) -> bool {
-    PathBuf::from(dir_path).read_dir().map(|mut i| i.next().is_none()).unwrap_or(false)
+    PathBuf::from(dir_path)
+        .read_dir()
+        .map(|mut i| i.next().is_none())
+        .unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -77,5 +78,3 @@ mod tests {
         assert!(!result);
     }
 }
-
-
