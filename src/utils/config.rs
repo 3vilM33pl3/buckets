@@ -7,7 +7,7 @@ use toml::to_string;
 struct Config {
     pub ntp_server: String,
     pub ip_check: String,
-    url_check: String,
+    pub url_check: String,
 }
 
 impl Config {
@@ -15,7 +15,7 @@ impl Config {
         Config {
             ntp_server: "pool.ntp.org".to_string(),
             ip_check: "8.8.8.8".to_string(),
-            url_check: "https://api.ipify.org".to_string(),
+            url_check: "api.ipify.org".to_string(),
         }
     }
 }
