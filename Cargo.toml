@@ -11,3 +11,12 @@ tempfile = "3.9.0"
 chrono = { version = "0.4", features = [] }
 toml = "0.8.8"
 serde = { version = "1.0.193", features = ["derive"] }
+
+[[bin]]
+name = "buckets"
+path = "src/main.rs"
+
+[[bin]]
+name = "tools"
+path = "src/tools/main.rs"
+
