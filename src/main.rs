@@ -1,6 +1,7 @@
 mod commands;
 mod utils;
 
+use std::ffi::{OsStr, OsString};
 use clap::Command;
 
 fn main() {
@@ -21,7 +22,22 @@ fn main() {
             } else {
                 println!("Initialised bucket repository");
             }
-        }
+        },
+        Some(("create", sub_m)) => {
+            let ext_args: Vec<&OsStr> = sub_m.get_many::<OsString>("")
+                .unwrap().map(|s| s.as_os_str()).collect();
+
+            if ext_args.len() != 1 {
+                println!("Please provide a name for the bucket");
+                return;
+            }
+
+            if let Err(e) = commands::create::execute(&ext_args.first().unwrap().to_string_lossy().into_owned()){
+                println!("Can not create bucket: {}", e);
+            } else {
+                println!("Created bucket");
+            }
+        },
         _ => commands::version::execute(),
     }
 }
