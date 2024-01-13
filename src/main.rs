@@ -38,6 +38,21 @@ fn main() {
                 println!("Created bucket");
             }
         },
+        Some(("commit", sub_m)) => {
+            let ext_args: Vec<&OsStr> = sub_m.get_many::<OsString>("")
+                .unwrap().map(|s| s.as_os_str()).collect();
+
+            if ext_args.len() != 0 {
+                println!("To many arguments provided");
+                return;
+            }
+
+            if let Err(e) = commands::commit::execute(){
+                println!("Can not commit bucket: {}", e);
+            } else {
+                println!("Committed bucket");
+            }
+        },
         _ => commands::version::execute(),
     }
 }

@@ -39,6 +39,14 @@ pub fn is_valid_bucket_repo(dir_path: &Path) -> bool {
     }
 }
 
+pub fn is_valid_bucket(dir_path: &Path) -> bool {
+    let bucket_path = find_directory_in_parents(dir_path, ".b");
+    match bucket_path {
+        Some(path) => is_valid_repo_config(&path),
+        None => false,
+    }
+}
+
 pub fn is_valid_repo_config(dir_path: &Path) -> bool {
     let config_path = dir_path.join("config");
     if config_path.is_file() {
