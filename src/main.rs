@@ -2,6 +2,7 @@ mod commands;
 mod utils;
 
 use std::ffi::{OsStr, OsString};
+use std::io;
 use clap::Command;
 
 fn main() {
@@ -15,7 +16,7 @@ fn main() {
 
     match matches.subcommand() {
         None => {}
-        Some(("version", _)) => commands::version::execute(),
+        Some(("version", _)) => commands::version::execute(&mut io::stdout()).unwrap(),
         Some(("init", _)) => {
             if let Err(e) = commands::init::execute() {
                 println!("Can not create repository: {}", e);
@@ -53,6 +54,6 @@ fn main() {
                 println!("Committed bucket");
             }
         },
-        _ => commands::version::execute(),
+        _ => commands::version::execute(&mut io::stdout()).unwrap(),
     }
 }
