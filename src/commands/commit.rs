@@ -1,7 +1,10 @@
-use std::{env, fs};
+use crate::utils::meta::{FileMeta, Meta};
+use std::{env, fs, io};
 use std::fs::File;
-use std::path::PathBuf;
+use std::io::Read;
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
+use walkdir::WalkDir;
 use crate::utils::checks::{find_directory_in_parents, is_valid_bucket};
 
 pub(crate) fn execute() -> Result<(), std::io::Error> {
@@ -54,7 +57,11 @@ pub(crate) fn execute() -> Result<(), std::io::Error> {
     #[allow(unused_variables)]
     let metadata_file = File::create(&metadata_file_path)?;
 
+    // create a list of each file in the bucket directory, recursively
     // md5 hash each file and add to metadata file
+    #[allow(unused_variables)]
+    let current_files = generate_meta_for_directory(current_path.as_path())?;
+
 
     // if there are no difference with previous commit cancel commit
 
@@ -66,4 +73,32 @@ pub(crate) fn execute() -> Result<(), std::io::Error> {
     // move bucket directory out of temporary directory
 
     Ok(())
+}
+
+fn generate_meta_for_directory<P: AsRef<Path>>(dir_path: P) -> io::Result<Meta> {
+    let mut files = Vec::new();
+
+    for entry in WalkDir::new(dir_path) {
+        let entry = entry?;
+        let path = entry.path();
+
+        if path.is_file() {
+            let mut file = fs::File::open(path)?;
+            let mut buffer = Vec::new();
+            file.read_to_end(&mut buffer)?;
+
+            let md5 = md5::compute(&buffer);
+            let md5_str = format!("{:x}", md5);
+
+            files.push(FileMeta {
+                name: path.to_string_lossy().into_owned(),
+                md5: md5_str,
+            });
+        }
+    }
+
+    Ok(Meta {
+        files,
+        timestamp: chrono::Utc::now().to_rfc3339(),
+    })
 }

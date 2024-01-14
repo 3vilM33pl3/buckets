@@ -13,7 +13,8 @@ toml = "0.8.8"
 serde = { version = "1.0.193", features = ["derive"] }
 uuid = { version = "1.6.1", features = ["v4"] }
 tempdir = "0.3.7"
-
+walkdir = "2.4.0"
+md5 = "0.7.0"
 
 [[bin]]
 name = "buckets"
