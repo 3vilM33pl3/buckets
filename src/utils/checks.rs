@@ -179,4 +179,24 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         assert!(!is_valid_repo_config(temp_dir.path()));
     }
+
+    #[test]
+    fn test_is_valid_bucket() {
+        let temp_dir = tempdir().unwrap();
+        let bucket_dir = temp_dir.path().join(".b");
+        let nested_dir = temp_dir.path().join("a/b/c");
+
+        // Create nested directory structure
+        fs::create_dir_all(&nested_dir).unwrap();
+
+        // Test case when .b directory does not exist
+        assert!(!is_valid_bucket(&nested_dir));
+
+        // Create .b directory and configuration
+        fs::create_dir_all(&bucket_dir).unwrap();
+        fs::write(bucket_dir.join("config"), "some config").unwrap();
+
+        // Test case when .b directory exists with valid config
+        assert!(is_valid_bucket(&nested_dir));
+    }
 }
