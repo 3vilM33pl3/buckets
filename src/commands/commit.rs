@@ -1,14 +1,13 @@
+use crate::utils::checks::{find_directory_in_parents, is_valid_bucket};
 use crate::utils::meta::{FileMeta, Meta};
-use std::{env, fs, io};
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::{env, fs, io};
 use uuid::Uuid;
 use walkdir::WalkDir;
-use crate::utils::checks::{find_directory_in_parents, is_valid_bucket};
 
 pub(crate) fn execute() -> Result<(), std::io::Error> {
-
     // read repo config file
     #[allow(unused_variables)]
     let config = crate::utils::config::Config::from_file(env::current_dir().unwrap());
@@ -23,15 +22,16 @@ pub(crate) fn execute() -> Result<(), std::io::Error> {
     };
 
     let path = find_directory_in_parents(current_path.as_path(), ".b");
-    let mut bucket_path : PathBuf;
-
+    let mut bucket_path: PathBuf;
 
     match path {
         Some(path) => bucket_path = path,
-        None => return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "Not in a bucket directory",
-        )),
+        None => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Not in a bucket directory",
+            ))
+        }
     }
 
     // check if it is a valid bucket
@@ -61,7 +61,6 @@ pub(crate) fn execute() -> Result<(), std::io::Error> {
     // md5 hash each file and add to metadata file
     #[allow(unused_variables)]
     let current_files = generate_meta_for_directory(current_path.as_path())?;
-
 
     // if there are no difference with previous commit cancel commit
 

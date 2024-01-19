@@ -5,14 +5,13 @@ pub fn execute<W: Write>(writer: &mut W) -> io::Result<()> {
     writeln!(writer, "bucket version 0.1.0")
 }
 
-
 #[cfg(test)]
 mod tests {
-    use std::io;
     use super::*;
+    use std::io;
 
     #[test]
-    fn test_version() -> io::Result<()>{
+    fn test_version() -> io::Result<()> {
         let mut buffer = Vec::new();
         execute(&mut buffer)?;
 

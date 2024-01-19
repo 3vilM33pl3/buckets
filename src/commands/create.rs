@@ -1,9 +1,9 @@
+use crate::utils::checks;
+use serde::Serialize;
 use std::env;
 use std::fs::{create_dir_all, File};
 use std::io::Write;
-use serde::Serialize;
 use toml::to_string;
-use crate::utils::checks;
 #[derive(Serialize)]
 struct BucketConfig {
     pub name: String,
@@ -54,5 +54,4 @@ pub fn execute(bucket_name: &String) -> Result<(), std::io::Error> {
     file.write_all(toml_string.as_bytes()).unwrap();
 
     Ok(())
-
 }

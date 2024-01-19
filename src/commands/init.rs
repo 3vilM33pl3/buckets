@@ -3,7 +3,7 @@ use crate::utils::config::create_default_config;
 use std::{env, fs};
 
 pub fn execute() -> Result<(), std::io::Error> {
-    println!("Initialising bucket repositiry");
+    println!("Initialising bucket repository");
 
     let current_path = match env::current_dir() {
         Ok(path) => path,

@@ -1,9 +1,9 @@
 mod commands;
 mod utils;
 
+use clap::Command;
 use std::ffi::{OsStr, OsString};
 use std::io;
-use clap::Command;
 
 fn main() {
     let matches = Command::new("bucket")
@@ -23,37 +23,45 @@ fn main() {
             } else {
                 println!("Initialised bucket repository");
             }
-        },
+        }
         Some(("create", sub_m)) => {
-            let ext_args: Vec<&OsStr> = sub_m.get_many::<OsString>("")
-                .unwrap().map(|s| s.as_os_str()).collect();
+            let ext_args: Vec<&OsStr> = sub_m
+                .get_many::<OsString>("")
+                .unwrap()
+                .map(|s| s.as_os_str())
+                .collect();
 
             if ext_args.len() != 1 {
                 println!("Please provide a name for the bucket");
                 return;
             }
 
-            if let Err(e) = commands::create::execute(&ext_args.first().unwrap().to_string_lossy().into_owned()){
+            if let Err(e) =
+                commands::create::execute(&ext_args.first().unwrap().to_string_lossy().into_owned())
+            {
                 println!("Can not create bucket: {}", e);
             } else {
                 println!("Created bucket");
             }
-        },
+        }
         Some(("commit", sub_m)) => {
-            let ext_args: Vec<&OsStr> = sub_m.get_many::<OsString>("")
-                .unwrap().map(|s| s.as_os_str()).collect();
+            let ext_args: Vec<&OsStr> = sub_m
+                .get_many::<OsString>("")
+                .unwrap()
+                .map(|s| s.as_os_str())
+                .collect();
 
             if ext_args.len() != 0 {
                 println!("To many arguments provided");
                 return;
             }
 
-            if let Err(e) = commands::commit::execute(){
+            if let Err(e) = commands::commit::execute() {
                 println!("Can not commit bucket: {}", e);
             } else {
                 println!("Committed bucket");
             }
-        },
+        }
         _ => commands::version::execute(&mut io::stdout()).unwrap(),
     }
 }

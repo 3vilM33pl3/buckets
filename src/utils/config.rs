@@ -1,9 +1,9 @@
+use crate::utils::checks::find_directory_in_parents;
+use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use serde::{Deserialize, Serialize};
 use toml::to_string;
-use crate::utils::checks::find_directory_in_parents;
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct Config {
@@ -38,14 +38,13 @@ pub fn create_default_config(file_path: &Path) {
     let toml_string = to_string(&config).unwrap();
     let mut file = File::create(file_path.join("config")).unwrap();
     file.write_all(toml_string.as_bytes()).unwrap();
-
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use std::fs;
     use tempfile::tempdir;
-    use super::*;
 
     #[test]
     fn test_from_file() {

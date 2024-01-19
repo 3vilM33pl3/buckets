@@ -33,14 +33,7 @@ mod tests {
         let path = env::current_dir().unwrap().join("test_repo");
         assert!(path.exists() && path.is_dir());
 
-
         let path = env::current_dir().unwrap().join("test_repo/test_subdir");
         assert!(!path.exists());
-
     }
 }
-
-
-
-
-
