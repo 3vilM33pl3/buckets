@@ -3,6 +3,7 @@ use serde::Serialize;
 use std::env;
 use std::fs::{create_dir_all, File};
 use std::io::Write;
+use std::path::{Path, PathBuf};
 use toml::to_string;
 #[derive(Serialize)]
 struct BucketConfig {
@@ -53,5 +54,29 @@ pub fn execute(bucket_name: &String) -> Result<(), std::io::Error> {
     let mut file = File::create(path.join("info")).unwrap();
     file.write_all(toml_string.as_bytes()).unwrap();
 
+    let db_location = checks::db_location(current_path.as_path());
+    let conn = rusqlite::Connection::open(db_location).map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Error opening database: {}", e),
+        )
+    })?;
+
+    let relative_path = to_relative_path(current_path.as_path(), path.as_path()).unwrap();
+
+    conn.execute(
+        "INSERT INTO buckets (name, path) VALUES (?1, ?2)",
+        &[&bucket_name, relative_path.to_str().unwrap()],
+    ).map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Error inserting into database: {}", e),
+        )
+    })?;
+
     Ok(())
+}
+
+fn to_relative_path(repo_base: &Path, absolute_path: &Path) -> Option<PathBuf> {
+    absolute_path.strip_prefix(repo_base).ok().map(PathBuf::from)
 }

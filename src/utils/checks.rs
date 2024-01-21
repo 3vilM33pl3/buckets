@@ -39,6 +39,11 @@ pub fn is_valid_bucket_repo(dir_path: &Path) -> bool {
     }
 }
 
+pub fn db_location(dir_path: &Path) -> PathBuf {
+    let buckets_repo_path = find_directory_in_parents(dir_path, ".buckets").unwrap();
+    buckets_repo_path.join("buckets.db")
+}
+
 pub fn is_valid_bucket(dir_path: &Path) -> bool {
     let bucket_path = find_directory_in_parents(dir_path, ".b");
     match bucket_path {

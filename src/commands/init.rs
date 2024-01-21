@@ -63,8 +63,7 @@ fn create_database(location: &Path) -> Result<(), rusqlite::Error> {
         "CREATE TABLE buckets (
             id INTEGER PRIMARY KEY,
             name TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
+            path TEXT NOT NULL
         )",
         [],
     )?;
