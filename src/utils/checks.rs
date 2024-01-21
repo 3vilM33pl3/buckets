@@ -55,13 +55,6 @@ pub fn is_valid_repo_config(dir_path: &Path) -> bool {
     false
 }
 
-pub fn is_directory_empty(dir_path: &Path) -> bool {
-    PathBuf::from(dir_path)
-        .read_dir()
-        .map(|mut i| i.next().is_none())
-        .unwrap_or(false)
-}
-
 #[cfg(test)]
 use tempfile::tempdir;
 #[cfg(test)]

@@ -23,17 +23,16 @@ pub fn execute(repo_name: &String) -> Result<(), std::io::Error> {
     }
 
     // Check if directory with the same name exists
-    let path = current_path.join(repo_name);
-    if path.exists() && path.is_dir() {
+    let repo_path = current_path.join(repo_name);
+    if repo_path.exists() && repo_path.is_dir() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::Other,
             "Directory with same name already exists",
         ));
     }
 
-
     // Create the .buckets directory
-    let init_dir_path = path.join(".buckets");
+    let init_dir_path = repo_path.join(".buckets");
     fs::create_dir_all(&init_dir_path)?;
 
     // Create the buckets.conf file
