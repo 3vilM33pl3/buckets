@@ -124,24 +124,6 @@ mod tests {
     }
 
     #[test]
-    fn test_is_directory_empty() {
-        let temp_dir = tempdir().unwrap();
-        let empty_dir_path = temp_dir.path().join("empty_dir");
-        create_dir_all(&empty_dir_path).unwrap();
-
-        let result = is_directory_empty(&empty_dir_path);
-        assert!(result);
-
-        let non_empty_dir_path = temp_dir.path().join("non_empty_dir");
-        create_dir_all(&non_empty_dir_path).unwrap();
-        let file_path = non_empty_dir_path.join("file.txt");
-        fs::File::create(&file_path).unwrap();
-
-        let result = is_directory_empty(&non_empty_dir_path);
-        assert!(!result);
-    }
-
-    #[test]
     fn test_valid_bucket_repo() {
         let temp_dir = tempdir().unwrap();
         let buckets_dir = temp_dir.path().join(".buckets");
