@@ -2,7 +2,7 @@ use crate::utils::checks;
 use crate::utils::config::create_default_config;
 use std::{env, fs};
 
-pub fn execute() -> Result<(), std::io::Error> {
+pub fn execute(repo_name: &String) -> Result<(), std::io::Error> {
     println!("Initialising bucket repository");
 
     let current_path = match env::current_dir() {
@@ -13,13 +13,7 @@ pub fn execute() -> Result<(), std::io::Error> {
         }
     };
 
-    if !checks::is_directory_empty(current_path.as_path()) {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "Directory is not empty",
-        ));
-    }
-
+    // check if already in a bucket repository
     match checks::find_directory_in_parents(current_path.as_path(), ".buckets") {
         Some(found_path) => println!(
             "Can not initialise, already in a buckets repository: {}",
@@ -28,7 +22,18 @@ pub fn execute() -> Result<(), std::io::Error> {
         _ => {}
     }
 
-    let init_dir_path = current_path.join(".buckets");
+    // Check if directory with the same name exists
+    let path = current_path.join(repo_name);
+    if path.exists() && path.is_dir() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "Directory with same name already exists",
+        ));
+    }
+
+
+    // Create the .buckets directory
+    let init_dir_path = path.join(".buckets");
     fs::create_dir_all(&init_dir_path)?;
 
     // Create the buckets.conf file

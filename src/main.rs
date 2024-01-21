@@ -11,7 +11,12 @@ fn cli() -> Command {
         .author("3vilM33pl3 <olivier@robotmotel.com>")
         .about("")
         .subcommand(Command::new("version").about("Displays the version of the bucket tool"))
-        .subcommand(Command::new("init").about("Initialises bucket repository"))
+        .subcommand(
+            Command::new("init").about("Initialises bucket repository")
+                .about("Initialises bucket repository")
+                .arg(arg!(<NAME> "Name of the repository"))
+                .arg_required_else_help(true)
+        )
         .subcommand(
             Command::new("create").about("Creates a new bucket")
                 .about("Creates a new bucket")
@@ -27,8 +32,10 @@ fn main() {
     match matches.subcommand() {
         None => {}
         Some(("version", _)) => commands::version::execute(&mut io::stdout()).unwrap(),
-        Some(("init", _)) => {
-            if let Err(e) = commands::init::execute() {
+        Some(("init", sub_matches)) => {
+            let arg = sub_matches.get_one::<String>("NAME").unwrap();
+
+            if let Err(e) = commands::init::execute(&arg.to_string()) {
                 println!("Can not create repository: {}", e);
             } else {
                 println!("Initialised bucket repository");
