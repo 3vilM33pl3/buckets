@@ -15,6 +15,7 @@ uuid = { version = "1.6.1", features = ["v4"] }
 tempdir = "0.3.7"
 walkdir = "2.4.0"
 md5 = "0.7.0"
+rusqlite = { version = "0.30.0", features = ["bundled"] }
 
 [[bin]]
 name = "buckets"
