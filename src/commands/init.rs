@@ -3,15 +3,16 @@ use crate::utils::config::create_default_config;
 use std::{env, fs};
 use std::path::Path;
 use rusqlite::{Connection};
+use crate::utils::errors::BucketError;
 
-pub fn execute(repo_name: &String) -> Result<(), std::io::Error> {
+pub fn execute(repo_name: &String) -> Result<(), BucketError> {
     println!("Initialising bucket repository");
 
     let current_path = match env::current_dir() {
         Ok(path) => path,
         Err(e) => {
             println!("Error getting current directory: {}", e);
-            return Err(e);
+            return Err(BucketError::IoError(e));
         }
     };
 
@@ -27,10 +28,10 @@ pub fn execute(repo_name: &String) -> Result<(), std::io::Error> {
     // Check if directory with the same name exists
     let repo_path = current_path.join(repo_name);
     if repo_path.exists() && repo_path.is_dir() {
-        return Err(std::io::Error::new(
+        return Err(BucketError::IoError(std::io::Error::new(
             std::io::ErrorKind::Other,
             "Directory with same name already exists",
-        ));
+        )));
     }
 
     // Create the .buckets directory
@@ -41,12 +42,7 @@ pub fn execute(repo_name: &String) -> Result<(), std::io::Error> {
     create_default_config(init_dir_path.as_path());
 
     // Create the database
-    create_database(init_dir_path.as_path()).map_err(|e| {
-        std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Error creating database: {}", e),
-        )
-    })?;
+    create_database(init_dir_path.as_path())?;
 
     // let now = Utc::now();
     // file.write_fmt(format_args!("{}", now.to_rfc3339()))?;

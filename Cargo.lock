@@ -110,6 +110,7 @@ dependencies = [
  "md5",
  "rusqlite",
  "serde",
+ "serde_derive",
  "tempdir",
  "tempfile",
  "toml",

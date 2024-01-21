@@ -1,83 +1,13 @@
 use crate::utils::checks::{find_directory_in_parents, is_valid_bucket};
-use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::{env, fs, io};
 use uuid::Uuid;
 use walkdir::WalkDir;
-
-#[derive(Serialize, Deserialize)]
-pub(crate) struct FileMetaData {
-    pub name: String,
-    pub size: u64,
-    pub md5: String,
-}
-
-#[derive(Serialize, Deserialize)]
-pub(crate) struct Commit {
-    pub bucket: String,
-    pub files: Vec<FileMetaData>,
-    pub timestamp: String,
-}
-
-impl Commit {
-    pub(crate) fn compare_commit(&self, other_commit: &Commit) -> Option<Vec<FileMetaData>> {
-        match other_commit {
-            Commit {
-                bucket: _,
-                files: _,
-                timestamp: _,
-            } => {
-                let mut changes = Vec::new();
-
-                for file in self.files.iter() {
-                    let mut found = false;
-                    for other_file in other_commit.files.iter() {
-                        if file.name == other_file.name {
-                            found = true;
-                            if file.md5 != other_file.md5 {
-                                changes.push(FileMetaData {
-                                    name: file.name.clone(),
-                                    size: 0,
-                                    md5: file.md5.clone(),
-                                });
-                            }
-                        }
-                    }
-                    if !found {
-                        changes.push(FileMetaData {
-                            name: file.name.clone(),
-                            size: 0,
-                            md5: file.md5.clone(),
-                        });
-                    }
-                }
-
-                for file in other_commit.files.iter() {
-                    let mut found = false;
-                    for other_file in self.files.iter() {
-                        if file.name == other_file.name {
-                            found = true;
-                        }
-                    }
-                    if !found {
-                        changes.push(FileMetaData {
-                            name: file.name.clone(),
-                            size: 0,
-                            md5: file.md5.clone(),
-                        });
-                    }
-                }
-
-                if changes.len() > 0 {
-                    return Some(changes);
-                }
-                None
-            }
-        }
-    }
-}
+use crate::data::data_structs::{Commit, CommittedFile};
+use crate::utils::checks;
+use crate::utils::errors::BucketError;
 
 pub(crate) fn execute() -> Result<(), std::io::Error> {
     // read repo config file
@@ -94,7 +24,7 @@ pub(crate) fn execute() -> Result<(), std::io::Error> {
     };
 
     let path = find_directory_in_parents(current_path.as_path(), ".b");
-    let mut bucket_path: PathBuf;
+    let bucket_path: PathBuf;
 
     match path {
         Some(path) => bucket_path = path,
@@ -115,12 +45,13 @@ pub(crate) fn execute() -> Result<(), std::io::Error> {
     }
 
     // create a temporary directory
-    bucket_path = bucket_path.join("tmp");
+    let tmp_bucket_path = bucket_path.join("tmp");
     fs::create_dir_all(&bucket_path)?;
 
     // create storage directory with unique id in a temporary directory
     let unique_id = Uuid::new_v4().to_string();
-    bucket_path = bucket_path.join(unique_id);
+    #[allow(unused_variables)]
+    let unique_bucket_path = tmp_bucket_path.join(unique_id);
     fs::create_dir_all(&bucket_path)?;
 
     // create a list of each file in the bucket directory, recursively
@@ -132,8 +63,8 @@ pub(crate) fn execute() -> Result<(), std::io::Error> {
 
     // if there are no difference with previous commit cancel commit
     match load_previous_commit(bucket_path.as_path()) {
-        None => {}
-        Some(previous_commit) => {
+        Ok(None) => {}
+        Ok(Some(previous_commit)) => {
             let changes = current_commit.compare_commit(&previous_commit);
             match changes {
                 Some(changes) => changes.iter().for_each(|file| {
@@ -145,7 +76,27 @@ pub(crate) fn execute() -> Result<(), std::io::Error> {
                 }
             }
         }
+        Err(_) => {}
     };
+
+
+
+    // {
+    //     None => {}
+    //     Some(previous_commit) => {
+    //         let changes = current_commit.compare_commit(&previous_commit);
+    //         match changes {
+    //             Some(changes) => changes.iter().for_each(|file| {
+    //                 println!("{} {}", file.name, file.md5);
+    //             }),
+    //             None => {
+    //                 println!("No changes");
+    //                 return Ok(());
+    //             }
+    //         }
+    //     }
+    //     (_) => {}
+    // };
 
     // copy and compress files to storage directory
     // add filenames and original file sizes to metadata file
@@ -165,15 +116,24 @@ pub(crate) fn execute() -> Result<(), std::io::Error> {
     Ok(())
 }
 
-fn load_previous_commit(p0: &Path) -> Option<Commit> {
-    match find_directory_in_parents(p0, ".b") {
+fn load_previous_commit(bucket_path: &Path) -> Result<Option<Commit>, BucketError> {
+
+    let db_location = checks::db_location(bucket_path);
+    let conn = rusqlite::Connection::open(db_location)?;
+
+    let mut stmt = conn.prepare("SELECT * FROM commits ORDER BY timestamp DESC LIMIT 1")?;
+
+    #[allow(unused_variables)]
+    let rows = stmt.query([])?;
+
+    match find_directory_in_parents(bucket_path, ".b") {
         None => {
             println!("Not in a bucket directory");
-            return None;
+            return Ok(None);
         }
         Some(_) => {}
     }
-    return None;
+    return Ok(None);
 }
 
 fn generate_meta_for_directory<P: AsRef<Path>>(dir_path: P) -> io::Result<Commit> {
@@ -191,7 +151,7 @@ fn generate_meta_for_directory<P: AsRef<Path>>(dir_path: P) -> io::Result<Commit
             let md5 = md5::compute(&buffer);
             let md5_str = format!("{:x}", md5);
 
-            files.push(FileMetaData {
+            files.push(CommittedFile {
                 name: path.to_string_lossy().into_owned(),
                 size: buffer.len() as u64,
                 md5: md5_str,
