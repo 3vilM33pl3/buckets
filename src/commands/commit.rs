@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::{env, fs, io};
 use uuid::Uuid;
 use walkdir::WalkDir;
+use crate::commands::create::BucketConfig;
 use crate::data::data_structs::{Commit, CommittedFile};
 use crate::utils::checks;
 use crate::utils::errors::BucketError;
@@ -36,6 +37,8 @@ pub(crate) fn execute() -> Result<(), std::io::Error> {
         }
     }
 
+
+
     // check if it is a valid bucket
     if !is_valid_bucket(bucket_path.as_path()) {
         return Err(std::io::Error::new(
@@ -62,7 +65,7 @@ pub(crate) fn execute() -> Result<(), std::io::Error> {
     });
 
     // if there are no difference with previous commit cancel commit
-    match load_previous_commit(bucket_path.as_path()) {
+    match load_previous_commit(BucketConfig::read_bucket_config(&bucket_path)?) {
         Ok(None) => {}
         Ok(Some(previous_commit)) => {
             let changes = current_commit.compare_commit(&previous_commit);
@@ -79,36 +82,15 @@ pub(crate) fn execute() -> Result<(), std::io::Error> {
         Err(_) => {}
     };
 
-
-
-    // {
-    //     None => {}
-    //     Some(previous_commit) => {
-    //         let changes = current_commit.compare_commit(&previous_commit);
-    //         match changes {
-    //             Some(changes) => changes.iter().for_each(|file| {
-    //                 println!("{} {}", file.name, file.md5);
-    //             }),
-    //             None => {
-    //                 println!("No changes");
-    //                 return Ok(());
-    //             }
-    //         }
-    //     }
-    //     (_) => {}
-    // };
-
     // copy and compress files to storage directory
     // add filenames and original file sizes to metadata file
 
-
-    // revert if error
+    // rollback if error
 
     // create metadata file with timestamp in temporary directory
     let metadata_file_path = bucket_path.join("meta");
     #[allow(unused_variables)]
     let metadata_file = File::create(&metadata_file_path)?;
-
 
     // move bucket directory out of temporary directory
 
@@ -116,17 +98,18 @@ pub(crate) fn execute() -> Result<(), std::io::Error> {
     Ok(())
 }
 
-fn load_previous_commit(bucket_path: &Path) -> Result<Option<Commit>, BucketError> {
+fn load_previous_commit(bucket_config: BucketConfig) -> Result<Option<Commit>, BucketError> {
 
-    let db_location = checks::db_location(bucket_path);
+    let db_location = checks::db_location(bucket_config.path.as_path());
     let conn = rusqlite::Connection::open(db_location)?;
 
+    // todo: query all commits from a specific bucket
     let mut stmt = conn.prepare("SELECT * FROM commits ORDER BY timestamp DESC LIMIT 1")?;
 
     #[allow(unused_variables)]
     let rows = stmt.query([])?;
 
-    match find_directory_in_parents(bucket_path, ".b") {
+    match find_directory_in_parents(bucket_config.path.as_path(), ".b") {
         None => {
             println!("Not in a bucket directory");
             return Ok(None);
