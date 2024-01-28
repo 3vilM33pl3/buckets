@@ -6,6 +6,8 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use serde_derive::Deserialize;
 use toml::to_string;
+use crate::utils::errors::BucketError;
+
 #[derive(Serialize, Deserialize)]
 #[derive(PartialEq)]
 #[derive(Debug)]
@@ -40,32 +42,26 @@ impl BucketConfig {
 }
 
 
-pub fn execute(bucket_name: &String) -> Result<(), std::io::Error> {
+pub fn execute(bucket_name: &String) -> Result<(), BucketError> {
     println!("Creating bucket");
 
     let current_path = match env::current_dir() {
         Ok(path) => path,
         Err(e) => {
             println!("Error getting current directory: {}", e);
-            return Err(e);
+            return Err(BucketError::IoError(e));
         }
     };
 
     // check if in buckets repository
     if !checks::is_valid_bucket_repo(current_path.as_path()) {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "Not in a bucket repository",
-        ));
+        return Err(BucketError::NotInBucketRepo);
     }
 
     // check if bucket already exists
     let path = current_path.join(bucket_name).join(".b");
     if path.exists() && path.is_dir() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "Bucket already exists",
-        ));
+        return Err(BucketError::BucketAlreadyExists);
     }
 
     // create bucket with given name
