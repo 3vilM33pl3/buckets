@@ -9,6 +9,7 @@ use crate::commands::create::BucketConfig;
 use crate::data::data_structs::{Commit, CommittedFile};
 use crate::utils::checks;
 use crate::utils::errors::BucketError;
+use blake3::{Hasher, Hash};
 
 pub(crate) fn execute() -> Result<(), BucketError> {
     // read repo config file
@@ -53,10 +54,10 @@ pub(crate) fn execute() -> Result<(), BucketError> {
     fs::create_dir_all(&unique_bucket_path)?;
 
     // create a list of each file in the bucket directory, recursively
-    // md5 hash each file and add to metadata file
-    let current_commit = generate_meta_for_directory(bucket_path.as_path())?;
+    // md5 hash each file and add to metadata table
+    let current_commit = generate_commit_data(bucket_path.as_path())?;
     current_commit.files.iter().for_each(|file| {
-        println!("{} {}", file.name, file.md5);
+        println!("{} {}", file.name, file.hash);
     });
 
     // if there are no difference with previous commit cancel commit
@@ -66,7 +67,7 @@ pub(crate) fn execute() -> Result<(), BucketError> {
             let changes = current_commit.compare_commit(&previous_commit);
             match changes {
                 Some(changes) => changes.iter().for_each(|file| {
-                    println!("{} {}", file.name, file.md5);
+                    println!("{} {}", file.name, file.hash);
                 }),
                 None => {
                     println!("No changes");
@@ -109,7 +110,7 @@ fn load_previous_commit(bucket_config: BucketConfig) -> Result<Option<Commit>, B
     return Ok(None);
 }
 
-fn generate_meta_for_directory(dir_path: &Path) -> io::Result<Commit> {
+fn generate_commit_data(dir_path: &Path) -> io::Result<Commit> {
     let mut files = Vec::new();
 
     for entry in find_files_excluding_top_level_b(dir_path) {
@@ -117,22 +118,21 @@ fn generate_meta_for_directory(dir_path: &Path) -> io::Result<Commit> {
         let path = entry.as_path();
 
         if path.is_file() {
-            let mut file = fs::File::open(path)?;
-            let mut buffer = Vec::new();
-            file.read_to_end(&mut buffer)?;
+            match hash_file(path) {
+                Ok(hash) => {
+                    println!("BLAKE3 hash: {}", hash);
+                    files.push(CommittedFile {
+                        name: path.to_string_lossy().into_owned(),
+                        hash: hash,
+                    });
+                },
+                Err(e) => {
+                    eprintln!("Failed to hash file: {}", e);
+                    return Err(e);
+                }
+            }
 
 
-            let sha1 = sha1::Sha1::from(&buffer);
-
-
-            let md5 = md5::compute(&buffer);
-            let md5_str = format!("{:x}", md5);
-
-            files.push(CommittedFile {
-                name: path.to_string_lossy().into_owned(),
-                size: buffer.len() as u64,
-                md5: md5_str,
-            });
         }
     }
 
@@ -141,6 +141,22 @@ fn generate_meta_for_directory(dir_path: &Path) -> io::Result<Commit> {
         files,
         timestamp: chrono::Utc::now().to_rfc3339(),
     })
+}
+
+fn hash_file<P: AsRef<Path>>(path: P) -> io::Result<Hash> {
+    let mut file = File::open(path)?;
+    let mut hasher = Hasher::new();
+    let mut buffer = [0; 1024]; // Buffer for reading chunks
+
+    loop {
+        let count = file.read(&mut buffer)?;
+        if count == 0 {
+            break; // End of file
+        }
+        hasher.update(&buffer[..count]);
+    }
+
+    Ok(hasher.finalize())
 }
 
 fn find_files_excluding_top_level_b(dir: &Path) -> Vec<PathBuf> {

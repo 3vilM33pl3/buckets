@@ -62,3 +62,13 @@ fn main() {
         _ => commands::version::execute(&mut io::stdout()).unwrap(),
     }
 }
+
+#[test]
+fn test_cli() {
+
+    let mut cmd = assert_cmd::Command::cargo_bin("buckets").unwrap();
+    cmd.assert().success();
+
+    cmd.arg("version").assert().stdout("bucket version 0.1.0\n");
+
+}

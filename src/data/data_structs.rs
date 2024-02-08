@@ -1,10 +1,12 @@
-use serde_derive::{Deserialize, Serialize};
+use blake3::Hash;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
 
 #[derive(Serialize, Deserialize)]
 pub struct CommittedFile {
     pub name: String,
-    pub size: u64,
-    pub md5: String,
+    #[serde(serialize_with = "hash_to_hex", deserialize_with = "hex_to_hash")]
+    pub hash: Hash,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -13,6 +15,24 @@ pub struct Commit {
     pub files: Vec<CommittedFile>,
     pub timestamp: String,
 }
+
+// Custom function to serialize a `blake3::Hash` to a hex string
+fn hash_to_hex<S>(hash: &Hash, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+{
+    serializer.serialize_str(&hash.to_hex())
+}
+
+// Custom function to deserialize a hex string back to a `blake3::Hash`
+fn hex_to_hash<'de, D>(deserializer: D) -> Result<Hash, D::Error>
+    where
+        D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    Hash::from_hex(&s).map_err(serde::de::Error::custom)
+}
+
 
 impl Commit {
     pub fn compare_commit(&self, other_commit: &Commit) -> Option<Vec<CommittedFile>> {
@@ -29,11 +49,10 @@ impl Commit {
                     for other_file in other_commit.files.iter() {
                         if file.name == other_file.name {
                             found = true;
-                            if file.md5 != other_file.md5 {
+                            if file.hash != other_file.hash {
                                 changes.push(CommittedFile {
                                     name: file.name.clone(),
-                                    size: 0,
-                                    md5: file.md5.clone(),
+                                    hash: file.hash.clone(),
                                 });
                             }
                         }
@@ -41,8 +60,7 @@ impl Commit {
                     if !found {
                         changes.push(CommittedFile {
                             name: file.name.clone(),
-                            size: 0,
-                            md5: file.md5.clone(),
+                            hash: file.hash.clone(),
                         });
                     }
                 }
@@ -57,8 +75,7 @@ impl Commit {
                     if !found {
                         changes.push(CommittedFile {
                             name: file.name.clone(),
-                            size: 0,
-                            md5: file.md5.clone(),
+                            hash: file.hash.clone(),
                         });
                     }
                 }
