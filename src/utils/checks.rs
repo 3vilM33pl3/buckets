@@ -53,7 +53,7 @@ pub fn is_valid_bucket(dir_path: &Path) -> bool {
 }
 
 pub fn is_valid_repo_config(dir_path: &Path) -> bool {
-    let config_path = dir_path.join("info");
+    let config_path = dir_path.join("config");
     if config_path.is_file() {
         return true;
     }

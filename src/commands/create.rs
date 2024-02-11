@@ -43,12 +43,10 @@ impl BucketConfig {
 
 
 pub fn execute(bucket_name: &String) -> Result<(), BucketError> {
-    println!("Creating bucket");
 
     let current_path = match env::current_dir() {
         Ok(path) => path,
         Err(e) => {
-            println!("Error getting current directory: {}", e);
             return Err(BucketError::IoError(e));
         }
     };
@@ -65,7 +63,12 @@ pub fn execute(bucket_name: &String) -> Result<(), BucketError> {
     }
 
     // create bucket with given name
-    create_dir_all(path.as_path())?;
+    create_dir_all(path.as_path()).map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Error creating bucket: {}", e),
+        )
+    })?;
 
     // add info to bucket hidden directory
     let config = BucketConfig::default(&bucket_name, &path);
