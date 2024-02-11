@@ -47,7 +47,7 @@ fn main() {
             let arg = sub_matches.get_one::<String>("NAME").unwrap();
 
             if let Err(e) = commands::create::execute(&arg.to_string()) {
-                eprintln!("XCan not create bucket: {}", e);
+                eprintln!("Can not create bucket: {}", e);
             } else {
                 println!("Created bucket");
             }
