@@ -4,13 +4,14 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::{env, fs, io};
 use uuid::Uuid;
-use walkdir::WalkDir;
+use walkdir::{DirEntry, WalkDir};
 use crate::commands::create::BucketConfig;
 use crate::data::data_structs::{Commit, CommittedFile};
 use crate::utils::checks;
 use crate::utils::errors::BucketError;
+use blake3::{Hasher, Hash};
 
-pub(crate) fn execute() -> Result<(), std::io::Error> {
+pub(crate) fn execute() -> Result<(), BucketError> {
     // read repo config file
     #[allow(unused_variables)]
     let config = crate::utils::config::Config::from_file(env::current_dir().unwrap());
@@ -20,7 +21,7 @@ pub(crate) fn execute() -> Result<(), std::io::Error> {
         Ok(path) => path,
         Err(e) => {
             println!("Error getting current directory: {}", e);
-            return Err(e);
+            return Err(BucketError::IoError(e));
         }
     };
 
@@ -28,50 +29,45 @@ pub(crate) fn execute() -> Result<(), std::io::Error> {
     let bucket_path: PathBuf;
 
     match path {
-        Some(path) => bucket_path = path,
+        Some(mut path) =>  {
+            path.pop();
+            bucket_path = path;
+        },
         None => {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Not in a bucket directory",
-            ))
+            return Err(BucketError::NotAValidBucket);
         }
     }
 
 
-
     // check if it is a valid bucket
     if !is_valid_bucket(bucket_path.as_path()) {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "Not a valid bucket",
-        ));
+        return Err(BucketError::NotAValidBucket);
     }
 
     // create a temporary directory
-    let tmp_bucket_path = bucket_path.join("tmp");
-    fs::create_dir_all(&bucket_path)?;
+    let tmp_bucket_path = bucket_path.join(".b").join("tmp");
+    fs::create_dir_all(&tmp_bucket_path)?;
 
     // create storage directory with unique id in a temporary directory
     let unique_id = Uuid::new_v4().to_string();
-    #[allow(unused_variables)]
     let unique_bucket_path = tmp_bucket_path.join(unique_id);
-    fs::create_dir_all(&bucket_path)?;
+    fs::create_dir_all(&unique_bucket_path)?;
 
     // create a list of each file in the bucket directory, recursively
-    // md5 hash each file and add to metadata file
-    let current_commit = generate_meta_for_directory(bucket_path.as_path())?;
+    // md5 hash each file and add to metadata table
+    let current_commit = generate_commit_data(bucket_path.as_path())?;
     current_commit.files.iter().for_each(|file| {
-        println!("{} {}", file.name, file.md5);
+        println!("{} {}", file.name, file.hash);
     });
 
     // if there are no difference with previous commit cancel commit
-    match load_previous_commit(BucketConfig::read_bucket_config(&bucket_path)?) {
+    match load_previous_commit(BucketConfig::read_bucket_config(&bucket_path.join(".b"))?) {
         Ok(None) => {}
         Ok(Some(previous_commit)) => {
             let changes = current_commit.compare_commit(&previous_commit);
             match changes {
                 Some(changes) => changes.iter().for_each(|file| {
-                    println!("{} {}", file.name, file.md5);
+                    println!("{} {}", file.name, file.hash);
                 }),
                 None => {
                     println!("No changes");
@@ -84,6 +80,8 @@ pub(crate) fn execute() -> Result<(), std::io::Error> {
 
     // copy and compress files to storage directory
     // add filenames and original file sizes to metadata file
+
+
 
     // rollback if error
 
@@ -109,36 +107,32 @@ fn load_previous_commit(bucket_config: BucketConfig) -> Result<Option<Commit>, B
     #[allow(unused_variables)]
     let rows = stmt.query([])?;
 
-    match find_directory_in_parents(bucket_config.path.as_path(), ".b") {
-        None => {
-            println!("Not in a bucket directory");
-            return Ok(None);
-        }
-        Some(_) => {}
-    }
     return Ok(None);
 }
 
-fn generate_meta_for_directory<P: AsRef<Path>>(dir_path: P) -> io::Result<Commit> {
+fn generate_commit_data(dir_path: &Path) -> io::Result<Commit> {
     let mut files = Vec::new();
 
-    for entry in WalkDir::new(dir_path) {
-        let entry = entry?;
-        let path = entry.path();
+    for entry in find_files_excluding_top_level_b(dir_path) {
+
+        let path = entry.as_path();
 
         if path.is_file() {
-            let mut file = fs::File::open(path)?;
-            let mut buffer = Vec::new();
-            file.read_to_end(&mut buffer)?;
+            match hash_file(path) {
+                Ok(hash) => {
+                    println!("BLAKE3 hash: {}", hash);
+                    files.push(CommittedFile {
+                        name: path.to_string_lossy().into_owned(),
+                        hash: hash,
+                    });
+                },
+                Err(e) => {
+                    eprintln!("Failed to hash file: {}", e);
+                    return Err(e);
+                }
+            }
 
-            let md5 = md5::compute(&buffer);
-            let md5_str = format!("{:x}", md5);
 
-            files.push(CommittedFile {
-                name: path.to_string_lossy().into_owned(),
-                size: buffer.len() as u64,
-                md5: md5_str,
-            });
         }
     }
 
@@ -147,4 +141,40 @@ fn generate_meta_for_directory<P: AsRef<Path>>(dir_path: P) -> io::Result<Commit
         files,
         timestamp: chrono::Utc::now().to_rfc3339(),
     })
+}
+
+fn hash_file<P: AsRef<Path>>(path: P) -> io::Result<Hash> {
+    let mut file = File::open(path)?;
+    let mut hasher = Hasher::new();
+    let mut buffer = [0; 1024]; // Buffer for reading chunks
+
+    loop {
+        let count = file.read(&mut buffer)?;
+        if count == 0 {
+            break; // End of file
+        }
+        hasher.update(&buffer[..count]);
+    }
+
+    Ok(hasher.finalize())
+}
+
+fn find_files_excluding_top_level_b(dir: &Path) -> Vec<PathBuf> {
+    WalkDir::new(dir)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|entry| is_valid_file(entry, dir))
+        .filter_map(|entry| make_relative_path(entry.path(), dir))
+        .collect()
+}
+
+fn is_valid_file(entry: &DirEntry, root_dir: &Path) -> bool {
+    let is_top_level_b = entry.depth() == 1 && entry.file_name() == ".b";
+    let is_inside_top_level_b = entry.path().starts_with(&root_dir.join(".b"));
+
+    entry.file_type().is_file() && !is_top_level_b && !is_inside_top_level_b
+}
+
+fn make_relative_path(path: &Path, base: &Path) -> Option<PathBuf> {
+    path.strip_prefix(base).ok().map(PathBuf::from)
 }
