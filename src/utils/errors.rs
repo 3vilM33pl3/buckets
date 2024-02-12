@@ -8,6 +8,7 @@ pub enum BucketError {
     BucketAlreadyExists,
     #[allow(dead_code)]
     NotInBucketRepo,
+    InBucketRepo,
     NotAValidBucket,
 }
 
@@ -18,6 +19,7 @@ impl Display for BucketError {
             BucketError::Sqlite(e) => write!(f, "Sqlite Error: {}", e),
             BucketError::BucketAlreadyExists => write!(f, "Bucket already exists"),
             BucketError::NotInBucketRepo => write!(f, "Not in a bucket repository"),
+            BucketError::InBucketRepo => write!(f, "Already in a bucket repository"),
             BucketError::NotAValidBucket => write!(f, "Not a valid bucket"),
         }
     }

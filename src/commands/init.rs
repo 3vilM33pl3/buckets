@@ -4,6 +4,7 @@ use std::{env, fs};
 use std::path::Path;
 use rusqlite::{Connection};
 use crate::utils::errors::BucketError;
+use crate::utils::errors::BucketError::BucketAlreadyExists;
 
 pub fn execute(repo_name: &String) -> Result<(), BucketError> {
     println!("Initialising bucket repository");
@@ -16,22 +17,17 @@ pub fn execute(repo_name: &String) -> Result<(), BucketError> {
         }
     };
 
-    // check if already in a bucket repository
-    match checks::find_directory_in_parents(current_path.as_path(), ".buckets") {
-        Some(found_path) => println!(
-            "Can not initialise, already in a buckets repository: {}",
-            found_path.display()
-        ),
+    match checks::find_bucket_repo(current_path.as_path()) {
+        Some(_found_path) => {
+            return Err(BucketError::InBucketRepo);
+        },
         _ => {}
     }
 
     // Check if directory with the same name exists
     let repo_path = current_path.join(repo_name);
     if repo_path.exists() && repo_path.is_dir() {
-        return Err(BucketError::IoError(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "Directory with same name already exists",
-        )));
+        return Err(BucketAlreadyExists);
     }
 
     // Create the .buckets directory

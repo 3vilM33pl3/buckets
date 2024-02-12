@@ -80,8 +80,11 @@ mod tests {
     fn test_init() {
         let temp_dir = tempdir().unwrap();
         let mut cmd = assert_cmd::Command::cargo_bin("buckets").unwrap();
-        cmd.current_dir(temp_dir.path());
-        cmd.arg("init").arg("test_repo").assert().success();
+        cmd
+            .current_dir(temp_dir.path())
+            .arg("init")
+            .arg("test_repo").assert().success();
+
         let repo_dir = temp_dir.path().join("test_repo");
 
         assert!(repo_dir.exists());

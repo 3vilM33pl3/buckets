@@ -60,8 +60,43 @@ pub fn is_valid_repo_config(dir_path: &Path) -> bool {
     false
 }
 
+/// Searches for a bucket repository directory in the parent directories.
+///
+/// # Arguments
+///
+/// * `dir_path` - The path to start the search from.
+///
+/// # Returns
+///
+/// Returns `Some(PathBuf)` containing the path to the found bucket repository directory or `None` if not found.
+///
+pub fn find_bucket_repo(dir_path: &Path) -> Option<PathBuf> {
+    match find_directory_in_parents(dir_path, ".buckets") {
+        Some(path) => Some(path),
+        None => None,
+    }
+}
+
+/// Searches for a bucket directory in the parent directories.
+///
+/// # Arguments
+///
+/// * `dir_path` - The path to start the search from.
+///
+/// # Returns
+///
+/// Returns `Some(PathBuf)` containing the path to the found bucket directory or `None` if not found.
+///
+pub fn find_bucket(dir_path: &Path) -> Option<PathBuf> {
+    match find_directory_in_parents(dir_path, ".b") {
+        Some(path) => Some(path),
+        None => None
+    }
+}
+
 #[cfg(test)]
 use tempfile::tempdir;
+
 #[cfg(test)]
 mod tests {
     use super::*;

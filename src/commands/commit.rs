@@ -1,4 +1,4 @@
-use crate::utils::checks::{find_directory_in_parents, is_valid_bucket};
+use crate::utils::checks::{find_bucket, is_valid_bucket};
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -25,10 +25,8 @@ pub(crate) fn execute() -> Result<(), BucketError> {
         }
     };
 
-    let path = find_directory_in_parents(current_path.as_path(), ".b");
     let bucket_path: PathBuf;
-
-    match path {
+    match find_bucket(current_path.as_path()) {
         Some(mut path) =>  {
             path.pop();
             bucket_path = path;
