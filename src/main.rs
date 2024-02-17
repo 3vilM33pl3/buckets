@@ -71,16 +71,16 @@ mod tests {
     use predicates::prelude::predicate;
     use coverage_helper::test;
 
-    #[cfg_attr(coverage_nightly, coverage(off))]
     #[test]
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn test_cli() {
         let mut cmd = assert_cmd::Command::cargo_bin("buckets").unwrap();
         cmd.assert().success();
         cmd.arg("version").assert().stdout("bucket version 0.1.0\n");
     }
 
-    #[cfg_attr(coverage_nightly, coverage(off))]
     #[test]
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn test_init() {
         let temp_dir = tempdir().unwrap();
         let mut cmd = assert_cmd::Command::cargo_bin("buckets").unwrap();
@@ -96,8 +96,8 @@ mod tests {
         assert!(repo_dir.is_dir());
     }
 
-    #[cfg_attr(coverage_nightly, coverage(off))]
     #[test]
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn test_create_fail() {
         let temp_dir = tempdir().unwrap();
         let mut cmd_create = assert_cmd::Command::cargo_bin("buckets").unwrap();
@@ -112,8 +112,8 @@ mod tests {
             ));
     }
 
-    #[cfg_attr(coverage_nightly, coverage(off))]
     #[test]
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn test_create() {
         let temp_dir = tempdir().unwrap();
 
@@ -146,8 +146,8 @@ mod tests {
         assert!(bucket_dir.is_dir());
     }
 
-    #[cfg_attr(coverage_nightly, coverage(off))]
     #[test]
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn test_commit() {
         let temp_dir = tempdir().unwrap();
 
