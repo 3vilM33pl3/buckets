@@ -69,13 +69,15 @@ use tempfile::tempdir;
 mod tests {
     use super::*;
     use predicates::prelude::predicate;
-
+    #[cfg_attr(coverage_nightly, coverage(off))]
     #[test]
     fn test_cli() {
         let mut cmd = assert_cmd::Command::cargo_bin("buckets").unwrap();
         cmd.assert().success();
         cmd.arg("version").assert().stdout("bucket version 0.1.0\n");
     }
+
+    #[cfg_attr(coverage_nightly, coverage(off))]
     #[test]
     fn test_init() {
         let temp_dir = tempdir().unwrap();
@@ -92,6 +94,7 @@ mod tests {
         assert!(repo_dir.is_dir());
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     #[test]
     fn test_create_fail() {
         let temp_dir = tempdir().unwrap();
@@ -106,6 +109,8 @@ mod tests {
                 "Can not create bucket: Not in a bucket repository",
             ));
     }
+
+    #[cfg_attr(coverage_nightly, coverage(off))]
     #[test]
     fn test_create() {
         let temp_dir = tempdir().unwrap();
@@ -139,6 +144,7 @@ mod tests {
         assert!(bucket_dir.is_dir());
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     #[test]
     fn test_commit() {
         let temp_dir = tempdir().unwrap();
