@@ -1,7 +1,6 @@
 use blake3::Hash;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-
 #[derive(Serialize, Deserialize)]
 pub struct CommittedFile {
     pub name: String,
@@ -18,21 +17,20 @@ pub struct Commit {
 
 // Custom function to serialize a `blake3::Hash` to a hex string
 fn hash_to_hex<S>(hash: &Hash, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
+where
+    S: Serializer,
 {
     serializer.serialize_str(&hash.to_hex())
 }
 
 // Custom function to deserialize a hex string back to a `blake3::Hash`
 fn hex_to_hash<'de, D>(deserializer: D) -> Result<Hash, D::Error>
-    where
-        D: Deserializer<'de>,
+where
+    D: Deserializer<'de>,
 {
     let s = String::deserialize(deserializer)?;
     Hash::from_hex(&s).map_err(serde::de::Error::custom)
 }
-
 
 impl Commit {
     pub fn compare_commit(&self, other_commit: &Commit) -> Option<Vec<CommittedFile>> {

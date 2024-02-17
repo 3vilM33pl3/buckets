@@ -80,10 +80,11 @@ mod tests {
     fn test_init() {
         let temp_dir = tempdir().unwrap();
         let mut cmd = assert_cmd::Command::cargo_bin("buckets").unwrap();
-        cmd
-            .current_dir(temp_dir.path())
+        cmd.current_dir(temp_dir.path())
             .arg("init")
-            .arg("test_repo").assert().success();
+            .arg("test_repo")
+            .assert()
+            .success();
 
         let repo_dir = temp_dir.path().join("test_repo");
 
@@ -101,8 +102,9 @@ mod tests {
             .arg("test_bucket")
             .assert()
             .success()
-            .stderr(predicate::str::contains("Can not create bucket: Not in a bucket repository"));
-
+            .stderr(predicate::str::contains(
+                "Can not create bucket: Not in a bucket repository",
+            ));
     }
     #[test]
     fn test_create() {

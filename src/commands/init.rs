@@ -1,10 +1,10 @@
 use crate::utils::checks;
 use crate::utils::config::create_default_config;
-use std::{env, fs};
-use std::path::Path;
-use rusqlite::{Connection};
 use crate::utils::errors::BucketError;
 use crate::utils::errors::BucketError::BucketAlreadyExists;
+use rusqlite::Connection;
+use std::path::Path;
+use std::{env, fs};
 
 pub fn execute(repo_name: &String) -> Result<(), BucketError> {
     println!("Initialising bucket repository");
@@ -20,7 +20,7 @@ pub fn execute(repo_name: &String) -> Result<(), BucketError> {
     match checks::find_bucket_repo(current_path.as_path()) {
         Some(_found_path) => {
             return Err(BucketError::InBucketRepo);
-        },
+        }
         _ => {}
     }
 
@@ -45,7 +45,6 @@ pub fn execute(repo_name: &String) -> Result<(), BucketError> {
 
     Ok(())
 }
-
 
 fn create_database(location: &Path) -> Result<(), rusqlite::Error> {
     let db_path = location.join("buckets.db");
@@ -112,12 +111,17 @@ mod tests {
         // Verify that tables exist
         let tables = ["buckets", "commits", "files"];
         for table in tables.iter() {
-            let mut stmt = conn.prepare(&format!("SELECT name FROM sqlite_master WHERE type='table' AND name='{}';", table)).map_err(|e| {
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Error preparing statement: {}", e),
-                )
-            })?;
+            let mut stmt = conn
+                .prepare(&format!(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='{}';",
+                    table
+                ))
+                .map_err(|e| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("Error preparing statement: {}", e),
+                    )
+                })?;
 
             let mut rows = stmt.query([]).map_err(|e| {
                 std::io::Error::new(

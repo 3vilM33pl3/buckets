@@ -1,65 +1,50 @@
+use crate::data::data_structs::{Commit, CommittedFile};
+use crate::utils::checks;
 use crate::utils::checks::{find_bucket, is_valid_bucket};
+use crate::utils::config::BucketConfig;
+use crate::utils::errors::BucketError;
+use crate::utils::utils::delete_and_create_tmp_dir;
+use blake3::{Hash, Hasher};
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::{env, fs, io};
 use uuid::Uuid;
 use walkdir::{DirEntry, WalkDir};
-use crate::commands::create::BucketConfig;
-use crate::data::data_structs::{Commit, CommittedFile};
-use crate::utils::checks;
-use crate::utils::errors::BucketError;
-use blake3::{Hasher, Hash};
 
 pub(crate) fn execute() -> Result<(), BucketError> {
     // read repo config file
     #[allow(unused_variables)]
-    let config = crate::utils::config::Config::from_file(env::current_dir().unwrap());
+    let config = crate::utils::config::RepositoryConfig::from_file(env::current_dir().unwrap());
 
     // find the top level of the bucket directory
-    let current_path = match env::current_dir() {
-        Ok(path) => path,
-        Err(e) => {
-            println!("Error getting current directory: {}", e);
-            return Err(BucketError::IoError(e));
-        }
-    };
-
-    let bucket_path: PathBuf;
-    match find_bucket(current_path.as_path()) {
-        Some(mut path) =>  {
+    let current_path = env::current_dir()?;
+    let bucket_path: PathBuf = match find_bucket(current_path.as_path()) {
+        Some(mut path) => {
             path.pop();
-            bucket_path = path;
-        },
+            path
+        }
         None => {
             return Err(BucketError::NotAValidBucket);
         }
-    }
-
+    };
 
     // check if it is a valid bucket
     if !is_valid_bucket(bucket_path.as_path()) {
         return Err(BucketError::NotAValidBucket);
     }
 
-    // create a temporary directory
-    let tmp_bucket_path = bucket_path.join(".b").join("tmp");
-    fs::create_dir_all(&tmp_bucket_path)?;
+    let bucket_config = BucketConfig::read_bucket_config(&bucket_path.join(".b"))?;
 
-    // create storage directory with unique id in a temporary directory
-    let unique_id = Uuid::new_v4().to_string();
-    let unique_bucket_path = tmp_bucket_path.join(unique_id);
-    fs::create_dir_all(&unique_bucket_path)?;
+    // create a temporary directory
+    let tmp_bucket_path = delete_and_create_tmp_dir(&bucket_path)?;
 
     // create a list of each file in the bucket directory, recursively
-    // md5 hash each file and add to metadata table
+    // blake3 hash each file and add to metadata table
     let current_commit = generate_commit_data(bucket_path.as_path())?;
-    current_commit.files.iter().for_each(|file| {
-        println!("{} {}", file.name, file.hash);
-    });
 
     // if there are no difference with previous commit cancel commit
-    match load_previous_commit(BucketConfig::read_bucket_config(&bucket_path.join(".b"))?) {
+    match load_previous_commit(bucket_config.path.as_path()) {
         Ok(None) => {}
         Ok(Some(previous_commit)) => {
             let changes = current_commit.compare_commit(&previous_commit);
@@ -68,7 +53,7 @@ pub(crate) fn execute() -> Result<(), BucketError> {
                     println!("{} {}", file.name, file.hash);
                 }),
                 None => {
-                    println!("No changes");
+                    println!("No changes detected. Commit cancelled.");
                     return Ok(());
                 }
             }
@@ -79,8 +64,6 @@ pub(crate) fn execute() -> Result<(), BucketError> {
     // copy and compress files to storage directory
     // add filenames and original file sizes to metadata file
 
-
-
     // rollback if error
 
     // create metadata file with timestamp in temporary directory
@@ -90,13 +73,11 @@ pub(crate) fn execute() -> Result<(), BucketError> {
 
     // move bucket directory out of temporary directory
 
-
     Ok(())
 }
 
-fn load_previous_commit(bucket_config: BucketConfig) -> Result<Option<Commit>, BucketError> {
-
-    let db_location = checks::db_location(bucket_config.path.as_path());
+fn load_previous_commit(bucket_path: &Path) -> Result<Option<Commit>, BucketError> {
+    let db_location = checks::db_location(bucket_path);
     let conn = rusqlite::Connection::open(db_location)?;
 
     // todo: query all commits from a specific bucket
@@ -112,7 +93,6 @@ fn generate_commit_data(dir_path: &Path) -> io::Result<Commit> {
     let mut files = Vec::new();
 
     for entry in find_files_excluding_top_level_b(dir_path) {
-
         let path = entry.as_path();
 
         if path.is_file() {
@@ -123,14 +103,12 @@ fn generate_commit_data(dir_path: &Path) -> io::Result<Commit> {
                         name: path.to_string_lossy().into_owned(),
                         hash: hash,
                     });
-                },
+                }
                 Err(e) => {
                     eprintln!("Failed to hash file: {}", e);
                     return Err(e);
                 }
             }
-
-
         }
     }
 

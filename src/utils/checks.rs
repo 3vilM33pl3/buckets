@@ -90,7 +90,7 @@ pub fn find_bucket_repo(dir_path: &Path) -> Option<PathBuf> {
 pub fn find_bucket(dir_path: &Path) -> Option<PathBuf> {
     match find_directory_in_parents(dir_path, ".b") {
         Some(path) => Some(path),
-        None => None
+        None => None,
     }
 }
 
