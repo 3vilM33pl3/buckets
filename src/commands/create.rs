@@ -32,10 +32,6 @@ pub fn execute(bucket_name: &String) -> Result<(), BucketError> {
         )
     })?;
 
-    // add info to bucket hidden directory
-    let config = BucketConfig::default(&bucket_name, &path);
-    config.write_bucket_config();
-
     let db_location = checks::db_location(current_path.as_path());
     let conn = rusqlite::Connection::open(db_location).map_err(|e| {
         std::io::Error::new(
@@ -56,6 +52,28 @@ pub fn execute(bucket_name: &String) -> Result<(), BucketError> {
             format!("Error inserting into database: {}", e),
         )
     })?;
+
+    let mut stmt = conn.prepare("SELECT id FROM buckets WHERE name = ?1 AND path = ?2")
+        .map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Error preparing statement: {}", e),
+            )
+        })?;
+
+    let bucket_id_str: String = stmt.query_row(&[&bucket_name, relative_path.to_str().unwrap()], |row| {
+        row.get(0)
+        }).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Error querying statement: {}", e),
+            )
+    })?;
+
+    // add info to bucket hidden directory
+    let bucket_id = uuid::Uuid::parse_str(&bucket_id_str).unwrap();
+    let config = BucketConfig::default(bucket_id, bucket_name, &relative_path);
+    config.write_bucket_config();
 
     Ok(())
 }

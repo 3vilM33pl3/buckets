@@ -4,6 +4,7 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use toml::to_string;
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct RepositoryConfig {
@@ -42,13 +43,15 @@ pub fn create_default_config(file_path: &Path) {
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct BucketConfig {
+    pub id: Uuid,
     pub name: String,
     pub path: PathBuf,
 }
 
 impl BucketConfig {
-    pub(crate) fn default(name: &String, path: &PathBuf) -> Self {
+    pub(crate) fn default(uuid: Uuid, name: &String, path: &PathBuf) -> Self {
         BucketConfig {
+            id: uuid,
             name: name.to_string(),
             path: path.to_path_buf(),
         }
@@ -100,7 +103,7 @@ mod tests {
         let name = String::from("test_bucket");
         let path = PathBuf::from("/some/path/.b");
 
-        let config = BucketConfig::default(&name, &path);
+        let config = BucketConfig::default(Uuid::new_v4(), &name, &path);
 
         assert_eq!(config.name, name);
         assert_eq!(config.path, path);
@@ -112,7 +115,7 @@ mod tests {
         let bucket_name = String::from("test_bucket");
         let bucket_path = temp_dir.path().to_path_buf();
 
-        let config = BucketConfig::default(&bucket_name, &bucket_path);
+        let config = BucketConfig::default(Uuid::new_v4(), &bucket_name, &bucket_path);
         config.write_bucket_config();
 
         let read_config = BucketConfig::read_bucket_config(&bucket_path)?;
