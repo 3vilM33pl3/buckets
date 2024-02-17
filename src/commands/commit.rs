@@ -8,8 +8,7 @@ use blake3::{Hash, Hasher};
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::{env, fs, io};
-use uuid::Uuid;
+use std::{env, io};
 use walkdir::{DirEntry, WalkDir};
 
 pub(crate) fn execute() -> Result<(), BucketError> {
@@ -37,7 +36,8 @@ pub(crate) fn execute() -> Result<(), BucketError> {
     let bucket_config = BucketConfig::read_bucket_config(&bucket_path.join(".b"))?;
 
     // create a temporary directory
-    let tmp_bucket_path = delete_and_create_tmp_dir(&bucket_path)?;
+    #[warn(unused_variables)]
+    let _tmp_bucket_path = delete_and_create_tmp_dir(&bucket_path)?;
 
     // create a list of each file in the bucket directory, recursively
     // blake3 hash each file and add to metadata table

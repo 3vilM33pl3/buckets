@@ -52,7 +52,7 @@ fn create_database(location: &Path) -> Result<(), rusqlite::Error> {
 
     conn.execute(
         "CREATE TABLE buckets (
-            id INTEGER PRIMARY KEY,
+            id CHAR(36) PRIMARY KEY,
             name TEXT NOT NULL,
             path TEXT NOT NULL
         )",
@@ -61,7 +61,7 @@ fn create_database(location: &Path) -> Result<(), rusqlite::Error> {
 
     conn.execute(
         "CREATE TABLE commits (
-            id INTEGER PRIMARY KEY,
+            id CHAR(36) PRIMARY KEY,
             bucket_id INTEGER NOT NULL,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
@@ -72,7 +72,7 @@ fn create_database(location: &Path) -> Result<(), rusqlite::Error> {
 
     conn.execute(
         "CREATE TABLE files (
-            id INTEGER PRIMARY KEY,
+            id CHAR(36) PRIMARY KEY,
             commit_id INTEGER NOT NULL,
             md5 TEXT NOT NULL,
             size INTEGER NOT NULL,
@@ -81,13 +81,57 @@ fn create_database(location: &Path) -> Result<(), rusqlite::Error> {
         [],
     )?;
 
+    conn.execute(
+        "CREATE TRIGGER AutoGenBucketsGUID
+             AFTER INSERT ON buckets
+             FOR EACH ROW
+             WHEN (NEW.id IS NULL)
+             BEGIN
+               UPDATE buckets SET id = (select hex( randomblob(4)) || '-' || hex( randomblob(2))
+                         || '-' || '4' || substr( hex( randomblob(2)), 2) || '-'
+                         || substr('AB89', 1 + (abs(random()) % 4) , 1)  ||
+                         substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6)) ) WHERE rowid = NEW.rowid;
+             END;",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE TRIGGER AutoGenCommitsGUID
+             AFTER INSERT ON commits
+             FOR EACH ROW
+             WHEN (NEW.id IS NULL)
+             BEGIN
+               UPDATE commits SET id = (select hex( randomblob(4)) || '-' || hex( randomblob(2))
+                         || '-' || '4' || substr( hex( randomblob(2)), 2) || '-'
+                         || substr('AB89', 1 + (abs(random()) % 4) , 1)  ||
+                         substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6)) ) WHERE rowid = NEW.rowid;
+             END;",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE TRIGGER AutoGenFilesGUID
+             AFTER INSERT ON files
+             FOR EACH ROW
+             WHEN (NEW.id IS NULL)
+             BEGIN
+               UPDATE files SET id = (select hex( randomblob(4)) || '-' || hex( randomblob(2))
+                         || '-' || '4' || substr( hex( randomblob(2)), 2) || '-'
+                         || substr('AB89', 1 + (abs(random()) % 4) , 1)  ||
+                         substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6)) ) WHERE rowid = NEW.rowid;
+             END;",
+        [],
+    )?;
+
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
+    use std::io::Error;
     use super::*;
     use tempfile::tempdir;
+    use uuid::Uuid;
 
     #[test]
     fn test_create_database() -> Result<(), std::io::Error> {
@@ -133,6 +177,101 @@ mod tests {
             assert!(rows.next().is_ok(), "Table {} does not exist", table);
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_uuid_auto_generate() -> Result<(), std::io::Error> {
+        let temp_dir = tempdir()?;
+        let db_path = temp_dir.path().join("buckets.db");
+
+        create_database(&temp_dir.path()).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Error creating database: {}", e),
+            )
+        })?;
+        let conn = rusqlite::Connection::open(db_path).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Error opening database: {}", e),
+            )
+        })?;
+
+        insert_buckets(&conn)?;
+
+        struct BucketTable {
+            id: String,
+            _name: String,
+            _path: String,
+        }
+        let mut stmt = conn.prepare("SELECT id, name, path FROM buckets").map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Error preparing statement: {}", e),
+            )
+        })?;
+        let bucket_iter = stmt.query_map([], |row| {
+            Ok(BucketTable {
+                id: row.get(0)?,
+                _name: row.get(1)?,
+                _path: row.get(2)?
+            })
+        }).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Error querying statement: {}", e),
+            )
+        })?;
+
+        for bucket in bucket_iter {
+            let bucket = bucket.unwrap();
+            assert!(Uuid::parse_str(bucket.id.as_str()).is_ok());
+        }
+
+        Ok(())
+    }
+
+    fn insert_buckets(conn: &Connection) -> Result<(), Error> {
+        conn.execute(
+            "INSERT INTO buckets (
+                    id,
+                    name,
+                    path
+                    )
+                VALUES (
+                    NULL,
+                    'test_bucket1',
+                    '/path_to_bucket2'
+                )
+                ",
+            [],
+        ).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Error inserting into database: {}", e),
+            )
+        })?;
+
+        conn.execute(
+            "INSERT INTO buckets (
+                    id,
+                    name,
+                    path
+                    )
+                VALUES (
+                    NULL,
+                    'test_bucket2',
+                    '/path_to_bucket2'
+                )
+                ",
+            [],
+        ).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Error inserting into database: {}", e),
+            )
+        })?;
         Ok(())
     }
 }
