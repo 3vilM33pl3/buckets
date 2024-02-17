@@ -72,7 +72,7 @@ mod tests {
     use coverage_helper::test;
 
     #[test]
-    #[cfg_attr(coverage_nightly, coverage(off))]
+    #[no_coverage]
     fn test_cli() {
         let mut cmd = assert_cmd::Command::cargo_bin("buckets").unwrap();
         cmd.assert().success();
@@ -80,7 +80,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(coverage_nightly, coverage(off))]
+    #[no_coverage]
     fn test_init() {
         let temp_dir = tempdir().unwrap();
         let mut cmd = assert_cmd::Command::cargo_bin("buckets").unwrap();
@@ -97,7 +97,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(coverage_nightly, coverage(off))]
+    #[no_coverage]
     fn test_create_fail() {
         let temp_dir = tempdir().unwrap();
         let mut cmd_create = assert_cmd::Command::cargo_bin("buckets").unwrap();
@@ -113,7 +113,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(coverage_nightly, coverage(off))]
+    #[no_coverage]
     fn test_create() {
         let temp_dir = tempdir().unwrap();
 
@@ -147,7 +147,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(coverage_nightly, coverage(off))]
+    #[no_coverage]
     fn test_commit() {
         let temp_dir = tempdir().unwrap();
 
