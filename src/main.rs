@@ -69,6 +69,8 @@ use tempfile::tempdir;
 mod tests {
     use super::*;
     use predicates::prelude::predicate;
+    use coverage_helper::test;
+
     #[cfg_attr(coverage_nightly, coverage(off))]
     #[test]
     fn test_cli() {
