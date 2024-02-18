@@ -1,11 +1,20 @@
 use crate::utils::checks;
-use crate::utils::config::BucketConfig;
+use crate::utils::config::{get_db_conn, BucketConfig, RepositoryConfig};
 use crate::utils::errors::BucketError;
 use std::env;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 
 pub fn execute(bucket_name: &String) -> Result<(), BucketError> {
+    #[allow(unused_variables)]
+    let repo_config = RepositoryConfig::from_file(env::current_dir()?);
+    let db_conn = get_db_conn().map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Error opening database: {}", e),
+        )
+    })?;
+
     let current_path = match env::current_dir() {
         Ok(path) => path,
         Err(e) => {
@@ -32,28 +41,22 @@ pub fn execute(bucket_name: &String) -> Result<(), BucketError> {
         )
     })?;
 
-    let db_location = checks::db_location(current_path.as_path());
-    let conn = rusqlite::Connection::open(db_location).map_err(|e| {
-        std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Error opening database: {}", e),
-        )
-    })?;
-
     let relative_path = to_relative_path(current_path.as_path(), path.as_path()).unwrap();
 
-    conn.execute(
-        "INSERT INTO buckets (name, path) VALUES (?1, ?2)",
-        &[&bucket_name, relative_path.to_str().unwrap()],
-    )
-    .map_err(|e| {
-        std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Error inserting into database: {}", e),
+    db_conn
+        .execute(
+            "INSERT INTO buckets (name, path) VALUES (?1, ?2)",
+            &[&bucket_name, relative_path.to_str().unwrap()],
         )
-    })?;
+        .map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Error inserting into database: {}", e),
+            )
+        })?;
 
-    let mut stmt = conn.prepare("SELECT id FROM buckets WHERE name = ?1 AND path = ?2")
+    let mut stmt = db_conn
+        .prepare("SELECT id FROM buckets WHERE name = ?1 AND path = ?2")
         .map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::Other,
@@ -61,19 +64,21 @@ pub fn execute(bucket_name: &String) -> Result<(), BucketError> {
             )
         })?;
 
-    let bucket_id_str: String = stmt.query_row(&[&bucket_name, relative_path.to_str().unwrap()], |row| {
-        row.get(0)
-        }).map_err(|e| {
+    let bucket_id_str: String = stmt
+        .query_row(&[&bucket_name, relative_path.to_str().unwrap()], |row| {
+            row.get(0)
+        })
+        .map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::Other,
                 format!("Error querying statement: {}", e),
             )
-    })?;
+        })?;
 
     // add info to bucket hidden directory
     let bucket_id = uuid::Uuid::parse_str(&bucket_id_str).unwrap();
     let config = BucketConfig::default(bucket_id, bucket_name, &relative_path);
-    config.write_bucket_config();
+    config.write_bucket_info();
 
     Ok(())
 }
@@ -84,4 +89,3 @@ fn to_relative_path(repo_base: &Path, absolute_path: &Path) -> Option<PathBuf> {
         .ok()
         .map(PathBuf::from)
 }
-

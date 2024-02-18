@@ -128,8 +128,8 @@ fn create_database(location: &Path) -> Result<(), rusqlite::Error> {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Error;
     use super::*;
+    use std::io::Error;
     use tempfile::tempdir;
     use uuid::Uuid;
 
@@ -205,24 +205,28 @@ mod tests {
             _name: String,
             _path: String,
         }
-        let mut stmt = conn.prepare("SELECT id, name, path FROM buckets").map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Error preparing statement: {}", e),
-            )
-        })?;
-        let bucket_iter = stmt.query_map([], |row| {
-            Ok(BucketTable {
-                id: row.get(0)?,
-                _name: row.get(1)?,
-                _path: row.get(2)?
+        let mut stmt = conn
+            .prepare("SELECT id, name, path FROM buckets")
+            .map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Error preparing statement: {}", e),
+                )
+            })?;
+        let bucket_iter = stmt
+            .query_map([], |row| {
+                Ok(BucketTable {
+                    id: row.get(0)?,
+                    _name: row.get(1)?,
+                    _path: row.get(2)?,
+                })
             })
-        }).map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Error querying statement: {}", e),
-            )
-        })?;
+            .map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Error querying statement: {}", e),
+                )
+            })?;
 
         for bucket in bucket_iter {
             let bucket = bucket.unwrap();
@@ -246,7 +250,8 @@ mod tests {
                 )
                 ",
             [],
-        ).map_err(|e| {
+        )
+        .map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::Other,
                 format!("Error inserting into database: {}", e),
@@ -266,7 +271,8 @@ mod tests {
                 )
                 ",
             [],
-        ).map_err(|e| {
+        )
+        .map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::Other,
                 format!("Error inserting into database: {}", e),

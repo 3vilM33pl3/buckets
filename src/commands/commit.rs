@@ -1,7 +1,7 @@
 use crate::data::data_structs::{Commit, CommittedFile};
 use crate::utils::checks;
 use crate::utils::checks::{find_bucket, is_valid_bucket};
-use crate::utils::config::BucketConfig;
+use crate::utils::config::{BucketConfig, RepositoryConfig};
 use crate::utils::errors::BucketError;
 use crate::utils::utils::delete_and_create_tmp_dir;
 use blake3::{Hash, Hasher};
@@ -14,7 +14,7 @@ use walkdir::{DirEntry, WalkDir};
 pub(crate) fn execute() -> Result<(), BucketError> {
     // read repo config file
     #[allow(unused_variables)]
-    let config = crate::utils::config::RepositoryConfig::from_file(env::current_dir().unwrap());
+    let repo_config = RepositoryConfig::from_file(env::current_dir().unwrap());
 
     // find the top level of the bucket directory
     let current_path = env::current_dir()?;

@@ -1,3 +1,4 @@
+#![feature(coverage_attribute)]
 mod commands;
 mod data;
 mod utils;
@@ -67,21 +68,22 @@ fn main() {
 use tempfile::tempdir;
 #[cfg(test)]
 mod tests {
+
     use super::*;
-    use predicates::prelude::predicate;
     use coverage_helper::test;
+    use predicates::prelude::predicate;
 
     #[test]
-    #[no_coverage]
-    fn test_cli() {
+    #[ignore]
+    fn test_cli_version() {
         let mut cmd = assert_cmd::Command::cargo_bin("buckets").unwrap();
         cmd.assert().success();
         cmd.arg("version").assert().stdout("bucket version 0.1.0\n");
     }
 
     #[test]
-    #[no_coverage]
-    fn test_init() {
+    #[ignore]
+    fn test_cli_init() {
         let temp_dir = tempdir().unwrap();
         let mut cmd = assert_cmd::Command::cargo_bin("buckets").unwrap();
         cmd.current_dir(temp_dir.path())
@@ -97,7 +99,7 @@ mod tests {
     }
 
     #[test]
-    #[no_coverage]
+    #[ignore]
     fn test_create_fail() {
         let temp_dir = tempdir().unwrap();
         let mut cmd_create = assert_cmd::Command::cargo_bin("buckets").unwrap();
@@ -113,7 +115,7 @@ mod tests {
     }
 
     #[test]
-    #[no_coverage]
+    #[ignore]
     fn test_create() {
         let temp_dir = tempdir().unwrap();
 
@@ -147,7 +149,7 @@ mod tests {
     }
 
     #[test]
-    #[no_coverage]
+    #[ignore]
     fn test_commit() {
         let temp_dir = tempdir().unwrap();
 

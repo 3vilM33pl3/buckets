@@ -1,5 +1,8 @@
+use crate::utils::checks;
 use crate::utils::checks::find_directory_in_parents;
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
+use std::env;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -14,6 +17,21 @@ pub(crate) struct RepositoryConfig {
 }
 
 impl RepositoryConfig {
+    pub(crate) fn from_file(path: PathBuf) -> Self {
+        let buckets_repo_path = find_directory_in_parents(&path, ".buckets").expect("");
+        let mut file = File::open(buckets_repo_path.join("config"))
+            .map_err(|e| panic!("Error opening file: {}", e))
+            .unwrap();
+        let mut toml_string = String::new();
+        file.read_to_string(&mut toml_string)
+            .map_err(|e| panic!("Error reading file: {}", e.to_string()))
+            .unwrap();
+
+        toml::from_str(&toml_string).unwrap()
+    }
+}
+
+impl Default for RepositoryConfig {
     fn default() -> Self {
         RepositoryConfig {
             ntp_server: "pool.ntp.org".to_string(),
@@ -21,15 +39,11 @@ impl RepositoryConfig {
             url_check: "api.ipify.org".to_string(),
         }
     }
-
-    #[allow(dead_code)]
-    pub(crate) fn from_file(current_path: PathBuf) -> Self {
-        let file_path = find_directory_in_parents(current_path.as_path(), ".buckets").unwrap();
-        let file = File::open(file_path.join("config")).unwrap();
-        let config_str = file.bytes().map(|x| x.unwrap() as char).collect::<String>();
-        let config: RepositoryConfig = toml::from_str(&config_str).unwrap();
-        config
-    }
+}
+pub fn get_db_conn() -> rusqlite::Result<Connection> {
+    let current_path = env::current_dir().unwrap();
+    let db_location = checks::db_location(current_path.as_path());
+    Connection::open(db_location)
 }
 
 pub fn create_default_config(file_path: &Path) {
@@ -57,10 +71,10 @@ impl BucketConfig {
         }
     }
 
-    pub fn write_bucket_config(&self) {
-        let toml_string = to_string(self).unwrap();
+    pub fn write_bucket_info(&self) {
         let mut file = File::create(self.path.join("info")).unwrap();
-        file.write_all(toml_string.as_bytes()).unwrap();
+        file.write_fmt(format_args!("{}", to_string(self).unwrap()))
+            .unwrap();
     }
 
     pub fn read_bucket_config(path: &PathBuf) -> Result<Self, std::io::Error> {
@@ -116,7 +130,7 @@ mod tests {
         let bucket_path = temp_dir.path().to_path_buf();
 
         let config = BucketConfig::default(Uuid::new_v4(), &bucket_name, &bucket_path);
-        config.write_bucket_config();
+        config.write_bucket_info();
 
         let read_config = BucketConfig::read_bucket_config(&bucket_path)?;
 
