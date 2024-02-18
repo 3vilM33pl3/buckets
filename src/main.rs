@@ -69,7 +69,6 @@ use tempfile::tempdir;
 mod tests {
 
     use super::*;
-    use coverage_helper::test;
     use predicates::prelude::predicate;
 
     #[test]
