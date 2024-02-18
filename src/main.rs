@@ -1,4 +1,3 @@
-#![feature(coverage_attribute)]
 mod commands;
 mod data;
 mod utils;
