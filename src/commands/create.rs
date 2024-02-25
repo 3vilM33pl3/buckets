@@ -7,7 +7,12 @@ use std::path::{Path, PathBuf};
 
 pub fn execute(bucket_name: &String) -> Result<(), BucketError> {
     #[allow(unused_variables)]
-    let repo_config = RepositoryConfig::from_file(env::current_dir()?);
+        let repo_config = RepositoryConfig::from_file(env::current_dir()?).map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Error reading repository config: {}", e),
+        )
+    })?;
     let db_conn = get_db_conn().map_err(|e| {
         std::io::Error::new(
             std::io::ErrorKind::Other,

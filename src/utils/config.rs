@@ -17,17 +17,22 @@ pub(crate) struct RepositoryConfig {
 }
 
 impl RepositoryConfig {
-    pub(crate) fn from_file(path: PathBuf) -> Self {
-        let buckets_repo_path = find_directory_in_parents(&path, ".buckets").expect("");
+    pub(crate) fn from_file(path: PathBuf) -> Result<Self, std::io::Error> {
+        let buckets_repo_path = find_directory_in_parents(&path, ".buckets")
+            .ok_or(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "No .buckets directory found",
+            ))?;
+
         let mut file = File::open(buckets_repo_path.join("config"))
-            .map_err(|e| panic!("Error opening file: {}", e))
-            .unwrap();
+            .map_err(
+                |e| std::io::Error::new(std::io::ErrorKind::NotFound, e.to_string()),
+            )?;
         let mut toml_string = String::new();
         file.read_to_string(&mut toml_string)
-            .map_err(|e| panic!("Error reading file: {}", e.to_string()))
-            .unwrap();
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
 
-        toml::from_str(&toml_string).unwrap()
+        Ok(toml::from_str(&toml_string).unwrap())
     }
 }
 
@@ -40,6 +45,7 @@ impl Default for RepositoryConfig {
         }
     }
 }
+
 pub fn get_db_conn() -> rusqlite::Result<Connection> {
     let current_path = env::current_dir().unwrap();
     let db_location = checks::db_location(current_path.as_path());
@@ -104,7 +110,7 @@ mod tests {
         create_default_config(&buckets_dir.as_path());
 
         // Read the file
-        let config = RepositoryConfig::from_file(temp_dir.path().to_path_buf());
+        let config = RepositoryConfig::from_file(temp_dir.path().to_path_buf()).unwrap();
 
         // Assertions
         assert_eq!(config.ip_check, "8.8.8.8");
