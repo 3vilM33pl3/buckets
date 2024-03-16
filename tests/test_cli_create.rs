@@ -15,7 +15,7 @@ mod tests {
             .arg("create")
             .arg("test_bucket")
             .assert()
-            .success();
+            .failure();
     }
 
     #[test]

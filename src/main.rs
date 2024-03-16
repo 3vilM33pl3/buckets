@@ -4,6 +4,7 @@ mod utils;
 
 use clap::{arg, Command};
 use std::io;
+use std::process::exit;
 
 fn cli() -> Command {
     Command::new("bucket")
@@ -39,8 +40,10 @@ fn main() {
 
             if let Err(e) = commands::init::execute(&arg.to_string()) {
                 println!("Can not create repository: {}", e);
+                exit(1)
             } else {
                 println!("Initialised bucket repository");
+                exit(0)
             }
         }
         Some(("create", sub_matches)) => {
@@ -48,15 +51,19 @@ fn main() {
 
             if let Err(e) = commands::create::execute(&arg.to_string()) {
                 eprintln!("Can not create bucket: {}", e);
+                exit(1)
             } else {
                 println!("Created bucket");
+                exit(0)
             }
         }
         Some(("commit", _)) => {
             if let Err(e) = commands::commit::execute() {
                 println!("Can not commit bucket: {}", e);
+                exit(1)
             } else {
                 println!("Committed bucket");
+                exit(0)
             }
         }
         _ => commands::version::execute(&mut io::stdout()).unwrap(),

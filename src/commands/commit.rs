@@ -14,7 +14,7 @@ use walkdir::{DirEntry, WalkDir};
 pub(crate) fn execute() -> Result<(), BucketError> {
     // read repo config file
     #[allow(unused_variables)]
-    let repo_config = RepositoryConfig::from_file(env::current_dir().unwrap());
+        let repo_config = RepositoryConfig::from_file(env::current_dir().unwrap());
 
     // find the top level of the bucket directory
     let current_path = env::current_dir()?;
@@ -33,18 +33,18 @@ pub(crate) fn execute() -> Result<(), BucketError> {
         return Err(BucketError::NotAValidBucket);
     }
 
-    let bucket_config = BucketConfig::read_bucket_config(&bucket_path.join(".b"))?;
+    let _bucket_config = BucketConfig::read_bucket_config(&bucket_path.join(".b"))?;
 
     // create a temporary directory
     #[warn(unused_variables)]
-    let _tmp_bucket_path = delete_and_create_tmp_dir(&bucket_path)?;
+        let _tmp_bucket_path = delete_and_create_tmp_dir(&bucket_path)?;
 
     // create a list of each file in the bucket directory, recursively
     // blake3 hash each file and add to metadata table
     let current_commit = generate_commit_data(bucket_path.as_path())?;
 
     // if there are no difference with previous commit cancel commit
-    match load_previous_commit(bucket_config.path.as_path()) {
+    match load_previous_commit(bucket_path.as_path()) {
         Ok(None) => {}
         Ok(Some(previous_commit)) => {
             let changes = current_commit.compare_commit(&previous_commit);
@@ -63,13 +63,16 @@ pub(crate) fn execute() -> Result<(), BucketError> {
 
     // copy and compress files to storage directory
     // add filenames and original file sizes to metadata file
+    current_commit.files.iter().for_each(|file| {
+        println!("{} {}", file.name, file.hash);
+    });
 
     // rollback if error
 
     // create metadata file with timestamp in temporary directory
     let metadata_file_path = bucket_path.join("meta");
     #[allow(unused_variables)]
-    let metadata_file = File::create(&metadata_file_path)?;
+        let metadata_file = File::create(&metadata_file_path)?;
 
     // move bucket directory out of temporary directory
 
@@ -84,7 +87,7 @@ fn load_previous_commit(bucket_path: &Path) -> Result<Option<Commit>, BucketErro
     let mut stmt = conn.prepare("SELECT * FROM commits ORDER BY timestamp DESC LIMIT 1")?;
 
     #[allow(unused_variables)]
-    let rows = stmt.query([])?;
+        let rows = stmt.query([])?;
 
     return Ok(None);
 }

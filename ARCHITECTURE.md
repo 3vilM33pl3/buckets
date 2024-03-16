@@ -34,7 +34,7 @@ called `bucket.db`. The database has a table called `meta` which stores the meta
 
 `.buckets\config`Bucket repository configuration file.
 
-`.buckets\bicket.db` Repository metadata database
+`.buckets\bucket.db` Repository metadata database
 
 ## **Per bucket container**
 

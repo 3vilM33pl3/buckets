@@ -16,8 +16,19 @@ mod tests {
             .success();
 
         let repo_dir = temp_dir.path().join("test_repo");
-
         assert!(repo_dir.exists());
         assert!(repo_dir.is_dir());
+
+        let repo_dot_buckets_dir = repo_dir.join(".buckets");
+        assert!(repo_dot_buckets_dir.exists());
+        assert!(repo_dot_buckets_dir.is_dir());
+
+        let repo_config_file = repo_dot_buckets_dir.join("config");
+        assert!(repo_config_file.exists());
+        assert!(repo_config_file.is_file());
+
+        let repo_database = repo_dot_buckets_dir.join("buckets.db");
+        assert!(repo_database.exists());
+        assert!(repo_database.is_file());
     }
 }

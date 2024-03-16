@@ -47,13 +47,21 @@ pub fn db_location(dir_path: &Path) -> PathBuf {
 pub fn is_valid_bucket(dir_path: &Path) -> bool {
     let bucket_path = find_directory_in_parents(dir_path, ".b");
     match bucket_path {
-        Some(path) => is_valid_repo_config(&path),
+        Some(path) => is_valid_bucket_info(&path),
         None => false,
     }
 }
 
 pub fn is_valid_repo_config(dir_path: &Path) -> bool {
     let config_path = dir_path.join("config");
+    if config_path.is_file() {
+        return true;
+    }
+    false
+}
+
+pub fn is_valid_bucket_info(dir_path: &Path) -> bool {
+    let config_path = dir_path.join("info");
     if config_path.is_file() {
         return true;
     }
