@@ -62,7 +62,6 @@ fn main() {
                 println!("Can not commit bucket: {}", e);
                 exit(1)
             } else {
-                println!("Committed bucket");
                 exit(0)
             }
         }

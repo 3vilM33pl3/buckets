@@ -42,6 +42,10 @@ pub(crate) fn execute() -> Result<(), BucketError> {
     // create a list of each file in the bucket directory, recursively
     // blake3 hash each file and add to metadata table
     let current_commit = generate_commit_data(bucket_path.as_path())?;
+    if current_commit.files.is_empty() {
+        println!("No files found in bucket. Commit cancelled.");
+        return Ok(());
+    }
 
     // if there are no difference with previous commit cancel commit
     match load_previous_commit(bucket_path.as_path()) {

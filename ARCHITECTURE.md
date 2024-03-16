@@ -45,3 +45,8 @@ called `bucket.db`. The database has a table called `meta` which stores the meta
 ### **Commits**
 
 `.b\storage` Top level of all stored content.
+
+## Testing
+
+Top level `tests` directory has the integration tests for the commands. Each command has its own test file which tests
+the command with different inputs using the [assert_cmd](https://docs.rs/assert_cmd/latest/assert_cmd/) crate.
