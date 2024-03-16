@@ -217,7 +217,7 @@ mod tests {
 
         // Create .b directory and configuration
         fs::create_dir_all(&bucket_dir).unwrap();
-        fs::write(bucket_dir.join("config"), "some config").unwrap();
+        fs::write(bucket_dir.join("info"), "interesting").unwrap();
 
         // Test case when .b directory exists with valid config
         assert!(is_valid_bucket(&nested_dir));
