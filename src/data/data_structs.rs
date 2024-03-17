@@ -6,6 +6,7 @@ pub struct CommittedFile {
     pub name: String,
     #[serde(serialize_with = "hash_to_hex", deserialize_with = "hex_to_hash")]
     pub hash: Hash,
+    pub old: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -17,16 +18,16 @@ pub struct Commit {
 
 // Custom function to serialize a `blake3::Hash` to a hex string
 fn hash_to_hex<S>(hash: &Hash, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
+    where
+        S: Serializer,
 {
     serializer.serialize_str(&hash.to_hex())
 }
 
 // Custom function to deserialize a hex string back to a `blake3::Hash`
 fn hex_to_hash<'de, D>(deserializer: D) -> Result<Hash, D::Error>
-where
-    D: Deserializer<'de>,
+    where
+        D: Deserializer<'de>,
 {
     let s = String::deserialize(deserializer)?;
     Hash::from_hex(&s).map_err(serde::de::Error::custom)
@@ -51,6 +52,7 @@ impl Commit {
                                 changes.push(CommittedFile {
                                     name: file.name.clone(),
                                     hash: file.hash.clone(),
+                                    old: file.old,
                                 });
                             }
                         }
@@ -59,6 +61,7 @@ impl Commit {
                         changes.push(CommittedFile {
                             name: file.name.clone(),
                             hash: file.hash.clone(),
+                            old: file.old,
                         });
                     }
                 }
@@ -74,6 +77,7 @@ impl Commit {
                         changes.push(CommittedFile {
                             name: file.name.clone(),
                             hash: file.hash.clone(),
+                            old: file.old,
                         });
                     }
                 }

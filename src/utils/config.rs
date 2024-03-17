@@ -83,7 +83,7 @@ impl BucketConfig {
             .unwrap();
     }
 
-    pub fn read_bucket_config(path: &PathBuf) -> Result<Self, std::io::Error> {
+    pub fn read_bucket_info(path: &PathBuf) -> Result<Self, std::io::Error> {
         let mut file = File::open(path.join("info"))?;
         let mut toml_string = String::new();
         file.read_to_string(&mut toml_string)?;
@@ -130,7 +130,7 @@ mod tests {
     }
 
     #[test]
-    fn test_write_and_read_bucket_config() -> std::io::Result<()> {
+    fn test_write_and_read_bucket_info() -> std::io::Result<()> {
         let temp_dir = tempdir()?;
         let bucket_name = String::from("test_bucket");
         let bucket_path = temp_dir.path().to_path_buf();
@@ -138,7 +138,7 @@ mod tests {
         let config = BucketConfig::default(Uuid::new_v4(), &bucket_name, &bucket_path);
         config.write_bucket_info();
 
-        let read_config = BucketConfig::read_bucket_config(&bucket_path)?;
+        let read_config = BucketConfig::read_bucket_info(&bucket_path)?;
 
         assert_eq!(config, read_config);
         Ok(())

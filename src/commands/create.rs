@@ -46,6 +46,14 @@ pub fn execute(bucket_name: &String) -> Result<(), BucketError> {
         )
     })?;
 
+    // create storage directory
+    create_dir_all(path.join("storage")).map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Error creating storage directory: {}", e),
+        )
+    })?;
+
     let relative_path = to_relative_path(current_path.as_path(), path.as_path()).unwrap();
 
     db_conn

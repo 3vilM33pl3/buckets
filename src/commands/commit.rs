@@ -1,20 +1,23 @@
 use crate::data::data_structs::{Commit, CommittedFile};
-use crate::utils::checks;
 use crate::utils::checks::{find_bucket, is_valid_bucket};
 use crate::utils::config::{BucketConfig, RepositoryConfig};
 use crate::utils::errors::BucketError;
-use crate::utils::utils::delete_and_create_tmp_dir;
 use blake3::{Hash, Hasher};
 use std::fs::File;
-use std::io::Read;
+use std::io::{BufReader, BufWriter, Read};
 use std::path::{Path, PathBuf};
 use std::{env, io};
+use log::{debug, error};
+use uuid::Uuid;
 use walkdir::{DirEntry, WalkDir};
+use zstd::Encoder;
+use zstd::stream::copy_encode;
+use crate::utils::checks;
 
 pub(crate) fn execute() -> Result<(), BucketError> {
     // read repo config file
     #[allow(unused_variables)]
-        let repo_config = RepositoryConfig::from_file(env::current_dir().unwrap());
+        let repo_config = RepositoryConfig::from_file(env::current_dir().unwrap())?;
 
     // find the top level of the bucket directory
     let current_path = env::current_dir()?;
@@ -33,15 +36,11 @@ pub(crate) fn execute() -> Result<(), BucketError> {
         return Err(BucketError::NotAValidBucket);
     }
 
-    let _bucket_config = BucketConfig::read_bucket_config(&bucket_path.join(".b"))?;
-
-    // create a temporary directory
-    #[warn(unused_variables)]
-        let _tmp_bucket_path = delete_and_create_tmp_dir(&bucket_path)?;
+    let bucket_config = BucketConfig::read_bucket_info(&bucket_path.join(".b"))?;
 
     // create a list of each file in the bucket directory, recursively
     // blake3 hash each file and add to metadata table
-    let current_commit = generate_commit_data(bucket_path.as_path())?;
+    let current_commit = generate_commit_metadata(bucket_path.as_path())?;
     if current_commit.files.is_empty() {
         println!("No files found in bucket. Commit cancelled.");
         return Ok(());
@@ -49,54 +48,90 @@ pub(crate) fn execute() -> Result<(), BucketError> {
 
     // if there are no difference with previous commit cancel commit
     match load_previous_commit(bucket_path.as_path()) {
-        Ok(None) => {}
+        Ok(None) => {
+            process_files(bucket_config.id, bucket_path, &current_commit.files)?;
+        }
         Ok(Some(previous_commit)) => {
-            let changes = current_commit.compare_commit(&previous_commit);
-            match changes {
-                Some(changes) => changes.iter().for_each(|file| {
-                    println!("{} {}", file.name, file.hash);
-                }),
-                None => {
-                    println!("No changes detected. Commit cancelled.");
-                    return Ok(());
-                }
+            if let Some(changes) = current_commit.compare_commit(&previous_commit) {
+                process_files(bucket_config.id, bucket_path, &changes)?;
+            } else {
+                println!("No changes detected. Commit cancelled.");
+                return Ok(());
             }
         }
-        Err(_) => {}
-    };
+        Err(_) => {
+            // Properly handle the error, perhaps by returning it
+            error!("Failed to load previous commit");
+        }
+    }
 
-    // copy and compress files to storage directory
-    // add filenames and original file sizes to metadata file
-    current_commit.files.iter().for_each(|file| {
-        println!("{} {}", file.name, file.hash);
-    });
-
-    // rollback if error
-
-    // create metadata file with timestamp in temporary directory
-    let metadata_file_path = bucket_path.join("meta");
-    #[allow(unused_variables)]
-        let metadata_file = File::create(&metadata_file_path)?;
+    // // create metadata file with timestamp in temporary directory
+    // let metadata_file_path = bucket_path.join("meta");
+    // #[allow(unused_variables)]
+    //     let metadata_file = File::create(&metadata_file_path)?;
 
     // move bucket directory out of temporary directory
 
     Ok(())
 }
 
-fn load_previous_commit(bucket_path: &Path) -> Result<Option<Commit>, BucketError> {
-    let db_location = checks::db_location(bucket_path);
+fn process_files(bucket_id: Uuid, bucket_path: PathBuf, files: &[CommittedFile]) -> Result<(), BucketError> {
+    let db_location = checks::db_location(bucket_path.as_path());
     let conn = rusqlite::Connection::open(db_location)?;
 
-    // todo: query all commits from a specific bucket
-    let mut stmt = conn.prepare("SELECT * FROM commits ORDER BY timestamp DESC LIMIT 1")?;
+    debug!("bucket id: {}", bucket_id.to_string().to_uppercase());
+    conn.execute(
+        "INSERT INTO commits (bucket_id) VALUES (?1)",
+        [bucket_id.to_string().to_uppercase()],
+    )
+        .map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Error inserting into database: {}, bucket id: {}", e, bucket_id.to_string().to_uppercase()),
+            )
+        })?;
 
-    #[allow(unused_variables)]
-        let rows = stmt.query([])?;
+    // let id = conn.
+
+    let storage_path = bucket_path.join(".b").join("storage");
+    for file in files {
+        debug!("Processing file: {} {}", file.name, file.hash);
+        let output = storage_path.join(&file.hash.to_string());
+        // Replace unwrap with proper error handling
+        compress_and_store_file(&file.name, output.as_path(), 0)?;
+    }
+    Ok(())
+}
+
+
+fn load_previous_commit(bucket_path: &Path) -> Result<Option<Commit>, BucketError> {
+    let db_location = checks::db_location(bucket_path);
+    let _conn = rusqlite::Connection::open(db_location)?;
+
+    // todo: query all commits from a specific bucket
+    //let mut stmt = conn.prepare("SELECT * FROM commits ORDER BY timestamp DESC LIMIT 1")?;
+
+    // #[allow(unused_variables)]
+    //     let rows = stmt.query([])?;
 
     return Ok(None);
 }
 
-fn generate_commit_data(dir_path: &Path) -> io::Result<Commit> {
+fn compress_and_store_file(input_path: &str, output_path: &Path, compression_level: i32) -> io::Result<()> {
+    let input_file = File::open(input_path)?;
+    let output_file = File::create(output_path)?;
+    let reader = BufReader::new(input_file);
+    let writer = BufWriter::new(output_file);
+
+    // Compress the file data and write it to the output file
+    let mut encoder = Encoder::new(writer, compression_level)?;
+    copy_encode(reader, &mut encoder, compression_level)?;
+    encoder.finish()?;
+
+    Ok(())
+}
+
+fn generate_commit_metadata(dir_path: &Path) -> io::Result<Commit> {
     let mut files = Vec::new();
 
     for entry in find_files_excluding_top_level_b(dir_path) {
@@ -109,6 +144,7 @@ fn generate_commit_data(dir_path: &Path) -> io::Result<Commit> {
                     files.push(CommittedFile {
                         name: path.to_string_lossy().into_owned(),
                         hash: hash,
+                        old: false,
                     });
                 }
                 Err(e) => {
@@ -116,6 +152,8 @@ fn generate_commit_data(dir_path: &Path) -> io::Result<Commit> {
                     return Err(e);
                 }
             }
+        } else {
+            debug!("Skipping non-file: {:?}", entry.as_path());
         }
     }
 
@@ -160,4 +198,36 @@ fn is_valid_file(entry: &DirEntry, root_dir: &Path) -> bool {
 
 fn make_relative_path(path: &Path, base: &Path) -> Option<PathBuf> {
     path.strip_prefix(base).ok().map(PathBuf::from)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Write;
+    use super::*;
+    use chrono::DateTime;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_generate_commit_metadata() -> io::Result<()> {
+        let temp_dir = tempdir()?;
+        std::env::set_current_dir(&temp_dir)?;
+
+        let file_path = temp_dir.path().join("test_file.txt");
+        let mut commited_file = File::create(&file_path)?;
+        commited_file.write_all(b"Some content")?;
+
+        let commit = generate_commit_metadata(temp_dir.path())?;
+
+        // Asserts
+        assert_eq!(commit.bucket, "");
+        assert!(!commit.files.is_empty(), "No files found in commit");
+        assert!(DateTime::parse_from_rfc3339(&commit.timestamp).is_ok(), "Invalid timestamp");
+
+        for file in commit.files {
+            assert!(file.name.contains("test_file.txt"), "File name mismatch");
+            assert_eq!(file.hash.to_string(), "f4315de648c8440fb2539fe9a8417e901ab270a37c6e2267e0c5fffe7d4d4419", "Incorrect file hash");
+        }
+
+        Ok(())
+    }
 }

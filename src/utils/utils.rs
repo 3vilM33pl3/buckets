@@ -2,6 +2,7 @@ use crate::utils::errors::BucketError;
 use std::fs;
 use std::path::PathBuf;
 
+#[allow(dead_code)]
 pub fn delete_and_create_tmp_dir(bucket_path: &PathBuf) -> Result<PathBuf, BucketError> {
     let tmp_bucket_path = bucket_path.join(".b").join("tmp");
     fs::remove_dir_all(&tmp_bucket_path).unwrap_or_default();

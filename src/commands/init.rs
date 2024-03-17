@@ -63,10 +63,18 @@ fn create_database(location: &Path) -> Result<(), rusqlite::Error> {
         "CREATE TABLE commits (
             id CHAR(36) PRIMARY KEY,
             bucket_id INTEGER NOT NULL,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
+            created_at TEXT,
             FOREIGN KEY (bucket_id) REFERENCES buckets (id)
         )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE TRIGGER set_timestamp_after_insert
+         AFTER INSERT ON commits
+         BEGIN
+             UPDATE commits SET created_at = CURRENT_TIMESTAMP WHERE rowid = NEW.rowid;
+         END;",
         [],
     )?;
 
@@ -74,7 +82,7 @@ fn create_database(location: &Path) -> Result<(), rusqlite::Error> {
         "CREATE TABLE files (
             id CHAR(36) PRIMARY KEY,
             commit_id INTEGER NOT NULL,
-            md5 TEXT NOT NULL,
+            hash TEXT NOT NULL,
             size INTEGER NOT NULL,
             FOREIGN KEY (commit_id) REFERENCES commits (id)
         )",
@@ -251,12 +259,12 @@ mod tests {
                 ",
             [],
         )
-        .map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Error inserting into database: {}", e),
-            )
-        })?;
+            .map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Error inserting into database: {}", e),
+                )
+            })?;
 
         conn.execute(
             "INSERT INTO buckets (
@@ -272,12 +280,12 @@ mod tests {
                 ",
             [],
         )
-        .map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Error inserting into database: {}", e),
-            )
-        })?;
+            .map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Error inserting into database: {}", e),
+                )
+            })?;
         Ok(())
     }
 }
