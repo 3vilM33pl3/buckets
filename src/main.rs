@@ -5,6 +5,7 @@ mod utils;
 use clap::{arg, Command};
 use std::io;
 use std::process::exit;
+use log::info;
 
 fn cli() -> Command {
     Command::new("bucket")
@@ -30,6 +31,8 @@ fn cli() -> Command {
 }
 
 fn main() {
+    env_logger::init();
+
     let matches = cli().get_matches();
 
     match matches.subcommand() {
@@ -39,10 +42,10 @@ fn main() {
             let arg = sub_matches.get_one::<String>("NAME").unwrap();
 
             if let Err(e) = commands::init::execute(&arg.to_string()) {
-                println!("Can not create repository: {}", e);
+                eprintln!("Can not create repository: {}", e);
                 exit(1)
             } else {
-                println!("Initialised bucket repository");
+                info!("Initialised bucket repository");
                 exit(0)
             }
         }
@@ -53,15 +56,16 @@ fn main() {
                 eprintln!("Can not create bucket: {}", e);
                 exit(1)
             } else {
-                println!("Created bucket");
+                info!("Created bucket");
                 exit(0)
             }
         }
         Some(("commit", _)) => {
             if let Err(e) = commands::commit::execute() {
-                println!("Can not commit bucket: {}", e);
+                eprintln!("Can not commit bucket: {}", e);
                 exit(1)
             } else {
+                info!("Committed bucket");
                 exit(0)
             }
         }

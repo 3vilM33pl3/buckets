@@ -23,6 +23,9 @@ blake3 = "1.5.0"
 assert_cmd = "2.0.13"
 predicates = "3.1.0"
 coverage-helper = "0.2.0"
+log = "0.4.21"
+env_logger = "0.11.3"
+sysinfo = "0.30.7"
 
 [[bin]]
 name = "buckets"
