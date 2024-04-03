@@ -3,14 +3,15 @@
 [![Crates.io](https://img.shields.io/crates/v/buckets)](https://crates.io/crates/buckets)
 
 ### Overview
-Buckets is a tool for game asset management. It version controls game assets and the process of moving
-an asset from one stage to another. Every stage is represented by a bucket which contains all the resources
-to create a game asset in that stage of the production pipeline. The workflow is represented by linking buckets together, 
-so that the output of one bucket is the input of another bucket. 
+Working on my expectation enabled version control system Buckets. Buckets is a tool for game asset management. 
+It version controls game assets and the process of moving an asset from one stage to another. Every stage is 
+represented by a bucket which contains all the resources to create a game asset in that stage of the 
+production pipeline. The workflow is represented by linking buckets together, so that the output of one bucket 
+is the input of another bucket.
 
-To make sure everything is in the bucket to do the work for that stage you can set 'expectations', simple
-rules to check if everything is correct. Once you finish your work in a bucket you can finalize it, which
-will automatically move the output of that bucket to the next bucket in the workflow.
+You link the buckets by setting 'expectations', simple rules to indicate what a bucket wants from another bucket. 
+Once you finish your work in a bucket you can finalize it, which will automatically satisfy all expectations and 
+move the expected output of a bucket to the next bucket in the workflow.
 
 ### Example
 Let's say you want to create a 3D model for a game. The model needs concept art and textures.
