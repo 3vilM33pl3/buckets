@@ -47,6 +47,7 @@ mod tests {
     ///
     /// # Commands
     /// 1. `$ buckets init test_repo`
+    /// 1. `$ cd test_repo`
     /// 1. `$ buckets create test_bucket`
     /// 1. `$ echo "test" > test_bucket/test_file`
     /// 1. `$ buckets commit`

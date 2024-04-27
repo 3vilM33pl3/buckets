@@ -8,6 +8,7 @@ use std::io::{BufReader, BufWriter, Read};
 use std::path::{Path, PathBuf};
 use std::{env, io};
 use log::{debug, error};
+use rusqlite::{Connection, params};
 use uuid::Uuid;
 use walkdir::{DirEntry, WalkDir};
 use zstd::Encoder;
@@ -80,6 +81,35 @@ fn process_files(bucket_id: Uuid, bucket_path: PathBuf, files: &[CommittedFile])
     let conn = rusqlite::Connection::open(db_location)?;
 
     debug!("bucket id: {}", bucket_id.to_string().to_uppercase());
+    let commit_id = insert_commit(&conn, bucket_id)?;
+
+    let storage_path = bucket_path.join(".b").join("storage");
+    for file in files {
+        debug!("Processing file: {} {}", file.name, file.hash);
+        let output = storage_path.join(&file.hash.to_string());
+        insert_file(&conn, &commit_id, &file.name, &file.hash.to_string())?;
+        // Replace unwrap with proper error handling
+        compress_and_store_file(&file.name, output.as_path(), 0)?;
+    }
+    Ok(())
+}
+
+fn insert_file(conn: &Connection, commit_id: &str, file_path: &str, hash: &str) -> Result<(), BucketError> {
+    conn.execute(
+        "INSERT INTO files (commit_id, file_path, hash) VALUES (?1, ?2, ?3)",
+        [commit_id, file_path, hash],
+    )
+        .map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Error inserting into database: {}, commit id: {}, file path: {}, hash: {}", e, commit_id, file_path, hash),
+            )
+        })?;
+    Ok(())
+}
+
+fn insert_commit(conn: &Connection, bucket_id: Uuid) -> Result<String, BucketError> {
+    // Perform the insert operation without specifying an ID, which will trigger the auto-generation.
     conn.execute(
         "INSERT INTO commits (bucket_id) VALUES (?1)",
         [bucket_id.to_string().to_uppercase()],
@@ -91,16 +121,18 @@ fn process_files(bucket_id: Uuid, bucket_path: PathBuf, files: &[CommittedFile])
             )
         })?;
 
-    // let id = conn.
+    // Retrieve the last insert rowid, which is a feature of SQLite to get the rowid of the last inserted row.
+    let last_row_id = conn.last_insert_rowid();
 
-    let storage_path = bucket_path.join(".b").join("storage");
-    for file in files {
-        debug!("Processing file: {} {}", file.name, file.hash);
-        let output = storage_path.join(&file.hash.to_string());
-        // Replace unwrap with proper error handling
-        compress_and_store_file(&file.name, output.as_path(), 0)?;
+    // Now query back the `id` using the `rowid`
+    let mut stmt = conn.prepare("SELECT id FROM commits WHERE rowid = ?1")?;
+    let mut rows = stmt.query(params![last_row_id])?;
+
+    if let Some(row) = rows.next()? {
+        Ok(row.get(0)?)
+    } else {
+        Err(BucketError::from(rusqlite::Error::QueryReturnedNoRows))
     }
-    Ok(())
 }
 
 
