@@ -6,6 +6,14 @@ mod tests {
     use super::*;
     use predicates::prelude::predicate;
 
+    /// Test the `create` command with no repository initialized.
+    ///
+    /// # Commands
+    /// `$ buckets create test_bucket`
+    ///
+    /// # Expected output
+    /// Error: No repository initialized.
+    ///
     #[test]
     fn test_create_fail() {
         let temp_dir = tempdir().unwrap();
@@ -18,6 +26,17 @@ mod tests {
             .failure();
     }
 
+    /// Test the `create` command with a repository initialized.
+    ///
+    /// # Commands
+    /// 1. `$ buckets init test_repo`
+    /// 1. `$ buckets create test_bucket`
+    ///
+    /// # Expected output
+    /// Empty stdout.
+    ///
+    /// Empty stderr.
+    ///
     #[test]
     fn test_create() {
         let temp_dir = tempdir().unwrap();

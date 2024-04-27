@@ -5,6 +5,18 @@ use tempfile::tempdir;
 mod tests {
     use super::*;
 
+    /// Test the `init` command.
+    ///
+    /// # Commands
+    /// `$ buckets init test_repo`
+    ///
+    /// # Expected output
+    /// `.buckets` directory created.
+    ///
+    /// `.buckets/config` file created.
+    ///
+    /// `.buckets/buckets.db` database created.
+    ///
     #[test]
     fn test_cli_init() {
         let temp_dir = tempdir().unwrap();

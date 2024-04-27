@@ -7,6 +7,16 @@ mod tests {
     use std::io::Write;
     use super::*;
 
+    /// Test the `commit` command with no files in the bucket.
+    ///
+    /// # Commands
+    /// 1. `$ buckets init test_repo`
+    /// 1. `$ buckets create test_bucket`
+    /// 1. `$ buckets commit`
+    ///
+    /// # Expected output
+    /// No files found in bucket. Commit cancelled.
+    ///
     #[test]
     fn test_commit_no_files() {
         let temp_dir = tempdir().unwrap();
@@ -33,6 +43,17 @@ mod tests {
             .stdout("No files found in bucket. Commit cancelled.\n");
     }
 
+    /// Test the `commit` command with one file in the bucket.
+    ///
+    /// # Commands
+    /// 1. `$ buckets init test_repo`
+    /// 1. `$ buckets create test_bucket`
+    /// 1. `$ echo "test" > test_bucket/test_file`
+    /// 1. `$ buckets commit`
+    ///
+    /// # Expected output
+    /// Commit successful.
+    ///
     #[test]
     fn test_commit_one_files() {
         let temp_dir = tempdir().unwrap();
