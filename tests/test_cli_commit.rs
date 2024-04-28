@@ -152,14 +152,12 @@ fn test_commit_second_commit() {
     let mut file = File::create(file_path).unwrap();
     file.write_all(b"test").unwrap();
 
-    println!("First commit");
     cmd_commit.current_dir(&bucket_dir);
     cmd_commit
         .arg("commit")
         .assert()
         .success();
 
-    println!("Second commit");
     let mut cmd_commit_2 = assert_cmd::Command::cargo_bin("buckets").unwrap();
     cmd_commit_2.current_dir(bucket_dir);
     cmd_commit_2

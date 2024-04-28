@@ -25,6 +25,7 @@ struct Args {
     length: usize,
 }
 
+
 fn create_unique_file_path(base_path: &Path, prefix: &str, idx: usize) -> PathBuf {
     let mut counter = 0;
     loop {

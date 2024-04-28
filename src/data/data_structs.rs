@@ -99,8 +99,7 @@ impl Commit {
                     println!("Changes found.");
                     return Some(changes);
                 }
-                
-                println!("No changes found.");
+
                 None
             }
         }
