@@ -1,3 +1,4 @@
+use std::string::String;
 use crate::data::data_structs::{Commit, CommittedFile};
 use crate::utils::checks::{find_bucket, is_valid_bucket};
 use crate::utils::config::{BucketConfig, RepositoryConfig};
@@ -48,7 +49,7 @@ pub(crate) fn execute() -> Result<(), BucketError> {
     }
 
     // if there are no difference with previous commit cancel commit
-    match load_previous_commit(bucket_path.as_path()) {
+    match load_previous_commit(bucket_path.as_path(), &bucket_config) {
         Ok(None) => {
             process_files(bucket_config.id, bucket_path, &current_commit.files)?;
         }
@@ -65,13 +66,6 @@ pub(crate) fn execute() -> Result<(), BucketError> {
             error!("Failed to load previous commit");
         }
     }
-
-    // // create metadata file with timestamp in temporary directory
-    // let metadata_file_path = bucket_path.join("meta");
-    // #[allow(unused_variables)]
-    //     let metadata_file = File::create(&metadata_file_path)?;
-
-    // move bucket directory out of temporary directory
 
     Ok(())
 }
@@ -136,17 +130,37 @@ fn insert_commit(conn: &Connection, bucket_id: Uuid) -> Result<String, BucketErr
 }
 
 
-fn load_previous_commit(bucket_path: &Path) -> Result<Option<Commit>, BucketError> {
+fn load_previous_commit(bucket_path: &Path, bucket_config: &BucketConfig) -> Result<Option<Commit>, BucketError> {
     let db_location = checks::db_location(bucket_path);
-    let _conn = rusqlite::Connection::open(db_location)?;
+    let conn = rusqlite::Connection::open(db_location)?;
 
     // todo: query all commits from a specific bucket
-    //let mut stmt = conn.prepare("SELECT * FROM commits ORDER BY timestamp DESC LIMIT 1")?;
+    let mut stmt = conn.prepare("SELECT f.id, f.file_path, f.hash
+                                               FROM files f
+                                               JOIN commits c ON f.commit_id = c.id
+                                WHERE c.created_at = (SELECT MAX(created_at) FROM commits)")?;
 
-    // #[allow(unused_variables)]
-    //     let rows = stmt.query([])?;
+    let mut rows = stmt.query([])?;
 
-    return Ok(None);
+    let mut files = Vec::new();
+    while let Some(row) = rows.next()? {
+        let uuid_string: String = row.get(0)?;
+        let hex_string: String = row.get(2)?;
+
+        files.push(CommittedFile {
+            id: uuid::Uuid::parse_str(&uuid_string).unwrap(),
+            name: row.get(1)?,
+            hash: Hash::from_hex(&hex_string).unwrap(),
+            changed: false,
+            new: false,
+        });
+    }
+
+    Ok(Some(Commit {
+        bucket: bucket_config.name.clone(),
+        files,
+        timestamp: "".to_string(),
+    }))
 }
 
 fn compress_and_store_file(input_path: &str, output_path: &Path, compression_level: i32) -> io::Result<()> {
@@ -172,11 +186,13 @@ fn generate_commit_metadata(dir_path: &Path) -> io::Result<Commit> {
         if path.is_file() {
             match hash_file(path) {
                 Ok(hash) => {
-                    println!("BLAKE3 hash: {}", hash);
+                    //println!("BLAKE3 hash: {}", hash);
                     files.push(CommittedFile {
+                        id: Default::default(),
                         name: path.to_string_lossy().into_owned(),
                         hash: hash,
-                        old: false,
+                        new: false,
+                        changed: false,
                     });
                 }
                 Err(e) => {

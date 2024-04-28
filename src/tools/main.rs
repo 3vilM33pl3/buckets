@@ -1,3 +1,5 @@
+mod file_creator;
+
 use std::env;
 use std::fs;
 

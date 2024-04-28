@@ -84,7 +84,8 @@ fn create_database(location: &Path) -> Result<(), rusqlite::Error> {
             commit_id INTEGER NOT NULL,
             file_path TEXT NOT NULL,
             hash TEXT NOT NULL,
-            FOREIGN KEY (commit_id) REFERENCES commits (id)
+            FOREIGN KEY (commit_id) REFERENCES commits (id),
+            UNIQUE (commit_id, file_path, hash)
         )",
         [],
     )?;

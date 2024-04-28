@@ -1,12 +1,15 @@
 use blake3::Hash;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize)]
 pub struct CommittedFile {
+    pub id: Uuid,
     pub name: String,
     #[serde(serialize_with = "hash_to_hex", deserialize_with = "hex_to_hash")]
     pub hash: Hash,
-    pub old: bool,
+    pub new: bool,
+    pub changed: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -43,48 +46,61 @@ impl Commit {
             } => {
                 let mut changes = Vec::new();
 
+                // First check if existing files are the same
+                for file in self.files.iter() {
+                    for other_file in other_commit.files.iter() {
+                        if file.name == other_file.name && file.hash != other_file.hash {
+                            changes.push(CommittedFile {
+                                id: file.id,
+                                name: file.name.clone(),
+                                hash: file.hash.clone(),
+                                new: false,
+                                changed: true,
+                            });
+                        } else if file.name == other_file.name && file.hash == other_file.hash {
+                            changes.push(CommittedFile {
+                                id: file.id,
+                                name: file.name.clone(),
+                                hash: other_file.hash.clone(),
+                                new: false,
+                                changed: false,
+                            });
+                        }
+                    }
+                }
+
+                // Add files which haven't changed
                 for file in self.files.iter() {
                     let mut found = false;
                     for other_file in other_commit.files.iter() {
                         if file.name == other_file.name {
                             found = true;
-                            if file.hash != other_file.hash {
-                                changes.push(CommittedFile {
-                                    name: file.name.clone(),
-                                    hash: file.hash.clone(),
-                                    old: file.old,
-                                });
-                            }
                         }
                     }
                     if !found {
                         changes.push(CommittedFile {
+                            id: file.id,
                             name: file.name.clone(),
                             hash: file.hash.clone(),
-                            old: file.old,
+                            new: true,
+                            changed: false,
                         });
                     }
                 }
 
-                for file in other_commit.files.iter() {
-                    let mut found = false;
-                    for other_file in self.files.iter() {
-                        if file.name == other_file.name {
-                            found = true;
-                        }
-                    }
-                    if !found {
-                        changes.push(CommittedFile {
-                            name: file.name.clone(),
-                            hash: file.hash.clone(),
-                            old: file.old,
-                        });
-                    }
-                }
-
-                if changes.len() > 0 {
+                // Check if any changes were found
+                if changes.iter().filter(|cf| cf.new).collect::<Vec<_>>().len() > 0 {
+                    println!("Changes found.");
                     return Some(changes);
                 }
+
+                // Check if any files were removed
+                if changes.len() < other_commit.files.len() {
+                    println!("Changes found.");
+                    return Some(changes);
+                }
+                
+                println!("No changes found.");
                 None
             }
         }

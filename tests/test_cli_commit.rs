@@ -1,3 +1,5 @@
+use std::fs::File;
+use std::io::Write;
 #[cfg(test)]
 use tempfile::tempdir;
 
@@ -86,4 +88,82 @@ mod tests {
             .assert()
             .success();
     }
+}
+
+#[test]
+fn test_commit_multiple_files() {
+    let temp_dir = tempdir().unwrap();
+
+    let mut cmd_init = assert_cmd::Command::cargo_bin("buckets").unwrap();
+    cmd_init.current_dir(temp_dir.path());
+    cmd_init.arg("init").arg("test_repo").assert().success();
+    let repo_dir = temp_dir.path().join("test_repo");
+
+    let mut cmd_create = assert_cmd::Command::cargo_bin("buckets").unwrap();
+    cmd_create.current_dir(repo_dir.clone());
+    cmd_create
+        .arg("create")
+        .arg("test_bucket")
+        .assert()
+        .success();
+    let bucket_dir = repo_dir.join("test_bucket");
+
+    let mut cmd_commit = assert_cmd::Command::cargo_bin("buckets").unwrap();
+
+    // write a single file
+    let file_path = bucket_dir.join("test_file");
+    let mut file = File::create(file_path).unwrap();
+    file.write_all(b"test").unwrap();
+
+    // write a second file
+    let file_path = bucket_dir.join("test_file2");
+    let mut file = File::create(file_path).unwrap();
+    file.write_all(b"test2").unwrap();
+
+    cmd_commit.current_dir(bucket_dir);
+    cmd_commit
+        .arg("commit")
+        .assert()
+        .success();
+}
+
+#[test]
+fn test_commit_second_commit() {
+    let temp_dir = tempdir().unwrap();
+
+    let mut cmd_init = assert_cmd::Command::cargo_bin("buckets").unwrap();
+    cmd_init.current_dir(temp_dir.path());
+    cmd_init.arg("init").arg("test_repo").assert().success();
+    let repo_dir = temp_dir.path().join("test_repo");
+
+    let mut cmd_create = assert_cmd::Command::cargo_bin("buckets").unwrap();
+    cmd_create.current_dir(repo_dir.clone());
+    cmd_create
+        .arg("create")
+        .arg("test_bucket")
+        .assert()
+        .success();
+    let bucket_dir = repo_dir.join("test_bucket");
+
+    let mut cmd_commit = assert_cmd::Command::cargo_bin("buckets").unwrap();
+
+    // write a single file
+    let file_path = bucket_dir.join("test_file");
+    let mut file = File::create(file_path).unwrap();
+    file.write_all(b"test").unwrap();
+
+    println!("First commit");
+    cmd_commit.current_dir(&bucket_dir);
+    cmd_commit
+        .arg("commit")
+        .assert()
+        .success();
+
+    println!("Second commit");
+    let mut cmd_commit_2 = assert_cmd::Command::cargo_bin("buckets").unwrap();
+    cmd_commit_2.current_dir(bucket_dir);
+    cmd_commit_2
+        .arg("commit")
+        .assert()
+        .stdout("No changes detected. Commit cancelled.\n");
 }
