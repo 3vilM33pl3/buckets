@@ -25,7 +25,7 @@ struct Args {
     length: usize,
 }
 
-
+#[allow(dead_code)]
 fn create_unique_file_path(base_path: &Path, prefix: &str, idx: usize) -> PathBuf {
     let mut counter = 0;
     loop {
@@ -38,6 +38,7 @@ fn create_unique_file_path(base_path: &Path, prefix: &str, idx: usize) -> PathBu
     }
 }
 
+#[allow(dead_code)]
 fn main() {
     let args = Args::parse();
 
