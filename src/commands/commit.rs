@@ -17,7 +17,7 @@ use zstd::stream::copy_encode;
 use crate::utils::checks;
 
 // Execute the `commit` command
-pub(crate) fn execute() -> Result<(), BucketError> {
+pub(crate) fn execute(message: &String) -> Result<(), BucketError> {
     // read repo config file
     #[allow(unused_variables)]
         let repo_config = RepositoryConfig::from_file(env::current_dir().unwrap())?;
@@ -53,13 +53,13 @@ pub(crate) fn execute() -> Result<(), BucketError> {
     match load_previous_commit(bucket_path.as_path(), &bucket_config) {
         Ok(None) => {
             // There is no previous commit; Process all files in the current commit
-            process_files(bucket_config.id, bucket_path, &current_commit.files)?;
+            process_files(bucket_config.id, bucket_path, &current_commit.files, message)?;
         }
         Ok(Some(previous_commit)) => {
             // Compare the current commit with the previous commit
             if let Some(changes) = current_commit.compare_commit(&previous_commit) {
                 // Process the files that have changed
-                process_files(bucket_config.id, bucket_path, &changes)?;
+                process_files(bucket_config.id, bucket_path, &changes, message)?;
             } else {
                 // if there are no difference with previous commit cancel commit
                 println!("No changes detected. Commit cancelled.");
@@ -122,14 +122,14 @@ pub(crate) fn execute() -> Result<(), BucketError> {
 /// }
 /// ```
 // Process the files in the commit
-fn process_files(bucket_id: Uuid, bucket_path: PathBuf, files: &[CommittedFile]) -> Result<(), BucketError> {
+fn process_files(bucket_id: Uuid, bucket_path: PathBuf, files: &[CommittedFile], message: &String) -> Result<(), BucketError> {
     // Open the database connection
     let db_location = checks::db_location(bucket_path.as_path());
     let conn = rusqlite::Connection::open(db_location)?;
 
     // Insert the commit into the database
     debug!("bucket id: {}", bucket_id.to_string().to_uppercase());
-    let commit_id = insert_commit(&conn, bucket_id)?;
+    let commit_id = insert_commit(&conn, bucket_id, message)?;
 
     // Create the storage directory
     let storage_path = bucket_path.join(".b").join("storage");
@@ -238,11 +238,11 @@ fn insert_file(conn: &Connection, commit_id: &str, file_path: &str, hash: &str) 
 ///     Err(e) => eprintln!("Failed to insert commit: {}", e),
 /// }
 /// ```
-fn insert_commit(conn: &Connection, bucket_id: Uuid) -> Result<String, BucketError> {
+fn insert_commit(conn: &Connection, bucket_id: Uuid, message: &String) -> Result<String, BucketError> {
     // Perform the insert operation without specifying an ID, which will trigger the auto-generation.
     conn.execute(
-        "INSERT INTO commits (bucket_id) VALUES (?1)",
-        [bucket_id.to_string().to_uppercase()],
+        "INSERT INTO commits (bucket_id, message) VALUES (?1, ?2)",
+        [bucket_id.to_string().to_uppercase(), message.parse().unwrap()],
     )
         .map_err(|e| {
             std::io::Error::new(

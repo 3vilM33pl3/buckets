@@ -5,7 +5,7 @@ mod utils;
 use clap::{arg, Command};
 use std::io;
 use std::process::exit;
-use log::info;
+use log::{debug, error, info};
 
 fn cli() -> Command {
     Command::new("bucket")
@@ -27,7 +27,15 @@ fn cli() -> Command {
                 .arg(arg!(<NAME> "Name of the bucket"))
                 .arg_required_else_help(true),
         )
-        .subcommand(Command::new("commit").about("Commits a bucket"))
+        .subcommand(
+            Command::new("commit")
+                .about("Commits a bucket")
+                .arg(
+                    arg!(-m --message <MESSAGE> "The commit message")
+                        .required(false)
+                        .value_parser(clap::builder::NonEmptyStringValueParser::new()),
+                )
+        )
 }
 
 fn main() {
@@ -60,9 +68,16 @@ fn main() {
                 exit(0)
             }
         }
-        Some(("commit", _)) => {
-            if let Err(e) = commands::commit::execute() {
-                eprintln!("Can not commit bucket: {}", e);
+        Some(("commit", sub_matches)) => {
+            let message = match sub_matches.get_one::<String>("message") {
+                Some(message) => message.to_string(),
+                None => "".to_string(),
+            };
+
+            debug!("message: {}", message);
+
+            if let Err(e) = commands::commit::execute(&message) {
+                error!("Can not commit bucket: {}", e);
                 exit(1)
             } else {
                 info!("Committed bucket");

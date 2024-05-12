@@ -63,6 +63,7 @@ fn create_database(location: &Path) -> Result<(), rusqlite::Error> {
         "CREATE TABLE commits (
             id CHAR(36) PRIMARY KEY,
             bucket_id INTEGER NOT NULL,
+            message TEXT NOT NULL,
             created_at TEXT,
             FOREIGN KEY (bucket_id) REFERENCES buckets (id)
         )",
