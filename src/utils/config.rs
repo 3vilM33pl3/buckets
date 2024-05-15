@@ -62,15 +62,15 @@ pub fn create_default_config(file_path: &Path) {
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
-pub struct BucketConfig {
+pub struct Bucket {
     pub id: Uuid,
     pub name: String,
     pub path: PathBuf,
 }
 
-impl BucketConfig {
+impl Bucket {
     pub(crate) fn default(uuid: Uuid, name: &String, path: &PathBuf) -> Self {
-        BucketConfig {
+        Bucket {
             id: uuid,
             name: name.to_string(),
             path: path.to_path_buf(),
@@ -123,7 +123,7 @@ mod tests {
         let name = String::from("test_bucket");
         let path = PathBuf::from("/some/path/.b");
 
-        let config = BucketConfig::default(Uuid::new_v4(), &name, &path);
+        let config = Bucket::default(Uuid::new_v4(), &name, &path);
 
         assert_eq!(config.name, name);
         assert_eq!(config.path, path);
@@ -135,10 +135,10 @@ mod tests {
         let bucket_name = String::from("test_bucket");
         let bucket_path = temp_dir.path().to_path_buf();
 
-        let config = BucketConfig::default(Uuid::new_v4(), &bucket_name, &bucket_path);
+        let config = Bucket::default(Uuid::new_v4(), &bucket_name, &bucket_path);
         config.write_bucket_info();
 
-        let read_config = BucketConfig::read_bucket_info(&bucket_path)?;
+        let read_config = Bucket::read_bucket_info(&bucket_path)?;
 
         assert_eq!(config, read_config);
         Ok(())

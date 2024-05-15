@@ -1,7 +1,7 @@
 use std::string::String;
 use crate::data::data_structs::{Commit, CommittedFile};
 use crate::utils::checks::{find_bucket, is_valid_bucket};
-use crate::utils::config::{BucketConfig, RepositoryConfig};
+use crate::utils::config::{Bucket, RepositoryConfig};
 use crate::utils::errors::BucketError;
 use blake3::{Hash, Hasher};
 use std::fs::File;
@@ -39,7 +39,7 @@ pub(crate) fn execute(message: &String) -> Result<(), BucketError> {
         return Err(BucketError::NotAValidBucket);
     }
 
-    let bucket_config = BucketConfig::read_bucket_info(&bucket_path.join(".b"))?;
+    let bucket_config = Bucket::read_bucket_info(&bucket_path.join(".b"))?;
 
     // create a list of each file in the bucket directory, recursively
     // and create a blake3 hash for each file and add to current_commit
@@ -300,7 +300,7 @@ fn insert_commit(conn: &Connection, bucket_id: Uuid, message: &String) -> Result
 ///     Err(e) => eprintln!("Error loading commits: {}", e),
 /// }
 /// ```
-fn load_previous_commit(bucket_path: &Path, bucket_config: &BucketConfig) -> Result<Option<Commit>, BucketError> {
+fn load_previous_commit(bucket_path: &Path, bucket_config: &Bucket) -> Result<Option<Commit>, BucketError> {
     let db_location = checks::db_location(bucket_path);
     let conn = rusqlite::Connection::open(db_location)?;
 
