@@ -1,7 +1,6 @@
 use std::string::String;
-use crate::data::data_structs::{Commit, CommittedFile};
-use crate::utils::checks::{find_bucket, is_valid_bucket};
-use crate::utils::config::{Bucket, RepositoryConfig};
+use crate::data::commit::{Commit, CommittedFile};
+use crate::utils::config::{RepositoryConfig};
 use crate::utils::errors::BucketError;
 use blake3::{Hash, Hasher};
 use std::fs::File;
@@ -14,6 +13,7 @@ use uuid::Uuid;
 use walkdir::{DirEntry, WalkDir};
 use zstd::Encoder;
 use zstd::stream::copy_encode;
+use crate::data::bucket::Bucket;
 use crate::utils::checks;
 
 // Execute the `commit` command
@@ -22,44 +22,33 @@ pub(crate) fn execute(message: &String) -> Result<(), BucketError> {
     #[allow(unused_variables)]
         let repo_config = RepositoryConfig::from_file(env::current_dir().unwrap())?;
 
-    // find the top level of the bucket directory
-    let current_path = env::current_dir()?;
-    let bucket_path: PathBuf = match find_bucket(current_path.as_path()) {
-        Some(mut path) => {
-            path.pop();
-            path
-        }
-        None => {
-            return Err(BucketError::NotAValidBucket);
+    let bucket = match Bucket::from_meta_data(env::current_dir()?) {
+        Ok(bucket) => bucket,
+        Err(e) => {
+            eprintln!("Error reading bucket info: {}", e);
+            return Err(e);
         }
     };
 
-    // check if it is a valid bucket
-    if !is_valid_bucket(bucket_path.as_path()) {
-        return Err(BucketError::NotAValidBucket);
-    }
-
-    let bucket_config = Bucket::read_bucket_info(&bucket_path.join(".b"))?;
-
     // create a list of each file in the bucket directory, recursively
     // and create a blake3 hash for each file and add to current_commit
-    let current_commit = generate_commit_metadata(bucket_path.as_path())?;
+    let current_commit = generate_commit_metadata(&bucket)?;
     if current_commit.files.is_empty() {
         println!("No files found in bucket. Commit cancelled.");
         return Ok(());
     }
 
     // Load the previous commit, if it exists
-    match load_previous_commit(bucket_path.as_path(), &bucket_config) {
+    match load_previous_commit(&bucket) {
         Ok(None) => {
             // There is no previous commit; Process all files in the current commit
-            process_files(bucket_config.id, bucket_path, &current_commit.files, message)?;
+            process_files(bucket.id, &bucket.relative_bucket_path, &current_commit.files, message)?;
         }
         Ok(Some(previous_commit)) => {
             // Compare the current commit with the previous commit
             if let Some(changes) = current_commit.compare_commit(&previous_commit) {
                 // Process the files that have changed
-                process_files(bucket_config.id, bucket_path, &changes, message)?;
+                process_files(bucket.id, &bucket.relative_bucket_path, &changes, message)?;
             } else {
                 // if there are no difference with previous commit cancel commit
                 println!("No changes detected. Commit cancelled.");
@@ -122,7 +111,7 @@ pub(crate) fn execute(message: &String) -> Result<(), BucketError> {
 /// }
 /// ```
 // Process the files in the commit
-fn process_files(bucket_id: Uuid, bucket_path: PathBuf, files: &[CommittedFile], message: &String) -> Result<(), BucketError> {
+fn process_files(bucket_id: Uuid, bucket_path: &PathBuf, files: &[CommittedFile], message: &String) -> Result<(), BucketError> {
     // Open the database connection
     let db_location = checks::db_location(bucket_path.as_path());
     let conn = rusqlite::Connection::open(db_location)?;
@@ -300,8 +289,8 @@ fn insert_commit(conn: &Connection, bucket_id: Uuid, message: &String) -> Result
 ///     Err(e) => eprintln!("Error loading commits: {}", e),
 /// }
 /// ```
-fn load_previous_commit(bucket_path: &Path, bucket_config: &Bucket) -> Result<Option<Commit>, BucketError> {
-    let db_location = checks::db_location(bucket_path);
+fn load_previous_commit(bucket: &Bucket) -> Result<Option<Commit>, BucketError> {
+    let db_location = checks::db_location(bucket.relative_bucket_path.join(".b").as_path());
     let conn = rusqlite::Connection::open(db_location)?;
 
     // todo: query all commits from a specific bucket
@@ -327,7 +316,7 @@ fn load_previous_commit(bucket_path: &Path, bucket_config: &Bucket) -> Result<Op
     }
 
     Ok(Some(Commit {
-        bucket: bucket_config.name.clone(),
+        bucket: bucket.name.clone(),
         files,
         timestamp: "".to_string(),
     }))
@@ -412,10 +401,10 @@ fn compress_and_store_file(input_path: &str, output_path: &Path, compression_lev
 ///     Err(e) => eprintln!("Error generating commit metadata: {}", e),
 /// }
 /// ```
-fn generate_commit_metadata(dir_path: &Path) -> io::Result<Commit> {
+fn generate_commit_metadata(bucket: &Bucket) -> io::Result<Commit> {
     let mut files = Vec::new();
 
-    for entry in find_files_excluding_top_level_b(dir_path) {
+    for entry in find_files_excluding_top_level_b(bucket.relative_bucket_path.as_path()) {
         let path = entry.as_path();
 
         if path.is_file() {
@@ -499,7 +488,9 @@ mod tests {
         let mut commited_file = File::create(&file_path)?;
         commited_file.write_all(b"Some content")?;
 
-        let commit = generate_commit_metadata(temp_dir.path())?;
+        let bucket = &Bucket::default(uuid::Uuid::new_v4(), &"test_bucket".to_string(), &temp_dir.path().to_path_buf());
+
+        let commit = generate_commit_metadata(bucket)?;
 
         // Asserts
         assert_eq!(commit.bucket, "");

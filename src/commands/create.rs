@@ -1,9 +1,10 @@
 use crate::utils::checks;
-use crate::utils::config::{get_db_conn, Bucket, RepositoryConfig};
+use crate::utils::config::{get_db_conn, RepositoryConfig};
 use crate::utils::errors::BucketError;
 use std::env;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
+use crate::data::bucket::Bucket;
 
 pub fn execute(bucket_name: &String) -> Result<(), BucketError> {
     #[allow(unused_variables)]
