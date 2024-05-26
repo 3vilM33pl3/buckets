@@ -39,14 +39,14 @@ pub(crate) fn execute(message: &String) -> Result<(), BucketError> {
     }
 
     // Load the previous commit, if it exists
-    match load_previous_commit(&bucket) {
+    match load_last_commit(&bucket) {
         Ok(None) => {
             // There is no previous commit; Process all files in the current commit
             process_files(bucket.id, &bucket.relative_bucket_path, &current_commit.files, message)?;
         }
         Ok(Some(previous_commit)) => {
             // Compare the current commit with the previous commit
-            if let Some(changes) = current_commit.compare_commit(&previous_commit) {
+            if let Some(changes) = current_commit.compare(&previous_commit) {
                 // Process the files that have changed
                 process_files(bucket.id, &bucket.relative_bucket_path, &changes, message)?;
             } else {
@@ -289,7 +289,7 @@ fn insert_commit(conn: &Connection, bucket_id: Uuid, message: &String) -> Result
 ///     Err(e) => eprintln!("Error loading commits: {}", e),
 /// }
 /// ```
-fn load_previous_commit(bucket: &Bucket) -> Result<Option<Commit>, BucketError> {
+fn load_last_commit(bucket: &Bucket) -> Result<Option<Commit>, BucketError> {
     let db_location = checks::db_location(bucket.relative_bucket_path.join(".b").as_path());
     let conn = rusqlite::Connection::open(db_location)?;
 
@@ -319,6 +319,8 @@ fn load_previous_commit(bucket: &Bucket) -> Result<Option<Commit>, BucketError> 
         bucket: bucket.name.clone(),
         files,
         timestamp: "".to_string(),
+        previous: None,
+        next: None,
     }))
 }
 
@@ -433,6 +435,8 @@ fn generate_commit_metadata(bucket: &Bucket) -> io::Result<Commit> {
         bucket: "".to_string(),
         files,
         timestamp: chrono::Utc::now().to_rfc3339(),
+        previous: None,
+        next: None,
     })
 }
 

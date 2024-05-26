@@ -17,6 +17,8 @@ pub struct Commit {
     pub bucket: String,
     pub files: Vec<CommittedFile>,
     pub timestamp: String,
+    pub(crate) previous: Option<Box<Commit>>,
+    pub(crate) next: Option<Box<Commit>>,
 }
 
 // Custom function to serialize a `blake3::Hash` to a hex string
@@ -37,12 +39,14 @@ fn hex_to_hash<'de, D>(deserializer: D) -> Result<Hash, D::Error>
 }
 
 impl Commit {
-    pub fn compare_commit(&self, other_commit: &Commit) -> Option<Vec<CommittedFile>> {
+    pub fn compare(&self, other_commit: &Commit) -> Option<Vec<CommittedFile>> {
         match other_commit {
             Commit {
                 bucket: _,
                 files: _,
                 timestamp: _,
+                previous: _,
+                next: _,
             } => {
                 let mut changes = Vec::new();
 
