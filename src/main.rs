@@ -9,10 +9,10 @@ use log::{debug, error, info};
 
 fn cli() -> Command {
     Command::new("bucket")
-        .version("1.0")
+        .version("0.1.0")
         .author("3vilM33pl3 <olivier@robotmotel.com>")
         .about("")
-        .subcommand(Command::new("version").about("Displays the version of the bucket tool"))
+        .subcommand(Command::new("system").about("Displays information of the system"))
         .subcommand(
             Command::new("init")
                 .about("Initialises bucket repository")
@@ -45,7 +45,7 @@ fn main() {
 
     match matches.subcommand() {
         None => {}
-        Some(("version", _)) => commands::version::execute(&mut io::stdout()).unwrap(),
+        Some(("system", _)) => commands::version::execute(&mut io::stdout()).unwrap(),
         Some(("init", sub_matches)) => {
             let arg = sub_matches.get_one::<String>("NAME").unwrap();
 
