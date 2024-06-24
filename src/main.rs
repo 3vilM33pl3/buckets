@@ -16,13 +16,11 @@ fn cli() -> Command {
         .subcommand(
             Command::new("init")
                 .about("Initialises bucket repository")
-                .about("Initialises bucket repository")
                 .arg(arg!(<NAME> "Name of the repository"))
                 .arg_required_else_help(true),
         )
         .subcommand(
             Command::new("create")
-                .about("Creates a new bucket")
                 .about("Creates a new bucket")
                 .arg(arg!(<NAME> "Name of the bucket"))
                 .arg_required_else_help(true),
@@ -35,6 +33,10 @@ fn cli() -> Command {
                         .required(false)
                         .value_parser(clap::builder::NonEmptyStringValueParser::new()),
                 )
+        )
+        .subcommand(
+            Command::new("status")
+                .about("Displays the status of the bucket")
         )
 }
 
@@ -84,6 +86,18 @@ fn main() {
                 exit(0)
             }
         }
+        Some(("status", _)) => {
+            match commands::status::execute() {
+                Ok(_) => {
+                    exit(0)
+                }
+                Err(e) => {
+                    error!("Can not get status of the bucket: {}", e);
+                    exit(1)
+                }
+            }
+        }
+
         _ => commands::version::execute(&mut io::stdout()).unwrap(),
     }
 }

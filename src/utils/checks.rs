@@ -44,13 +44,6 @@ pub fn db_location(dir_path: &Path) -> PathBuf {
     buckets_repo_path.join("buckets.db")
 }
 
-pub fn is_valid_bucket(dir_path: &Path) -> bool {
-    let bucket_path = find_directory_in_parents(dir_path, ".b");
-    match bucket_path {
-        Some(path) => is_valid_bucket_info(&path),
-        None => false,
-    }
-}
 
 pub fn is_valid_repo_config(dir_path: &Path) -> bool {
     let config_path = dir_path.join("config");
@@ -201,25 +194,5 @@ mod tests {
     fn test_invalid_repo_config() {
         let temp_dir = tempdir().unwrap();
         assert!(!is_valid_repo_config(temp_dir.path()));
-    }
-
-    #[test]
-    fn test_is_valid_bucket() {
-        let temp_dir = tempdir().unwrap();
-        let bucket_dir = temp_dir.path().join(".b");
-        let nested_dir = temp_dir.path().join("a/b/c");
-
-        // Create nested directory structure
-        fs::create_dir_all(&nested_dir).unwrap();
-
-        // Test case when .b directory does not exist
-        assert!(!is_valid_bucket(&nested_dir));
-
-        // Create .b directory and configuration
-        fs::create_dir_all(&bucket_dir).unwrap();
-        fs::write(bucket_dir.join("info"), "interesting").unwrap();
-
-        // Test case when .b directory exists with valid config
-        assert!(is_valid_bucket(&nested_dir));
     }
 }

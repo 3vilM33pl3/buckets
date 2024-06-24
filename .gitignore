@@ -22,4 +22,4 @@ Thumbs.db
 .env.production.local
 
 # Custom directories
-# /custom_dir/
+/test_repo/

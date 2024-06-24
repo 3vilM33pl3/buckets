@@ -1,9 +1,10 @@
 use crate::utils::checks;
-use crate::utils::config::{get_db_conn, BucketConfig, RepositoryConfig};
+use crate::utils::config::{get_db_conn, RepositoryConfig};
 use crate::utils::errors::BucketError;
 use std::env;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
+use crate::data::bucket::Bucket;
 
 pub fn execute(bucket_name: &String) -> Result<(), BucketError> {
     #[allow(unused_variables)]
@@ -90,7 +91,7 @@ pub fn execute(bucket_name: &String) -> Result<(), BucketError> {
 
     // add info to bucket hidden directory
     let bucket_id = uuid::Uuid::parse_str(&bucket_id_str).unwrap();
-    let config = BucketConfig::default(bucket_id, bucket_name, &relative_path);
+    let config = Bucket::default(bucket_id, bucket_name, &relative_path);
     config.write_bucket_info();
 
     Ok(())
