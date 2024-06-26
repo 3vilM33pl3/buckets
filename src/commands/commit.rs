@@ -15,12 +15,13 @@ use zstd::Encoder;
 use zstd::stream::copy_encode;
 use crate::data::bucket::Bucket;
 use crate::utils::checks;
+use crate::utils::checks::find_bucket_repo;
 
 // Execute the `commit` command
 pub(crate) fn execute(message: &String) -> Result<(), BucketError> {
     // read repo config file
     #[allow(unused_variables)]
-        let repo_config = RepositoryConfig::from_file(env::current_dir().unwrap())?;
+    let repo_config = RepositoryConfig::from_file(env::current_dir().unwrap())?;
 
     let bucket = match Bucket::from_meta_data(env::current_dir()?) {
         Ok(bucket) => bucket,
@@ -32,10 +33,9 @@ pub(crate) fn execute(message: &String) -> Result<(), BucketError> {
 
     // create a list of each file in the bucket directory, recursively
     // and create a blake3 hash for each file and add to current_commit
-    let current_commit = generate_commit_metadata(&bucket)?;
+    let current_commit = list_files_with_metadata_in_bucket(&bucket)?;
     if current_commit.files.is_empty() {
-        println!("No files found in bucket. Commit cancelled.");
-        return Ok(());
+        return Err(BucketError::from(io::Error::new(io::ErrorKind::NotFound, "No files found in bucket."),));
     }
 
     // Load the previous commit, if it exists
@@ -48,7 +48,8 @@ pub(crate) fn execute(message: &String) -> Result<(), BucketError> {
             // Compare the current commit with the previous commit
             if let Some(changes) = current_commit.compare(&previous_commit) {
                 // Process the files that have changed
-                process_files(bucket.id, &bucket.relative_bucket_path, &changes, message)?;
+                let full_bucket_path = get_full_bucket_path(&bucket);
+                process_files(bucket.id, &full_bucket_path, &changes, message)?;
             } else {
                 // if there are no difference with previous commit cancel commit
                 println!("No changes detected. Commit cancelled.");
@@ -56,8 +57,8 @@ pub(crate) fn execute(message: &String) -> Result<(), BucketError> {
             }
         }
         Err(_) => {
-            // Properly handle the error, perhaps by returning it
-            error!("Failed to load previous commit");
+            error!("Failed to load previous commit.");
+            return Err(BucketError::from(io::Error::new(io::ErrorKind::Other, "Failed to load previous commit.")));
         }
     }
 
@@ -290,7 +291,8 @@ fn insert_commit(conn: &Connection, bucket_id: Uuid, message: &String) -> Result
 /// }
 /// ```
 fn load_last_commit(bucket: &Bucket) -> Result<Option<Commit>, BucketError> {
-    let db_location = checks::db_location(bucket.relative_bucket_path.join(".b").as_path());
+    let full_bucket_path = get_full_bucket_path(bucket);
+    let db_location = checks::db_location(full_bucket_path.as_path());
     let conn = rusqlite::Connection::open(db_location)?;
 
     // todo: query all commits from a specific bucket
@@ -403,10 +405,13 @@ fn compress_and_store_file(input_path: &str, output_path: &Path, compression_lev
 ///     Err(e) => eprintln!("Error generating commit metadata: {}", e),
 /// }
 /// ```
-fn generate_commit_metadata(bucket: &Bucket) -> io::Result<Commit> {
+fn list_files_with_metadata_in_bucket(bucket: &Bucket) -> io::Result<Commit> {
     let mut files = Vec::new();
 
-    for entry in find_files_excluding_top_level_b(bucket.relative_bucket_path.as_path()) {
+    let full_bucket_path = get_full_bucket_path(bucket);
+
+
+    for entry in find_files_excluding_top_level_b(full_bucket_path.as_path()) {
         let path = entry.as_path();
 
         if path.is_file() {
@@ -440,6 +445,12 @@ fn generate_commit_metadata(bucket: &Bucket) -> io::Result<Commit> {
     })
 }
 
+fn get_full_bucket_path(bucket: &Bucket) -> PathBuf {
+    let current_dir = env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
+    let full_bucket_path = find_bucket_repo(&current_dir.as_path()).unwrap().parent().unwrap().join(bucket.relative_bucket_path.as_path());
+    full_bucket_path
+}
+
 fn hash_file<P: AsRef<Path>>(path: P) -> io::Result<Hash> {
     let mut file = File::open(path)?;
     let mut hasher = Hasher::new();
@@ -457,11 +468,12 @@ fn hash_file<P: AsRef<Path>>(path: P) -> io::Result<Hash> {
 }
 
 fn find_files_excluding_top_level_b(dir: &Path) -> Vec<PathBuf> {
+
     WalkDir::new(dir)
         .into_iter()
         .filter_map(Result::ok)
-        .filter(|entry| is_valid_file(entry, dir))
-        .filter_map(|entry| make_relative_path(entry.path(), dir))
+        .filter(|entry| is_valid_file(entry, &dir))
+        .filter_map(|entry| make_relative_path(entry.path(), &dir))
         .collect()
 }
 
@@ -478,6 +490,7 @@ fn make_relative_path(path: &Path, base: &Path) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::io::Write;
     use super::*;
     use chrono::DateTime;
@@ -486,15 +499,19 @@ mod tests {
     #[test]
     fn test_generate_commit_metadata() -> io::Result<()> {
         let temp_dir = tempdir()?;
-        std::env::set_current_dir(&temp_dir)?;
 
-        let file_path = temp_dir.path().join("test_file.txt");
+        fs::create_dir(temp_dir.path().join(".buckets")).unwrap();
+        fs::create_dir(temp_dir.path().join("test_bucket")).unwrap();
+
+        std::env::set_current_dir(&temp_dir.path().join("test_bucket"))?;
+
+        let file_path = temp_dir.path().join("test_bucket").join("test_file.txt");
         let mut commited_file = File::create(&file_path)?;
         commited_file.write_all(b"Some content")?;
 
-        let bucket = &Bucket::default(uuid::Uuid::new_v4(), &"test_bucket".to_string(), &temp_dir.path().to_path_buf());
+        let bucket = &Bucket::default(uuid::Uuid::new_v4(), &"test_bucket".to_string(), &PathBuf::from("test_bucket"));
 
-        let commit = generate_commit_metadata(bucket)?;
+        let commit = list_files_with_metadata_in_bucket(bucket)?;
 
         // Asserts
         assert_eq!(commit.bucket, "");
@@ -507,5 +524,62 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn test_find_files_excluding_top_level_b() {
+        let dir = tempdir().unwrap();
+        let dir_path = dir.path();
+
+        // Create test files and directories
+        fs::create_dir(dir_path.join(".b")).unwrap();
+        fs::create_dir(dir_path.join("subdir")).unwrap();
+        fs::write(dir_path.join("file1.txt"), b"file1").unwrap();
+        fs::write(dir_path.join(".b").join("file2.txt"), b"file2").unwrap();
+        fs::write(dir_path.join("subdir").join("file3.txt"), b"file3").unwrap();
+
+        let files = find_files_excluding_top_level_b(dir_path);
+
+        let expected_files: Vec<PathBuf> = vec![
+            PathBuf::from("file1.txt"),
+            PathBuf::from("subdir/file3.txt"),
+        ];
+
+        assert_eq!(files, expected_files);
+    }
+
+    #[test]
+    fn test_is_valid_file() {
+        let dir = tempdir().unwrap();
+        let dir_path = dir.path();
+
+        // Create test files and directories
+        fs::create_dir(dir_path.join(".b")).unwrap();
+        fs::create_dir(dir_path.join("subdir")).unwrap();
+        fs::write(dir_path.join("file1.txt"), b"file1").unwrap();
+        fs::write(dir_path.join(".b").join("file2.txt"), b"file2").unwrap();
+        fs::write(dir_path.join("subdir").join("file3.txt"), b"file3").unwrap();
+
+        let root_dir = dir_path;
+
+        let entry_file1 = WalkDir::new(dir_path.join("file1.txt")).into_iter().next().unwrap().unwrap();
+        let entry_file2 = WalkDir::new(dir_path.join(".b").join("file2.txt")).into_iter().next().unwrap().unwrap();
+        let entry_file3 = WalkDir::new(dir_path.join("subdir").join("file3.txt")).into_iter().next().unwrap().unwrap();
+
+        assert!(is_valid_file(&entry_file1, root_dir));
+        assert!(!is_valid_file(&entry_file2, root_dir));
+        assert!(is_valid_file(&entry_file3, root_dir));
+    }
+
+    #[test]
+    fn test_make_relative_path() {
+        let base = Path::new("/base/dir");
+        let path = Path::new("/base/dir/subdir/file.txt");
+        let result = make_relative_path(path, base);
+        assert_eq!(result, Some(PathBuf::from("subdir/file.txt")));
+
+        let path_outside_base = Path::new("/other/dir/file.txt");
+        let result = make_relative_path(path_outside_base, base);
+        assert_eq!(result, None);
     }
 }

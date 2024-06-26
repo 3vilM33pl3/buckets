@@ -1,12 +1,13 @@
-use std::fs::File;
-use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
-use log::debug;
-use serde_derive::{Deserialize, Serialize};
-use toml::to_string;
-use uuid::Uuid;
 use crate::utils::checks::{find_bucket, find_directory_in_parents, is_valid_bucket_info};
 use crate::utils::errors::BucketError;
+use log::debug;
+use serde_derive::{Deserialize, Serialize};
+use std::fs::File;
+use std::io;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+use toml::to_string;
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Bucket {
@@ -37,7 +38,7 @@ impl Bucket {
             }
         };
 
-        let bucket = read_bucket_info(&bucket_path.join(".b"))?;
+        let bucket = read_bucket_info(&bucket_path)?;
 
         // check if it is a valid bucket
         if !Self::is_valid_bucket(bucket_path.as_path()) {
@@ -48,11 +49,10 @@ impl Bucket {
     }
 
     pub fn write_bucket_info(&self) {
-        let mut file = File::create(self.relative_bucket_path.join("info")).unwrap();
+        let mut file = File::create(self.relative_bucket_path.join(".b").join("info")).unwrap();
         file.write_fmt(format_args!("{}", to_string(self).unwrap()))
             .unwrap();
     }
-
 
     pub fn is_valid_bucket(dir_path: &Path) -> bool {
         let bucket_path = find_directory_in_parents(dir_path, ".b");
@@ -64,7 +64,17 @@ impl Bucket {
 }
 
 fn read_bucket_info(path: &PathBuf) -> Result<Bucket, std::io::Error> {
-    let mut file = File::open(path.join("info"))?;
+    let info_path = path.join(".b").join("info");
+    let mut file = File::open(&info_path).map_err(|e| {
+        io::Error::new(
+            e.kind(),
+            format!(
+                "Failed to open {} file: {}",
+                &info_path.as_os_str().to_str().unwrap(),
+                e
+            ),
+        )
+    })?;
     let mut toml_string = String::new();
     file.read_to_string(&mut toml_string)?;
 
@@ -75,8 +85,8 @@ fn read_bucket_info(path: &PathBuf) -> Result<Bucket, std::io::Error> {
 
 #[cfg(test)]
 mod tests {
-    use std::fs::create_dir;
     use super::*;
+    use std::fs::create_dir_all;
     use std::path::PathBuf;
     use tempfile::tempdir;
     use uuid::Uuid;
@@ -96,8 +106,9 @@ mod tests {
     fn test_write_and_read_bucket_info() -> std::io::Result<()> {
         let temp_dir = tempdir()?;
         let bucket_name = String::from("test_bucket");
-        let bucket_path = temp_dir.path().to_path_buf().join(".b");
-        create_dir(&bucket_path)?;
+        let bucket_path = temp_dir.path().to_path_buf().join(&bucket_name);
+        let bucket_meta_path = bucket_path.join(".b");
+        create_dir_all(&bucket_meta_path)?;
 
         let bucket_default = Bucket::default(Uuid::new_v4(), &bucket_name, &bucket_path);
         bucket_default.write_bucket_info();

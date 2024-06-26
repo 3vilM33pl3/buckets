@@ -33,8 +33,12 @@ mod tests {
     /// 1. `$ buckets create test_bucket`
     ///
     /// # Expected output
-    /// Empty stdout.
+    /// `test_bucket` directory created.
+    /// `test_bucket/.b` directory created.
+    /// `test_bucket/.b/storage` directory created.
+    /// `test_bucket/.b/info` file created.
     ///
+    /// Empty stdout.
     /// Empty stderr.
     ///
     #[test]
@@ -64,9 +68,24 @@ mod tests {
             .success()
             .stdout(predicate::str::contains(""))
             .stderr(predicate::str::is_empty());
-        let bucket_dir = repo_dir.join("test_bucket");
 
+        let bucket_dir = repo_dir.join("test_bucket");
         assert!(bucket_dir.exists());
         assert!(bucket_dir.is_dir());
+
+        let bucket_metadata_dir = bucket_dir.join(".b");
+        assert!(bucket_metadata_dir.exists());
+        assert!(bucket_metadata_dir.is_dir());
+
+        let bucket_storage_dir = bucket_metadata_dir.join("storage");
+        assert!(bucket_storage_dir.exists());
+        assert!(bucket_storage_dir.is_dir());
+
+        let bucket_info_file = bucket_metadata_dir.join("info");
+        assert!(bucket_info_file.exists());
+        assert!(bucket_info_file.is_file());
+
+
+
     }
 }

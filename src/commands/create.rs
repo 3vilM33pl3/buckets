@@ -55,7 +55,7 @@ pub fn execute(bucket_name: &String) -> Result<(), BucketError> {
         )
     })?;
 
-    let relative_path = to_relative_path(current_path.as_path(), path.as_path()).unwrap();
+    let relative_path = to_relative_path(current_path.as_path(), path.as_path().parent().unwrap()).unwrap();
 
     db_conn
         .execute(

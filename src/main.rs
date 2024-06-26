@@ -2,14 +2,14 @@ mod commands;
 mod data;
 mod utils;
 
-use clap::{arg, Command};
+use clap::{arg, Command, crate_version};
 use std::io;
 use std::process::exit;
 use log::{debug, error, info};
 
 fn cli() -> Command {
     Command::new("bucket")
-        .version("0.1.0")
+        .version(crate_version!())
         .author("3vilM33pl3 <olivier@robotmotel.com>")
         .about("")
         .subcommand(Command::new("system").about("Displays information of the system"))
