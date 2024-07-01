@@ -1,6 +1,5 @@
 [![Rust](https://github.com/3vilM33pl3/buckets/actions/workflows/rust.yml/badge.svg?branch=main)](https://github.com/3vilM33pl3/buckets/actions/workflows/rust.yml)
 [![codecov](https://codecov.io/gh/3vilM33pl3/buckets/branch/main/graph/badge.svg?token=ZQZQZQZQZQ)](https://codecov.io/gh/3vilM33pl3/buckets)
-[![Crates.io](https://img.shields.io/crates/v/buckets)](https://crates.io/crates/buckets)
 
 ### Overview
 Working on my expectation enabled version control system Buckets. Buckets is a tool for game asset management. 
