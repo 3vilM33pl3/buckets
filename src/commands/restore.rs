@@ -123,7 +123,7 @@ impl Restore {
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::compression::compress_and_store_file;
+    use crate::utils::compression::{compress_file, DEFAULT_COMPRESSION_LEVEL};
     use serial_test::serial;
 
     use super::*;
@@ -204,7 +204,7 @@ mod tests {
         // Create compressed file path
         let compressed_path = temp_dir.path().join("compressed.zst");
 
-        compress_and_store_file(&source_path, &compressed_path, 0)
+        compress_file(&source_path, &compressed_path, DEFAULT_COMPRESSION_LEVEL)
             .expect("Failed to compress and store file");
 
         // Create restored file path
