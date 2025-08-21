@@ -7,7 +7,7 @@ use crate::utils::checks;
 use crate::utils::config::RepositoryConfig;
 use crate::utils::utils::{find_bucket_path, with_db_connection};
 use crate::CURRENT_DIR;
-use log::error;
+use log::{debug, info, error};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::io::{self, Error, ErrorKind};
@@ -52,16 +52,21 @@ impl BucketCommand for Status {
 
     fn execute(&self) -> Result<(), BucketError> {
         let current_dir = CURRENT_DIR.with(|dir| dir.clone());
+        debug!("Checking status in directory: {:?}", current_dir);
 
         if !checks::is_valid_bucket_repo(&current_dir) {
+            debug!("Not in a valid bucket repository");
             return Err(BucketError::NotInRepo);
         }
 
         if !checks::is_valid_bucket(&current_dir) {
+            info!("Showing repository status");
             self.repository_status()
         } else {
+            info!("Showing bucket status");
             let bucket_path =
                 find_bucket_path(&current_dir).ok_or_else(|| BucketError::NotAValidBucket)?;
+            debug!("Found bucket path: {:?}", bucket_path);
 
             let bucket = match Bucket::from_meta_data(&bucket_path) {
                 Ok(bucket) => bucket,

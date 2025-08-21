@@ -5,6 +5,7 @@ use crate::errors::BucketError;
 use crate::utils::checks;
 use crate::utils::utils::with_db_connection;
 use crate::CURRENT_DIR;
+use log::{debug, info};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
@@ -34,12 +35,16 @@ impl BucketCommand for List {
 
     fn execute(&self) -> Result<(), BucketError> {
         let current_dir = CURRENT_DIR.with(|dir| dir.clone());
+        debug!("Listing buckets in directory: {:?}", current_dir);
 
         if !checks::is_valid_bucket_repo(&current_dir) {
+            debug!("Not in a valid bucket repository");
             return Err(BucketError::NotInRepo);
         }
 
+        info!("Querying buckets from database");
         let buckets = self.query_buckets()?;
+        debug!("Found {} buckets", buckets.len());
         
         if self.args.shared.json {
             let bucket_items: Vec<BucketListItem> = buckets.iter().map(|bucket| BucketListItem {

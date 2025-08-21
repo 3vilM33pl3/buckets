@@ -24,6 +24,28 @@ pub enum Command {
     Schema(SchemaCommand),
 }
 
+impl Command {
+    pub fn shared_args(&self) -> &SharedArguments {
+        match self {
+            Command::Init(cmd) => &cmd.shared,
+            Command::Create(cmd) => &cmd.shared,
+            Command::Commit(cmd) => &cmd.shared,
+            Command::Revert(cmd) => &cmd.shared,
+            Command::Rollback(cmd) => &cmd.shared,
+            Command::Stash(cmd) => &cmd.shared,
+            Command::Status(cmd) => &cmd.shared,
+            Command::History(cmd) => &cmd.shared,
+            Command::List(cmd) => &cmd.shared,
+            Command::Stats(cmd) => &cmd.shared,
+            Command::Expect(cmd) => &cmd.shared,
+            Command::Check(cmd) => &cmd.shared,
+            Command::Link(cmd) => &cmd.shared,
+            Command::Finalize(cmd) => &cmd.shared,
+            Command::Schema(cmd) => &cmd.shared,
+        }
+    }
+}
+
 #[derive(Parser)]
 #[clap(
     name = "buckets",
@@ -37,8 +59,8 @@ pub struct CliArguments {
 
 #[derive(Args, Default, Debug, Clone)]
 pub struct SharedArguments {
-    #[clap(short, long)]
-    pub verbose: bool,
+    #[clap(short, long, action = clap::ArgAction::Count)]
+    pub verbose: u8,
     
     #[clap(long)]
     pub json: bool,

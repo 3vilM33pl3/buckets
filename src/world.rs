@@ -21,9 +21,9 @@ pub struct World {
     // The active bucket, None if no bucket is active
     #[allow(dead_code)]
     pub bucket: Option<Bucket>,
-    // Verbose output
+    // Verbose output level
     #[allow(dead_code)]
-    pub verbose: bool,
+    pub verbose: u8,
 }
 
 impl World {

@@ -3,6 +3,8 @@ use crate::commands::BucketCommand;
 use crate::errors::BucketError;
 use clap::error::ErrorKind;
 use clap::Parser;
+use env_logger::Builder;
+use log::LevelFilter;
 use once_cell::sync::Lazy;
 use std::cell::Cell;
 use std::path::PathBuf;
@@ -41,7 +43,22 @@ fn set_failed() {
     EXIT.with(|cell| cell.set(ExitCode::FAILURE));
 }
 
+fn init_logging(verbose_level: u8) {
+    let log_level = match verbose_level {
+        0 => LevelFilter::Warn,  // Default: warnings and errors only
+        1 => LevelFilter::Info,  // -v: info level
+        _ => LevelFilter::Debug, // -vv and beyond: debug level
+    };
+
+    Builder::from_default_env()
+        .filter_level(log_level)
+        .init();
+}
+
 fn main() -> ExitCode {
+    // Initialize logging based on verbose flag
+    init_logging(ARGS.command.shared_args().verbose);
+    
     let res = dispatch();
 
     if let Err(msg) = res {
