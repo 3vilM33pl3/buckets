@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use uuid::Uuid;
 
-use crate::utils::compression::{compress_and_store_file, restore_file};
+use crate::utils::compression::{compress_file, decompress_file, DEFAULT_COMPRESSION_LEVEL};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum CommitStatus {
@@ -190,7 +190,7 @@ impl CommittedFile {
             .join("storage")
             .join(&self.hash.to_string());
 
-        compress_and_store_file(&input_path, &output_path, 0)
+        compress_file(&input_path, &output_path, DEFAULT_COMPRESSION_LEVEL)
     }
 
     pub fn restore(&self, bucket_path: &PathBuf) -> io::Result<()> {
@@ -205,7 +205,7 @@ impl CommittedFile {
             std::fs::create_dir_all(parent)?;
         }
 
-        restore_file(&input_path, &output_path)
+        decompress_file(&input_path, &output_path)
     }
 }
 
@@ -465,8 +465,8 @@ mod tests {
             .join(hash.to_string());
 
         // Manually compress the file to simulate stored version
-        use crate::utils::compression::compress_and_store_file;
-        compress_and_store_file(&bucket_path.join("original.txt"), &compressed_path, 0)?;
+        use crate::utils::compression::compress_file;
+        compress_file(&bucket_path.join("original.txt"), &compressed_path, DEFAULT_COMPRESSION_LEVEL)?;
 
         // Remove original file
         fs::remove_file(bucket_path.join("original.txt"))?;
