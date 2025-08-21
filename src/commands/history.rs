@@ -2,8 +2,7 @@ use std::path::PathBuf;
 
 use crate::args::HistoryCommand;
 use crate::errors::BucketError;
-use crate::utils::utils::find_bucket_repo;
-use duckdb::Connection;
+use crate::utils::utils::connect_to_db;
 
 #[derive(Debug)]
 pub struct CommitRecord {
@@ -43,11 +42,8 @@ pub fn execute(command: HistoryCommand) -> Result<(), BucketError> {
     Ok(())
 }
 
-fn fetch_commit_history(bucket_dir: &PathBuf) -> Result<Vec<CommitRecord>, BucketError> {
-    let repo_root = find_bucket_repo(&bucket_dir).ok_or(BucketError::NotInRepo)?;
-    let db_path = repo_root.join("buckets.db");
-
-    let conn = Connection::open(&db_path)?;
+fn fetch_commit_history(_bucket_dir: &PathBuf) -> Result<Vec<CommitRecord>, BucketError> {
+    let conn = connect_to_db()?;
     let mut stmt = conn.prepare(
         "SELECT c.id, c.message, CAST(c.created_at AS TEXT), b.name as bucket_name 
          FROM commits c 
@@ -149,8 +145,17 @@ mod tests {
             .assert()
             .success();
 
+        // Change to bucket directory so connect_to_db() can find .buckets
+        let original_dir = env::current_dir().ok();
+        env::set_current_dir(&bucket_dir).expect("Failed to change to bucket directory");
+        
         // Test fetch_commit_history
         let commits = fetch_commit_history(&bucket_dir).expect("Failed to fetch commit history");
+        
+        // Restore original directory
+        if let Some(orig_dir) = original_dir {
+            env::set_current_dir(orig_dir).ok();
+        }
 
         // Verify we have at least one commit
         assert!(!commits.is_empty());
