@@ -65,7 +65,7 @@ impl Status {
         //     shared: crate::args::SharedArguments::default(),
         //     message: "".to_string(),
         // });
-        match Commit::load_last_commit(bucket.name) {
+        match Commit::load_last_commit(bucket.id) {
             Ok(None) => {
                 bucket_files.files.iter().for_each(|file| {
                     println!("{}:    {}", file.status, file.name);

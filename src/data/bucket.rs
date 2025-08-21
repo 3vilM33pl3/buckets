@@ -172,12 +172,14 @@ impl BucketTrait for Bucket {
 
         let mut stmt = connection.prepare(
             "SELECT f.id, f.file_path, f.hash
-                                               FROM files f
-                                               JOIN commits c ON f.commit_id = c.id
-                                WHERE c.created_at = (SELECT MAX(created_at) FROM commits)",
+             FROM files f
+             JOIN commits c ON f.commit_id = c.id
+             WHERE c.bucket_id = ?
+             ORDER BY c.created_at DESC
+             LIMIT 1",
         )?;
 
-        let mut rows = stmt.query([])?;
+        let mut rows = stmt.query([self.id.to_string()])?;
 
         let mut files = Vec::new();
         while let Some(row) = rows.next()? {

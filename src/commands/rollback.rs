@@ -54,7 +54,7 @@ fn rollback_single_file(bucket_path: &PathBuf, file: &PathBuf) -> Result<(), Buc
 
     let bucket = Bucket::from_meta_data(bucket_path)?;
 
-    match Commit::load_last_commit(bucket.name) {
+    match Commit::load_last_commit(bucket.id) {
         Ok(None) => Err(BucketError::from(Error::new(
             ErrorKind::NotFound,
             "No previous commit found.",
@@ -100,7 +100,7 @@ fn rollback_all(bucket_path: &PathBuf) -> Result<(), BucketError> {
         return Ok(());
     }
 
-    match Commit::load_last_commit(bucket.name) {
+    match Commit::load_last_commit(bucket.id) {
         Ok(None) => {
             return Err(BucketError::from(Error::new(
                 ErrorKind::NotFound,
