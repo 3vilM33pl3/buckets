@@ -57,7 +57,7 @@ impl BucketCommand for Commit {
         println!("Current commit: ########################################################## ");
 
         // Load the previous commit, if it exists
-        match Commit::load_last_commit(bucket.name.clone()) {
+        match Commit::load_last_commit(bucket.id) {
             Ok(None) => {
                 // There is no previous commit; Process all files in the current commit
                 println!("No previous commit found. Processing all files. ########################################################## ");
@@ -239,17 +239,19 @@ impl Commit {
         })
     }
 
-    pub fn load_last_commit(bucket_name: String) -> Result<Option<CommitData>, BucketError> {
+    pub fn load_last_commit(bucket_id: Uuid) -> Result<Option<CommitData>, BucketError> {
         let connection = connect_to_db()?;
 
         let mut stmt = connection.prepare(
             "SELECT f.id, f.file_path, f.hash
-                                               FROM files f
-                                               JOIN commits c ON f.commit_id = c.id
-                                WHERE c.created_at = (SELECT MAX(created_at) FROM commits)",
+             FROM files f
+             JOIN commits c ON f.commit_id = c.id
+             WHERE c.bucket_id = ?
+             ORDER BY c.created_at DESC
+             LIMIT 1",
         )?;
 
-        let mut rows = stmt.query([])?;
+        let mut rows = stmt.query([bucket_id.to_string()])?;
 
         let mut files = Vec::new();
         while let Some(row) = rows.next()? {
@@ -294,7 +296,7 @@ impl Commit {
             Ok(None)
         } else {
             Ok(Some(CommitData {
-                bucket: bucket_name,
+                bucket: bucket_id.to_string(),
                 files,
                 timestamp: "".to_string(),
                 previous: None,
@@ -836,7 +838,7 @@ mod tests {
     fn test_load_last_commit_no_commit() {
         // This test would require a database setup, so we'll just test the function signature
         // In a real scenario, you would set up a test database
-        let result = Commit::load_last_commit("nonexistent_bucket".to_string());
+        let result = Commit::load_last_commit(Uuid::new_v4());
 
         // Since there's no database setup, this will likely fail
         // In a proper test environment, you would set up a test database
