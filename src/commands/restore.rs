@@ -5,12 +5,13 @@ use crate::errors::BucketError;
 use crate::utils::checks;
 use crate::utils::utils::{find_bucket_path, with_db_connection};
 use crate::CURRENT_DIR;
+use duckdb::ToSql;
 use log::{debug, error};
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use std::path::PathBuf;
 
-/// Restore a file from the last commit
+/// Restore a file from a specific commit or the most recent commit
 pub struct Restore {
     args: RestoreCommand,
 }
@@ -38,31 +39,56 @@ impl BucketCommand for Restore {
 
         let file_path = self.args.file.clone();
 
-        // Get the file's hash from the last commit using a shared connection
+        // Get the file's hash from the specified commit or the last commit using a shared connection
         let hash = with_db_connection(|connection| {
-            let mut stmt = connection.prepare(
-                "SELECT f.hash 
-            FROM files f
-            JOIN commits c ON f.commit_id = c.id
-            WHERE f.file_path = ?1
-            AND c.created_at = (
-                SELECT MAX(created_at) 
-                FROM commits 
-                WHERE bucket_id = ?2
-            )",
-            )?;
             let relative_path = PathBuf::from(&file_path)
                 .strip_prefix(&bucket_path)
                 .unwrap_or(&PathBuf::from(&file_path))
                 .to_string_lossy()
                 .to_string();
-            let rows = stmt.query_map([&relative_path, &bucket.id.to_string()], |row| {
+
+            let (query, params): (String, Vec<String>) = match &self.args.commit_id {
+                Some(commit_id) => {
+                    // Query for specific commit ID
+                    let query = "SELECT f.hash 
+                        FROM files f
+                        JOIN commits c ON f.commit_id = c.id
+                        WHERE f.file_path = ?1
+                        AND c.id = ?2
+                        AND c.bucket_id = ?3".to_string();
+                    let params = vec![relative_path, commit_id.clone(), bucket.id.to_string()];
+                    (query, params)
+                },
+                None => {
+                    // Query for latest commit (existing behavior)
+                    let query = "SELECT f.hash 
+                        FROM files f
+                        JOIN commits c ON f.commit_id = c.id
+                        WHERE f.file_path = ?1
+                        AND c.created_at = (
+                            SELECT MAX(created_at) 
+                            FROM commits 
+                            WHERE bucket_id = ?2
+                        )".to_string();
+                    let params = vec![relative_path, bucket.id.to_string()];
+                    (query, params)
+                }
+            };
+
+            let mut stmt = connection.prepare(&query)?;
+            let param_refs: Vec<&dyn ToSql> = params.iter().map(|p| p as &dyn ToSql).collect();
+            let rows = stmt.query_map(&param_refs[..], |row| {
                 row.get::<_, String>(0)
             })?;
 
             match rows.last() {
                 Some(Ok(hash)) => Ok(hash),
-                _ => Err(BucketError::FileNotFound(file_path.clone())),
+                _ => match &self.args.commit_id {
+                    Some(commit_id) => Err(BucketError::from(format!(
+                        "File '{}' not found in commit '{}'", file_path, commit_id
+                    ).as_str())),
+                    None => Err(BucketError::FileNotFound(file_path.clone())),
+                }
             }
         })?;
 
@@ -83,7 +109,10 @@ impl BucketCommand for Restore {
                 BucketError::from(e)
             })?;
 
-        println!("Restored {}", file_path);
+        match &self.args.commit_id {
+            Some(commit_id) => println!("Restored {} from commit {}", file_path, commit_id),
+            None => println!("Restored {} from latest commit", file_path),
+        }
         Ok(())
     }
 }
