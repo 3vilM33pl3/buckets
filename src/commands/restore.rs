@@ -173,9 +173,9 @@ mod tests {
         // Change to bucket directory
         env::set_current_dir(&bucket_dir).expect("invalid directory");
 
-        // Restore the file
+        // Restore the file (use relative path)
         let restore_cmd = RestoreCommand {
-            file: file_path.to_str().unwrap().to_string(),
+            file: "test_file.txt".to_string(),
             shared: Default::default(),
         };
         let cmd = Restore::new(&restore_cmd);

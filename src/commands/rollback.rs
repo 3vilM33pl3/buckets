@@ -331,6 +331,7 @@ url_check = "api.ipify.org"
     }
 
     #[test]
+    #[cfg(not(target_os = "macos"))] // Skip on macOS due to filesystem UTF-8 restrictions
     fn test_rollback_single_file_invalid_utf8_path() {
         let (_temp_dir, _repo_path, bucket_path) = create_test_repo_and_bucket_structure()
             .expect("Failed to create test repository structure");
