@@ -243,10 +243,20 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn test_checks_existing_bucket_repo() {
-        let current_dir = std::env::current_dir().expect("Failed to get current directory");
+        // Use a temporary directory instead of relying on current_dir which might be invalid
+        let temp_dir = tempfile::tempdir().expect("Failed to create temporary directory");
         let test_repo_name = "temp_test_existing_bucket_repo";
-        let existing_repo = current_dir.join(test_repo_name);
+        let existing_repo = temp_dir.path().join(test_repo_name);
         let buckets_dir = existing_repo.join(".buckets");
+        
+        // Save the original current directory to restore it later
+        let original_dir = std::env::current_dir().unwrap_or_else(|_| {
+            // If we can't get the current directory, use the temp directory
+            temp_dir.path().to_path_buf()
+        });
+        
+        // Set current directory to temp directory for the test
+        std::env::set_current_dir(temp_dir.path()).expect("Failed to change to temp directory");
 
         // Create a directory that looks like a bucket repo
         fs::create_dir_all(&buckets_dir).expect("Failed to create .buckets directory");
@@ -265,6 +275,9 @@ mod tests {
         let init = create_test_init_command(test_repo_name, "duckdb");
         let result = init.checks(test_repo_name);
 
+        // Restore original directory before cleanup
+        std::env::set_current_dir(&original_dir).ok(); // Ignore errors if original_dir is invalid
+        
         // Clean up the test directory
         fs::remove_dir_all(&existing_repo).expect("Failed to remove test directory");
 
