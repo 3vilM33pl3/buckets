@@ -4,9 +4,9 @@ use crate::data::bucket::{Bucket, BucketTrait};
 use crate::errors::BucketError;
 use crate::utils::checks;
 use crate::utils::checks::{find_directory_in_parents, is_valid_bucket};
+use crate::utils::utils::connect_to_db;
 use crate::CURRENT_DIR;
 use chrono::Utc;
-use duckdb::Connection;
 use log::error;
 use uuid::Uuid;
 
@@ -47,8 +47,7 @@ impl BucketCommand for Create {
         }
         .to_path_buf();
 
-        let db_path = buckets_repo_path.join("buckets.db");
-        let connection = Connection::open(db_path)?;
+        let connection = connect_to_db()?;
         let timestamp = Utc::now().to_rfc3339();
 
         match connection
