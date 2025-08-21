@@ -1,15 +1,21 @@
 use std::path::PathBuf;
+use serde::{Deserialize, Serialize};
 
 use crate::args::HistoryCommand;
 use crate::errors::BucketError;
 use crate::utils::utils::connect_to_db;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CommitRecord {
     id: String,
     message: String,
     created_at: String,
     bucket_name: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct HistoryOutput {
+    commits: Vec<CommitRecord>,
 }
 
 impl CommitRecord {
@@ -32,12 +38,18 @@ impl CommitRecord {
 }
 
 pub fn execute(command: HistoryCommand) -> Result<(), BucketError> {
-    let x = command;
-    println!("History command: {:?}", x);
-
     let current_dir = std::env::current_dir()?;
     let commits = fetch_commit_history(&current_dir)?;
-    display_commit_history(&commits);
+    
+    if command.shared.json {
+        let output = HistoryOutput { commits };
+        match serde_json::to_string_pretty(&output) {
+            Ok(json) => println!("{}", json),
+            Err(e) => eprintln!("Error serializing to JSON: {}", e),
+        }
+    } else {
+        display_commit_history(&commits);
+    }
 
     Ok(())
 }

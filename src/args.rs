@@ -39,6 +39,9 @@ pub struct CliArguments {
 pub struct SharedArguments {
     #[clap(short, long)]
     pub verbose: bool,
+    
+    #[clap(long)]
+    pub json: bool,
 }
 
 #[derive(Args, Clone)]
