@@ -41,7 +41,7 @@ pub struct SharedArguments {
     pub verbose: bool,
 }
 
-#[derive(Parser, Clone)]
+#[derive(Args, Clone)]
 pub struct InitCommand {
     #[clap(flatten)]
     pub shared: SharedArguments,
