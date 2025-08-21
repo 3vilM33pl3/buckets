@@ -5,6 +5,7 @@ use crate::errors::BucketError;
 use crate::utils::checks;
 use crate::utils::utils::with_db_connection;
 use crate::CURRENT_DIR;
+use log::{debug, info};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
@@ -38,14 +39,22 @@ impl BucketCommand for Stats {
 
     fn execute(&self) -> Result<(), BucketError> {
         let current_dir = CURRENT_DIR.with(|dir| dir.clone());
+        debug!("Generating stats for directory: {:?}", current_dir);
 
         if !checks::is_valid_bucket_repo(&current_dir) {
+            debug!("Not in a valid bucket repository");
             return Err(BucketError::NotInRepo);
         }
 
+        info!("Gathering repository statistics");
         let buckets = self.query_buckets()?;
+        debug!("Found {} buckets", buckets.len());
+        
         let total_commits = self.count_total_commits()?;
+        debug!("Found {} total commits", total_commits);
+        
         let total_files = self.count_total_files()?;
+        debug!("Found {} total files", total_files);
         
         let bucket_stats: Vec<BucketStats> = buckets.iter().map(|bucket| {
             let commit_count = self.count_bucket_commits(&bucket.id).unwrap_or(0);
