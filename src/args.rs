@@ -111,8 +111,11 @@ pub struct RestoreCommand {
     #[clap(flatten)]
     pub shared: SharedArguments,
 
-    #[clap(required = true)]
+    #[clap(required = true, help = "File path to restore")]
     pub file: String,
+    
+    #[clap(short = 'c', long = "commit", help = "Commit ID to restore from (defaults to most recent)")]
+    pub commit_id: Option<String>,
 }
 
 #[derive(Args, Clone)]
