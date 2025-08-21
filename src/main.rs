@@ -43,11 +43,11 @@ fn set_failed() {
     EXIT.with(|cell| cell.set(ExitCode::FAILURE));
 }
 
-fn init_logging(verbose_level: u8) {
-    let log_level = match verbose_level {
-        0 => LevelFilter::Warn,  // Default: warnings and errors only
-        1 => LevelFilter::Info,  // -v: info level
-        _ => LevelFilter::Debug, // -vv and beyond: debug level
+fn init_logging(verbose: bool) {
+    let log_level = if verbose {
+        LevelFilter::Debug  // -v: debug level
+    } else {
+        LevelFilter::Warn   // Default: warnings and errors only
     };
 
     Builder::from_default_env()

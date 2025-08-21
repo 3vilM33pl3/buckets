@@ -59,8 +59,8 @@ pub struct CliArguments {
 
 #[derive(Args, Default, Debug, Clone)]
 pub struct SharedArguments {
-    #[clap(short, long, action = clap::ArgAction::Count)]
-    pub verbose: u8,
+    #[clap(short, long)]
+    pub verbose: bool,
     
     #[clap(long)]
     pub json: bool,
