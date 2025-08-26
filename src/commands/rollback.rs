@@ -331,13 +331,14 @@ url_check = "api.ipify.org"
     }
 
     #[test]
+    #[serial]
     #[cfg(not(target_os = "macos"))] // Skip on macOS due to filesystem UTF-8 restrictions
     fn test_rollback_single_file_invalid_utf8_path() {
         let (_temp_dir, _repo_path, bucket_path) = create_test_repo_and_bucket_structure()
             .expect("Failed to create test repository structure");
 
         // Change to the bucket directory to simulate proper working directory context
-        let original_dir = std::env::current_dir().expect("Failed to get current directory");
+        let original_dir = std::env::current_dir().ok();
         std::env::set_current_dir(&bucket_path).expect("Failed to change directory");
 
         // Create a file with invalid UTF-8 name (this is platform-specific)
@@ -387,8 +388,10 @@ url_check = "api.ipify.org"
             assert!(result.is_err());
         }
 
-        // Restore original directory - use let _ to ignore potential errors during cleanup
-        let _ = std::env::set_current_dir(&original_dir);
+        // Restore original directory if it still exists
+        if let Some(dir) = original_dir {
+            let _ = std::env::set_current_dir(&dir);
+        }
     }
 
     #[test]
@@ -470,18 +473,21 @@ url_check = "api.ipify.org"
     }
 
     #[test]
+    #[serial]
     fn test_rollback_all_empty_bucket() {
         let (_temp_dir, _repo_path, bucket_path) = create_test_repo_and_bucket_structure()
             .expect("Failed to create test repository structure");
 
         // Change to the bucket directory to simulate proper working directory context
-        let original_dir = std::env::current_dir().expect("Failed to get current directory");
+        let original_dir = std::env::current_dir().ok();
         std::env::set_current_dir(&bucket_path).expect("Failed to change directory");
 
         let result = rollback_all(&std::env::current_dir().unwrap());
 
-        // Restore original directory
-        std::env::set_current_dir(original_dir).expect("Failed to restore directory");
+        // Restore original directory if it still exists
+        if let Some(dir) = original_dir {
+            let _ = std::env::set_current_dir(&dir);
+        }
 
         // Should succeed and print "No files in bucket"
         assert!(result.is_ok());
