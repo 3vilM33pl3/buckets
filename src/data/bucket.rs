@@ -2,7 +2,7 @@ use crate::data::commit::{Commit, CommitStatus, CommittedFile};
 use crate::errors::BucketError;
 use crate::utils::checks::{find_directory_in_parents, is_valid_bucket_info};
 use crate::utils::utils::{
-    connect_to_db, find_bucket_repo, find_files_excluding_top_level_b, hash_file,
+    find_bucket_repo, find_files_excluding_top_level_b, hash_file,
 };
 use blake3::Hash;
 use log::debug;
@@ -32,8 +32,6 @@ pub trait BucketTrait {
     fn full_path(&self) -> Result<PathBuf, BucketError>;
     #[allow(dead_code)]
     fn list_files_with_metadata_in_bucket(&self) -> io::Result<Commit>;
-    #[allow(dead_code)]
-    fn load_last_commit(&self) -> Result<Option<Commit>, BucketError>;
 }
 
 impl BucketTrait for Bucket {
@@ -165,55 +163,6 @@ impl BucketTrait for Bucket {
             previous: None,
             next: None,
         })
-    }
-
-    fn load_last_commit(&self) -> Result<Option<Commit>, BucketError> {
-        let connection = connect_to_db()?;
-
-        let mut stmt = connection.prepare(
-            "SELECT f.id, f.file_path, f.hash
-             FROM files f
-             JOIN commits c ON f.commit_id = c.id
-             WHERE c.bucket_id = ?
-             ORDER BY c.created_at DESC
-             LIMIT 1",
-        )?;
-
-        let mut rows = stmt.query([self.id.to_string()])?;
-
-        let mut files = Vec::new();
-        while let Some(row) = rows.next()? {
-            let uuid_string: String = row.get(0)?;
-            let hex_string: String = row.get(2)?;
-
-            files.push(CommittedFile {
-                id: Uuid::parse_str(&uuid_string)
-                    .map_err(|e| BucketError::InvalidData(e.to_string()))?,
-                name: row.get(1)?,
-                hash: Hash::from_hex(&hex_string)
-                    .map_err(|e| BucketError::InvalidData(e.to_string()))?,
-                previous_hash: Hash::from_str(
-                    "0000000000000000000000000000000000000000000000000000000000000000",
-                )
-                .map_err(|e| BucketError::InvalidData(e.to_string()))?,
-                status: CommitStatus::Committed,
-            });
-        }
-
-        if let Err((_conn, e)) = connection.close() {
-            return Err(BucketError::from(io::Error::new(
-                io::ErrorKind::Other,
-                format!("Failed to close database connection: {}", e),
-            )));
-        }
-
-        Ok(Some(Commit {
-            bucket: self.name.clone(),
-            files,
-            timestamp: "".to_string(),
-            previous: None,
-            next: None,
-        }))
     }
 }
 
