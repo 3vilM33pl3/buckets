@@ -8,7 +8,7 @@ pub enum Command {
     Init(InitCommand),
     Create(CreateCommand),
     Commit(CommitCommand),
-    Revert(RestoreCommand),
+    Revert(RevertCommand),
     Rollback(RollbackCommand),
     Stash(StashCommand),
     // Information commands
@@ -107,14 +107,14 @@ pub struct CommitCommand {
 }
 
 #[derive(Args, Clone)]
-pub struct RestoreCommand {
+pub struct RevertCommand {
     #[clap(flatten)]
     pub shared: SharedArguments,
 
-    #[clap(required = true, help = "File path to restore")]
+    #[clap(required = true, help = "File path to revert")]
     pub file: String,
     
-    #[clap(short = 'c', long = "commit", help = "Commit ID to restore from (defaults to most recent)")]
+    #[clap(short = 'c', long = "commit", help = "Commit ID to revert from (defaults to most recent)")]
     pub commit_id: Option<String>,
 }
 
