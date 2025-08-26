@@ -32,6 +32,7 @@ serial_test = "3.2"
 
 [features]
 default = []
+# Note: postgres feature requires nightly Rust due to edition2024 dependency
 postgres = ["dep:postgresql_embedded", "dep:postgres", "dep:tokio"]
 
 [lints.clippy]
