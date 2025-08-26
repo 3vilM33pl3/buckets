@@ -25,8 +25,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.87.0
-          components: clippy, rustfmt
+          toolchain: stable
 
       - uses: Swatinem/rust-cache@v2
             
