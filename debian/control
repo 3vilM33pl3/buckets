@@ -1,0 +1,28 @@
+Source: buckets
+Section: utils
+Priority: optional
+Maintainer: 3vilM33pl3 <your-email@example.com>
+Build-Depends: debhelper-compat (= 13),
+               cargo,
+               rustc (>= 1.70),
+               libssl-dev,
+               pkg-config
+Standards-Version: 4.6.0
+Homepage: https://github.com/3vilM33pl3/buckets
+Rules-Requires-Root: no
+
+Package: buckets
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: CLI tool for game asset and expectation management
+ Buckets is a CLI tool for game asset and expectation management. It controls
+ versions of work and sets/records expectations between collaborators. Each
+ stage of the workflow is represented by a bucket containing resources to
+ create game assets at specific production pipeline stages.
+ .
+ Features:
+  - Version control for game assets
+  - Bucket-based workflow management
+  - File integrity checking with BLAKE3 hashing
+  - Compression support with zstd
+  - DuckDB-based data persistence

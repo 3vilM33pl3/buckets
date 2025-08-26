@@ -3,113 +3,274 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
+# Buckets
 
-!! Work in progress, only a few commands are implemented !!
+A CLI tool for game asset and expectation management that controls versions of work and sets/records expectations between collaborators.
 
-### Overview
-Buckets is a tool for game asset and expectation management. It controls the version of work a user creates and
-sets and records expectations they have of each others work to improve collaboration. Every stage of the workflow is 
-represented by a bucket which contains all the resources to create a game asset in a specific stage of the
-production pipeline. The workflow is represented by linking buckets together by expectations, so that the output of 
-one bucket is the input of another bucket.
+## Overview
 
-Expectations are simple rules to indicate what a bucket needs to finalize it's work.
-Once you finish your work in a bucket you can finalize it, which will automatically check all expectations and
-when satisfied move the expected output of a bucket to the next bucket in the workflow.
+Buckets is a version control and workflow management tool designed specifically for game asset creation. Every stage of the workflow is represented by a bucket containing all the resources needed to create game assets at specific production pipeline stages.
 
-### Example
-Let's say you want to create a 3D model for a game. The model needs concept art and textures.
-For this you can create two buckets with expectations. The first bucket contains concept art and the second bucket
-contains the 3D model. The first bucket has three expectations:
-1. The bucket has a mood board
-2. The bucket has concept art
-3. The concept art is approved by the art director
+### Key Features
 
-The second bucket has three expectations:
-1. There is concept art for the model
-2. The bucket has a 3D model
-3. There are textures for the model
+- **Version Control**: Track and manage multiple versions of game assets
+- **Bucket-based Workflow**: Organize work into buckets representing different pipeline stages
+- **Expectation Management**: Define and check requirements between workflow stages
+- **File Integrity**: BLAKE3 hashing ensures file integrity
+- **Compression**: Built-in zstd compression for efficient storage
+- **Database Backend**: DuckDB for fast, reliable data persistence
 
-Both buckets are linked together so that the output of the first bucket is the input of the second bucket.
+### How It Works
 
-Once the concept art is ready and approved, you can 'finalize' the bucket. The second bucket will automatically receive the latest version of the concept art,
-which will satisfy the first expectation. Now you can create the 3D model and textures. Once finished and all expectations are met
-you can finalize the bucket, and it's ready for use in the game.
+The workflow is represented by linking buckets together through expectations, where the output of one bucket becomes the input of another. Expectations are simple rules that indicate what a bucket needs to finalize its work.
 
-Buckets are generally defined per person or team who create a specific type of content. So if you are a 3D artist you will have a bucket for
-your 3D models and textures and if you are a concept artist you will have a bucket for your concept art.
+#### Example Workflow
 
-To make it possible to iterate over multiple versions you can give a version number to a finalized bucket.
-Meaning you can have multiple 'final' versions of you assets. This is useful if you want to keep track of the
-changes you made to an asset which have dependencies on other assets. For example, if you change the concept art
-of a character, you will also have to change the 3D model and textures. By giving a version number you will know
-which version of the 3D model and textures are based on which version of the concept art.
+Consider creating a 3D model for a game that needs concept art and textures:
 
-### Commands
-`bucket init`
-Initialize bucket repository
+**Bucket 1: Concept Art**
+- Expectations:
+  1. Has a mood board
+  2. Has concept art
+  3. Concept art is approved by art director
 
-#### Buckets
-`bucket create [name]`
-Create a bucket for content
+**Bucket 2: 3D Model**
+- Expectations:
+  1. Has concept art for the model
+  2. Has a 3D model
+  3. Has textures for the model
 
-`bucket commit [message]`
-Set the version of a bucket and store its content
+Once the concept art is ready and approved, you finalize the bucket. The 3D model bucket automatically receives the latest version of the concept art, satisfying its first expectation.
 
-`bucket finalize [version]`
-Finalize a bucket and store its content
+## Installation
 
-`bucket list`
-Lists all buckets in a repository
+### From Source
 
-`bucket history`
-List all commits in a bucket
+```bash
+# Clone the repository
+git clone https://github.com/3vilM33pl3/buckets.git
+cd buckets
 
-`bucket status`
-Show which files have changed since the last commit
+# Build with Cargo
+cargo build --release
 
-`bucket revert all`
-Discards all changes and restores last commit
+# The binary will be at target/release/buckets
+```
 
-`bucket revert [file]`
-Discards changes of a specific file and restores the file as it was in the
-last commit
+### Debian Package
 
-`bucket rollback [file] [commit id]`
-Replaces a committed file in the bucket to the version found in the bucket with the specified commit id
+Build and install as a Debian package for system-wide installation:
 
-`bucket rollback all [commit id]`
-Replaces all committed files in the bucket with the versions found in the bucket with the specified commit id
+```bash
+# Install build dependencies
+sudo apt-get install dpkg-dev debhelper devscripts cargo rustc pkg-config libssl-dev
 
-`bucket stash`
-Temporarily stashes the current version so you can retrieve another version
+# Build the package (choose one method)
+./build-deb.sh                    # Full clean build (slower, first time)
+./build-deb-fast.sh               # Faster incremental build
+make -f Makefile.deb deb          # Using the Makefile
+dpkg-buildpackage -us -uc -b     # Using dpkg directly
 
-`bucket stash restore`
-Restores stash
+# Install the package
+sudo dpkg -i ../buckets_*.deb
 
-#### Rules and expectations
-`bucket expect bucket [name]`
-Expect the existence of a bucket with specified name
+# If there are dependency issues
+sudo apt-get install -f
+```
 
-`bucket expect set file [type] [bucket directory]`
-Set what file to expect in bucket
+**Note**: The first build will take several minutes to download and compile all Rust dependencies. Subsequent builds using `build-deb-fast.sh` will be much faster as they reuse build artifacts.
 
-`bucket check`
-Check if all expectations are met. If not, print what is missing.
+To uninstall:
+```bash
+sudo apt-get remove buckets       # Remove package
+sudo apt-get purge buckets        # Remove package and config files
+```
 
-`bucket link [from bucket directory] [to bucket directory]`
-Create a one way link between two buckets
+## Commands
 
-### Development Setup
+### Repository Management
 
-When using VSCode for development:
+#### `buckets init <repo_name>`
+Initialize a new buckets repository.
 
-1. Copy the VSCode settings template to create your local settings:
-   ```bash
-   cp .vscode/settings.json.template .vscode/settings.json
-   ```
+```bash
+buckets init my_game_assets
+```
 
-2. Adjust the rust-analyzer.rustc settings in `.vscode/settings.json` to match your local toolchain.
+### Bucket Operations
+
+#### `buckets create <bucket_name>`
+Create a new bucket for content.
+
+```bash
+buckets create concept_art
+```
+
+#### `buckets list`
+List all buckets in the repository.
+
+```bash
+buckets list
+```
+
+### Version Control
+
+#### `buckets commit <message>`
+Save the current state of a bucket with a descriptive message.
+
+```bash
+buckets commit "Added character concept sketches"
+```
+
+#### `buckets history`
+Show the commit history for the current bucket.
+
+```bash
+buckets history
+```
+
+#### `buckets status`
+Show which files have changed since the last commit.
+
+```bash
+buckets status
+```
+
+#### `buckets stats`
+Display statistics about the bucket and repository.
+
+```bash
+buckets stats
+```
+
+### File Management
+
+#### `buckets revert <file>`
+Restore a specific file from a previous commit.
+
+```bash
+# Restore from the most recent commit
+buckets revert assets/model.blend
+
+# Restore from a specific commit
+buckets revert assets/model.blend --commit abc123def
+```
+
+#### `buckets rollback [--path <file>]`
+Discard uncommitted changes and restore files to their state in the last commit.
+
+```bash
+# Rollback all changes
+buckets rollback
+
+# Rollback a specific file
+buckets rollback --path assets/texture.png
+```
+
+#### `buckets stash`
+Temporarily save current changes to work on something else.
+
+```bash
+buckets stash
+```
+
+### Expectations and Workflow
+
+#### `buckets expect`
+Define what this bucket expects from other buckets.
+
+```bash
+buckets expect
+```
+
+#### `buckets check`
+Verify if all expectations are met.
+
+```bash
+buckets check
+```
+
+#### `buckets link`
+Create a link between buckets for workflow dependencies.
+
+```bash
+buckets link
+```
+
+#### `buckets finalize`
+Mark a bucket as complete when all expectations are met.
+
+```bash
+buckets finalize
+```
+
+### Database Operations
+
+#### `buckets schema`
+Display or manage the database schema.
+
+```bash
+buckets schema
+```
+
+## Development
+
+### Prerequisites
+
+- Rust 1.70 or later
+- Cargo
+
+### Building from Source
+
+```bash
+# Debug build
+cargo build
+
+# Release build
+cargo build --release
+
+# Run tests
+cargo test
+
+# Run with verbose logging
+buckets -v <command>
+```
+
+### VSCode Setup
+
+For VSCode development:
+
+```bash
+# Copy the settings template
+cp .vscode/settings.json.template .vscode/settings.json
+
+# Adjust rust-analyzer settings to match your toolchain
+```
+
+### Project Structure
+
+```
+buckets/
+├── src/
+│   ├── commands/     # Command implementations
+│   ├── data/         # Data structures
+│   ├── utils/        # Utility functions
+│   └── main.rs       # Entry point
+├── tests/            # Integration tests
+├── docs/             # Documentation
+└── debian/           # Debian packaging files
+```
+
+## Technical Details
+
+- **Storage**: Files are stored compressed (zstd) in `.b/storage/` using content-addressable hashing
+- **Database**: DuckDB stores metadata, commit history, and bucket information
+- **Hashing**: BLAKE3 for fast, secure content hashing
+- **Compression**: Zstd compression for efficient storage
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 

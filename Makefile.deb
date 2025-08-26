@@ -1,0 +1,48 @@
+# Makefile for building Debian package
+# Usage: make -f Makefile.deb [target]
+
+.PHONY: all clean deb install-deps check-deps help
+
+# Default target
+all: deb
+
+help:
+	@echo "Available targets:"
+	@echo "  make -f Makefile.deb deb         - Build the Debian package"
+	@echo "  make -f Makefile.deb clean       - Clean build artifacts"
+	@echo "  make -f Makefile.deb install-deps- Install build dependencies"
+	@echo "  make -f Makefile.deb check-deps  - Check if dependencies are installed"
+	@echo "  make -f Makefile.deb help        - Show this help message"
+
+# Check for required dependencies
+check-deps:
+	@echo "Checking build dependencies..."
+	@which cargo > /dev/null || (echo "Error: cargo not found. Install Rust first." && exit 1)
+	@which dpkg-buildpackage > /dev/null || (echo "Error: dpkg-buildpackage not found. Run: make -f Makefile.deb install-deps" && exit 1)
+	@echo "All dependencies are installed."
+
+# Install build dependencies
+install-deps:
+	@echo "Installing build dependencies..."
+	sudo apt-get update
+	sudo apt-get install -y dpkg-dev debhelper devscripts cargo rustc pkg-config libssl-dev
+
+# Build the Debian package
+deb: check-deps
+	@echo "Building Debian package..."
+	./build-deb.sh
+
+# Clean build artifacts
+clean:
+	@echo "Cleaning build artifacts..."
+	cargo clean || true
+	rm -f ../buckets_*.deb ../buckets_*.dsc ../buckets_*.tar.gz
+	rm -f ../buckets_*.buildinfo ../buckets_*.changes
+	rm -rf debian/buckets debian/.debhelper debian/cargo
+	rm -f debian/files debian/*.log debian/*.substvars
+	@echo "Clean complete."
+
+# Install the built package (requires sudo)
+install: deb
+	@echo "Installing buckets package..."
+	sudo dpkg -i ../buckets_*.deb || sudo apt-get install -f -y

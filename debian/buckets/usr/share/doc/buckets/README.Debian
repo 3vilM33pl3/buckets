@@ -1,0 +1,68 @@
+buckets for Debian
+==================
+
+This package provides the buckets CLI tool for game asset and expectation management.
+
+Building the Package
+--------------------
+
+To build the Debian package, you have several options:
+
+1. Using the build script:
+   ```
+   ./build-deb.sh
+   ```
+
+2. Using the Makefile:
+   ```
+   make -f Makefile.deb deb
+   ```
+
+3. Using dpkg-buildpackage directly:
+   ```
+   dpkg-buildpackage -us -uc -b
+   ```
+
+Prerequisites
+-------------
+
+Before building, ensure you have the following installed:
+- Rust toolchain (cargo, rustc)
+- dpkg-dev
+- debhelper (>= 13)
+- devscripts
+- pkg-config
+- libssl-dev
+
+Install all dependencies with:
+```
+sudo apt-get install dpkg-dev debhelper devscripts cargo rustc pkg-config libssl-dev
+```
+
+Installation
+------------
+
+After building, install the package with:
+```
+sudo dpkg -i ../buckets_*.deb
+```
+
+If there are dependency issues, fix them with:
+```
+sudo apt-get install -f
+```
+
+Uninstallation
+--------------
+
+To remove the package:
+```
+sudo apt-get remove buckets
+```
+
+To remove the package and its configuration files:
+```
+sudo apt-get purge buckets
+```
+
+ -- 3vilM33pl3 <your-email@example.com>  Tue, 26 Aug 2025 19:29:16 +0100
