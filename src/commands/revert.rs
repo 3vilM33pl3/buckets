@@ -1,4 +1,4 @@
-use crate::args::RestoreCommand;
+use crate::args::RevertCommand;
 use crate::commands::BucketCommand;
 use crate::data::bucket::{Bucket, BucketTrait};
 use crate::errors::BucketError;
@@ -11,13 +11,13 @@ use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use std::path::PathBuf;
 
-/// Restore a file from a specific commit or the most recent commit
-pub struct Restore {
-    args: RestoreCommand,
+/// Revert a file from a specific commit or the most recent commit
+pub struct Revert {
+    args: RevertCommand,
 }
 
-impl BucketCommand for Restore {
-    type Args = RestoreCommand;
+impl BucketCommand for Revert {
+    type Args = RevertCommand;
 
     fn new(args: &Self::Args) -> Self {
         Self { args: args.clone() }
@@ -97,28 +97,28 @@ impl BucketCommand for Restore {
         let target_path = PathBuf::from(&file_path);
 
         debug!(
-            "Restoring {} from {}",
+            "Reverting {} from {}",
             target_path.display(),
             storage_path.display()
         );
 
         // Decompress and copy the file from storage
-        self.decompress_and_restore_file(&storage_path, &target_path)
+        self.decompress_and_revert_file(&storage_path, &target_path)
             .map_err(|e| {
-                error!("Failed to restore file: {}", e);
+                error!("Failed to revert file: {}", e);
                 BucketError::from(e)
             })?;
 
         match &self.args.commit_id {
-            Some(commit_id) => println!("Restored {} from commit {}", file_path, commit_id),
-            None => println!("Restored {} from latest commit", file_path),
+            Some(commit_id) => println!("Reverted {} from commit {}", file_path, commit_id),
+            None => println!("Reverted {} from latest commit", file_path),
         }
         Ok(())
     }
 }
 
-impl Restore {
-    fn decompress_and_restore_file(
+impl Revert {
+    fn decompress_and_revert_file(
         &self,
         storage_path: &PathBuf,
         target_path: &PathBuf,
@@ -162,7 +162,7 @@ mod tests {
 
     #[test]
     #[serial]
-    fn test_restore_command() {
+    fn test_revert_command() {
         // Setup test environment
         let temp_dir = tempdir().expect("invalid temp dir").keep();
         log::debug!("temp_dir: {:?}", temp_dir);
@@ -202,23 +202,23 @@ mod tests {
         // Change to bucket directory
         env::set_current_dir(&bucket_dir).expect("invalid directory");
 
-        // Restore the file (use relative path)
-        let restore_cmd = RestoreCommand {
+        // Revert the file (use relative path)
+        let revert_cmd = RevertCommand {
             file: "test_file.txt".to_string(),
             shared: Default::default(),
             commit_id: None,
         };
-        let cmd = Restore::new(&restore_cmd);
+        let cmd = Revert::new(&revert_cmd);
         cmd.execute().unwrap();
 
-        // Verify the file was restored using binary comparison
-        let restored_content = fs::read(&file_path).expect("invalid read");
-        assert_eq!(restored_content, original_content);
+        // Verify the file was reverted using binary comparison
+        let reverted_content = fs::read(&file_path).expect("invalid read");
+        assert_eq!(reverted_content, original_content);
     }
 
     #[test]
     #[serial]
-    fn test_decompress_and_restore_file() {
+    fn test_decompress_and_revert_file() {
         // Create a temporary directory for test files
         let temp_dir = tempdir().expect("Failed to create temp directory");
 
@@ -237,26 +237,26 @@ mod tests {
         compress_file(&source_path, &compressed_path, DEFAULT_COMPRESSION_LEVEL)
             .expect("Failed to compress and store file");
 
-        // Create restored file path
-        let restored_path = temp_dir.path().join("restored.txt");
+        // Create reverted file path
+        let reverted_path = temp_dir.path().join("reverted.txt");
 
         // Call the function we're testing
-        let restore_cmd = Restore::new(&RestoreCommand {
+        let revert_cmd = Revert::new(&RevertCommand {
             shared: crate::args::SharedArguments::default(),
             file: "test".to_string(),
             commit_id: None,
         });
-        restore_cmd
-            .decompress_and_restore_file(&compressed_path, &restored_path)
-            .expect("Failed to decompress and restore file");
+        revert_cmd
+            .decompress_and_revert_file(&compressed_path, &reverted_path)
+            .expect("Failed to decompress and revert file");
 
-        // Read the restored content
-        let restored_content = std::fs::read(&restored_path).expect("Failed to read restored file");
+        // Read the reverted content
+        let reverted_content = std::fs::read(&reverted_path).expect("Failed to read reverted file");
 
         // Compare content
         assert_eq!(
-            restored_content, original_content,
-            "Restored content doesn't match original"
+            reverted_content, original_content,
+            "Reverted content doesn't match original"
         );
     }
 }

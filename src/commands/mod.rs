@@ -126,7 +126,7 @@ pub(crate) mod history;
 pub(crate) mod init;
 pub(crate) mod link;
 pub(crate) mod list;
-pub(crate) mod restore;
+pub(crate) mod revert;
 pub(crate) mod rollback;
 pub mod schema;
 pub(crate) mod stash;
