@@ -1,0 +1,36 @@
+#!/usr/bin/make -f
+
+# Enable all hardening options
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+export DEB_LDFLAGS_MAINT_APPEND = -Wl,-z,defs
+
+# Cargo home for downloading dependencies
+export CARGO_HOME = $(CURDIR)/debian/cargo
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+	# No configure step needed for Rust projects
+
+override_dh_auto_build:
+	cargo build --release --locked
+
+override_dh_auto_test:
+	# Skip tests during package build to save time
+	# Tests should be run separately in CI/CD
+	@echo "Skipping tests during package build"
+
+override_dh_auto_install:
+	# Install the binary
+	install -D -m 0755 target/release/buckets \
+		$(CURDIR)/debian/buckets/usr/bin/buckets
+
+override_dh_auto_clean:
+	cargo clean
+	rm -rf $(CARGO_HOME)
+	dh_auto_clean
+
+override_dh_strip:
+	# Strip debug symbols to reduce package size
+	dh_strip --no-automatic-dbgsym

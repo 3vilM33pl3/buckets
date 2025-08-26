@@ -1,0 +1,10 @@
+buckets (0.1.6-1) unstable; urgency=medium
+
+  * Initial Debian package release
+  * Rename restore command to revert for consistency
+  * Fix restore command compile errors and rollback test race conditions
+  * Improve revert and rollback command documentation
+  * Add support for restoring from specific commit ID
+  * Implement verbose logging with -v flag
+
+ -- 3vilM33pl3 <your-email@example.com>  Tue, 26 Aug 2025 19:29:16 +0100
