@@ -206,6 +206,7 @@ mod tests {
         let restore_cmd = RestoreCommand {
             file: "test_file.txt".to_string(),
             shared: Default::default(),
+            commit_id: None,
         };
         let cmd = Restore::new(&restore_cmd);
         cmd.execute().unwrap();
@@ -243,6 +244,7 @@ mod tests {
         let restore_cmd = Restore::new(&RestoreCommand {
             shared: crate::args::SharedArguments::default(),
             file: "test".to_string(),
+            commit_id: None,
         });
         restore_cmd
             .decompress_and_restore_file(&compressed_path, &restored_path)
