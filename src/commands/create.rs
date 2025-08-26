@@ -2,12 +2,13 @@ use crate::args::CreateCommand;
 use crate::commands::BucketCommand;
 use crate::data::bucket::{Bucket, BucketTrait};
 use crate::errors::BucketError;
+use crate::postgres_db::get_database;
 use crate::utils::checks;
 use crate::utils::checks::{find_directory_in_parents, is_valid_bucket};
-use crate::utils::utils::connect_to_db;
 use crate::CURRENT_DIR;
 use chrono::Utc;
 use log::error;
+use tokio_postgres::types::ToSql;
 use uuid::Uuid;
 
 /// Create a new bucket
@@ -47,60 +48,38 @@ impl BucketCommand for Create {
         }
         .to_path_buf();
 
-        let connection = connect_to_db()?;
-        let timestamp = Utc::now().to_rfc3339();
-
-        match connection
-        .execute(
-            "INSERT INTO buckets (id, name, path, created_at) VALUES (gen_random_uuid(), ?1, ?2, ?3)",
-            [bucket_name, relative_path.to_str().ok_or_else(||
-                std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid path string"))?, &timestamp],
-        )
-        .map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Error inserting into database: {}", e),
-            )
-        }) {
-        Ok(_) => {}
-        Err(e) => {
-            error!("Error inserting into database: {}", e);
-            return Err(e.into());
-        }
-    }
-
-        let mut stmt = connection
-            .prepare("SELECT id FROM buckets WHERE name = ?1 AND path = ?2")
-            .map_err(|e| {
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Error preparing statement: {}", e),
-                )
+        // Create async runtime for database operations
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| BucketError::from(format!("Failed to create async runtime: {}", e).as_str()))?;
+        
+        let bucket_id = rt.block_on(async {
+            let db = get_database().await?;
+            let timestamp = Utc::now().to_rfc3339();
+            
+            let path_str = relative_path.to_str().ok_or_else(|| {
+                BucketError::from("Invalid path string")
             })?;
-
-        let bucket_id_str: String = stmt
-            .query_row(
-                [
-                    bucket_name,
-                    relative_path.to_str().ok_or_else(|| {
-                        std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid path string")
-                    })?,
-                ],
-                |row| row.get(0),
-            )
-            .map_err(|e| {
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Error querying statement: {}", e),
-                )
+            
+            let params: Vec<&(dyn ToSql + Sync)> = vec![bucket_name, &path_str, &timestamp];
+            
+            // Insert and get the new bucket ID in one query
+            let rows = db.query(
+                "INSERT INTO buckets (id, name, path, created_at) VALUES (uuid_generate_v4(), $1, $2, $3) RETURNING id",
+                &params,
+            ).await.map_err(|e| {
+                BucketError::from(format!("Error inserting into database: {}", e).as_str())
             })?;
-
-        let bucket_id = Uuid::parse_str(&bucket_id_str).map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("Error parsing UUID: {}", e),
-            )
+            
+            if let Some(row) = rows.first() {
+                let id_str: String = row.get(0);
+                Uuid::parse_str(&id_str).map_err(|e| {
+                    BucketError::from(format!("Error parsing UUID: {}", e).as_str())
+                })
+            } else {
+                Err(BucketError::from("Failed to get bucket ID from insert"))
+            }
         })?;
+        
         let bucket = Bucket::default(bucket_id, bucket_name, &relative_path);
         bucket
             .write_bucket_info()

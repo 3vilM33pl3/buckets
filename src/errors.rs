@@ -6,7 +6,7 @@ pub enum BucketError {
     #[error("IO Error: {0}")]
     IoError(#[from] io::Error),
     #[error("Database Error: {0}")]
-    DuckDB(#[from] duckdb::Error),
+    PostgreSQL(#[from] tokio_postgres::Error),
     #[error("Database Error: {0}")]
     DatabaseError(String),
     #[error("Bucket already exists")]
@@ -39,11 +39,6 @@ impl From<&str> for BucketError {
     }
 }
 
-impl From<BucketError> for duckdb::Error {
-    fn from(error: BucketError) -> duckdb::Error {
-        duckdb::Error::ToSqlConversionFailure(Box::new(error))
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -128,15 +123,11 @@ mod tests {
     }
 
     #[test]
-    fn test_error_to_duckdb_conversion() {
+    fn test_error_to_postgresql_conversion() {
         let bucket_error = BucketError::NotInRepo;
-        let duckdb_error: duckdb::Error = bucket_error.into();
-        match duckdb_error {
-            duckdb::Error::ToSqlConversionFailure(_) => {
-                // Conversion successful
-            }
-            _ => panic!("Expected ToSqlConversionFailure variant"),
-        }
+        // PostgreSQL errors don't have a direct conversion like DuckDB did
+        // We just verify the error can be displayed properly
+        assert!(format!("{}", bucket_error).contains("Not in a buckets repository"));
     }
 
     #[test]

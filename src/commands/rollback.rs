@@ -54,7 +54,11 @@ fn rollback_single_file(bucket_path: &PathBuf, file: &PathBuf) -> Result<(), Buc
 
     let bucket = Bucket::from_meta_data(bucket_path)?;
 
-    match Commit::load_last_commit(bucket.id) {
+    // Create async runtime for database operations
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| BucketError::from(format!("Failed to create async runtime: {}", e).as_str()))?;
+    
+    match rt.block_on(Commit::load_last_commit_async(bucket.id)) {
         Ok(None) => Err(BucketError::from(Error::new(
             ErrorKind::NotFound,
             "No previous commit found.",
@@ -100,7 +104,11 @@ fn rollback_all(bucket_path: &PathBuf) -> Result<(), BucketError> {
         return Ok(());
     }
 
-    match Commit::load_last_commit(bucket.id) {
+    // Create async runtime for database operations
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| BucketError::from(format!("Failed to create async runtime: {}", e).as_str()))?;
+
+    match rt.block_on(Commit::load_last_commit_async(bucket.id)) {
         Ok(None) => {
             return Err(BucketError::from(Error::new(
                 ErrorKind::NotFound,

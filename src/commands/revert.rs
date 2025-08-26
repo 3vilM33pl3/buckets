@@ -2,14 +2,15 @@ use crate::args::RevertCommand;
 use crate::commands::BucketCommand;
 use crate::data::bucket::{Bucket, BucketTrait};
 use crate::errors::BucketError;
+use crate::postgres_db::get_database;
 use crate::utils::checks;
-use crate::utils::utils::{find_bucket_path, with_db_connection};
+use crate::utils::utils::find_bucket_path;
 use crate::CURRENT_DIR;
-use duckdb::ToSql;
 use log::{debug, error};
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use std::path::PathBuf;
+use tokio_postgres::types::ToSql;
 
 /// Revert a file from a specific commit or the most recent commit
 pub struct Revert {
@@ -39,24 +40,32 @@ impl BucketCommand for Revert {
 
         let file_path = self.args.file.clone();
 
-        // Get the file's hash from the specified commit or the last commit using a shared connection
-        let hash = with_db_connection(|connection| {
+        // Create async runtime for database operations
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| BucketError::from(format!("Failed to create async runtime: {}", e).as_str()))?;
+
+        // Get the file's hash from the specified commit or the last commit
+        let hash = rt.block_on(async {
+            let db = get_database().await?;
+            
             let relative_path = PathBuf::from(&file_path)
                 .strip_prefix(&bucket_path)
                 .unwrap_or(&PathBuf::from(&file_path))
                 .to_string_lossy()
                 .to_string();
 
-            let (query, params): (String, Vec<String>) = match &self.args.commit_id {
+            let bucket_id_str = bucket.id.to_string();
+            
+            let (query, params): (String, Vec<&(dyn ToSql + Sync)>) = match &self.args.commit_id {
                 Some(commit_id) => {
                     // Query for specific commit ID
                     let query = "SELECT f.hash 
                         FROM files f
                         JOIN commits c ON f.commit_id = c.id
-                        WHERE f.file_path = ?1
-                        AND c.id = ?2
-                        AND c.bucket_id = ?3".to_string();
-                    let params = vec![relative_path, commit_id.clone(), bucket.id.to_string()];
+                        WHERE f.file_path = $1
+                        AND c.id = $2
+                        AND c.bucket_id = $3".to_string();
+                    let params: Vec<&(dyn ToSql + Sync)> = vec![&relative_path, commit_id, &bucket_id_str];
                     (query, params)
                 },
                 None => {
@@ -64,26 +73,25 @@ impl BucketCommand for Revert {
                     let query = "SELECT f.hash 
                         FROM files f
                         JOIN commits c ON f.commit_id = c.id
-                        WHERE f.file_path = ?1
+                        WHERE f.file_path = $1
                         AND c.created_at = (
                             SELECT MAX(created_at) 
                             FROM commits 
-                            WHERE bucket_id = ?2
+                            WHERE bucket_id = $2
                         )".to_string();
-                    let params = vec![relative_path, bucket.id.to_string()];
+                    let params: Vec<&(dyn ToSql + Sync)> = vec![&relative_path, &bucket_id_str];
                     (query, params)
                 }
             };
 
-            let mut stmt = connection.prepare(&query)?;
-            let param_refs: Vec<&dyn ToSql> = params.iter().map(|p| p as &dyn ToSql).collect();
-            let rows = stmt.query_map(&param_refs[..], |row| {
-                row.get::<_, String>(0)
-            })?;
+            let rows = db.query(&query, &params).await?;
 
-            match rows.last() {
-                Some(Ok(hash)) => Ok(hash),
-                _ => match &self.args.commit_id {
+            match rows.first() {
+                Some(row) => {
+                    let hash: String = row.get(0);
+                    Ok(hash)
+                },
+                None => match &self.args.commit_id {
                     Some(commit_id) => Err(BucketError::from(format!(
                         "File '{}' not found in commit '{}'", file_path, commit_id
                     ).as_str())),

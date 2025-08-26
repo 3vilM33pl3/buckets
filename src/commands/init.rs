@@ -1,7 +1,7 @@
 use crate::args::InitCommand;
 use crate::commands::BucketCommand;
 use crate::config::Config;
-use crate::database::{initialize_database, DatabaseType};
+use crate::database::{initialize_database_async, DatabaseType};
 use crate::errors::BucketError;
 use crate::utils::checks;
 use crate::CURRENT_DIR;
@@ -46,7 +46,9 @@ impl Init {
         self.create_config_file(&repo_buckets_path)?;
 
         let db_type = DatabaseType::from_str(&self.args.database)?;
-        initialize_database(&repo_buckets_path, db_type)?;
+        
+        // Initialize PostgreSQL database
+        self.initialize_postgresql(&repo_buckets_path, db_type)?;
 
         Ok(())
     }
@@ -98,6 +100,17 @@ impl Init {
             }
         }
         Ok(())
+    }
+    
+    /// Initialize PostgreSQL database for the repository
+    fn initialize_postgresql(&self, repo_path: &Path, db_type: DatabaseType) -> Result<(), BucketError> {
+        // Create a tokio runtime for async database operations
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| BucketError::from(format!("Failed to create async runtime: {}", e).as_str()))?;
+            
+        rt.block_on(async {
+            initialize_database_async(repo_path, db_type).await
+        })
     }
 }
 
