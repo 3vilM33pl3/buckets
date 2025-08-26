@@ -23,8 +23,9 @@ jobs:
     - name: Install Rust
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: stable
+        toolchain: nightly-2025-01-15
         override: true
+        components: rustfmt, clippy
 
     - name: Install build dependencies
       run: |
@@ -33,7 +34,7 @@ jobs:
 
     - name: Build Debian package
       run: |
-        dpkg-buildpackage -us -uc -b
+        dpkg-buildpackage -us -uc -b -j$(nproc)
         
     - name: Move built packages
       run: |

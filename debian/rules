@@ -14,7 +14,7 @@ override_dh_auto_configure:
 	# No configure step needed for Rust projects
 
 override_dh_auto_build:
-	cargo build --release --locked
+	cargo build --release --locked --no-default-features
 
 override_dh_auto_test:
 	# Skip tests during package build to save time
