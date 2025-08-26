@@ -197,7 +197,7 @@ url_check = "api.ipify.org"
 
         // Initialize database properly with schema
         use crate::database::{initialize_database, DatabaseType};
-        initialize_database(&buckets_dir, DatabaseType::DuckDB)?;
+        initialize_database(&buckets_dir, DatabaseType::Embedded)?;
 
         // Create bucket structure
         fs::create_dir_all(&bucket_path)?;

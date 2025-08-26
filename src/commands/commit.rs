@@ -375,8 +375,10 @@ mod tests {
             shared: crate::args::SharedArguments::default(),
             message: commit_message.clone(),
         });
-        let result = commit_cmd
-            .process_files(bucket.id, &bucket_dir, &[committed_file], &commit_message)
+        // Create async runtime for testing
+        let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
+        let result = rt.block_on(commit_cmd
+            .process_files_async(bucket.id, &bucket_dir, &[committed_file], &commit_message))
             .map_err(|e| {
                 error!("Error processing files: {}", e);
                 e
@@ -832,7 +834,9 @@ mod tests {
     fn test_load_last_commit_no_commit() {
         // This test would require a database setup, so we'll just test the function signature
         // In a real scenario, you would set up a test database
-        let result = Commit::load_last_commit(Uuid::new_v4());
+        // Create async runtime for testing
+        let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
+        let result = rt.block_on(Commit::load_last_commit_async(Uuid::new_v4()));
 
         // Since there's no database setup, this will likely fail
         // In a proper test environment, you would set up a test database
