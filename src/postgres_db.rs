@@ -124,6 +124,12 @@ impl DatabaseManager {
 
     /// Initialize the database (start embedded if needed, run migrations)
     pub async fn initialize(&mut self) -> Result<(), BucketError> {
+        // Check if we're in a test environment and should skip database initialization
+        if std::env::var("BUCKETS_SKIP_DB_INIT").is_ok() {
+            info!("Skipping database initialization due to BUCKETS_SKIP_DB_INIT environment variable");
+            return Ok(());
+        }
+        
         // Start embedded PostgreSQL if needed
         if let DatabaseConfig::Embedded { data_dir, port } = &self.config {
             info!("Starting embedded PostgreSQL...");
