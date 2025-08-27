@@ -3,12 +3,6 @@ mod common;
 #[cfg(test)]
 mod tests {
     use crate::common::tests::get_test_dir;
-    // Note: PostgreSQL tests will be handled through the embedded database in the application
-    use predicates::str::contains;
-    use serial_test::serial;
-    use std::fs::File;
-    use std::io::Write;
-    use std::path::PathBuf;
     /// Test the `commit` command.
     ///
     /// # Commands
