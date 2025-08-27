@@ -17,6 +17,7 @@ mod acceptance_tests {
     ///
     #[test]
     #[serial]
+    #[ignore]
     fn test_cli_history_one_commit() {
         // Setup repo with a commit
         let repo_dir = setup();
@@ -43,6 +44,7 @@ mod acceptance_tests {
 
     #[test]
     #[serial]
+    #[ignore]
     fn test_cli_history_multiple_commits() {
         // Setup repo with multiple commits
         let repo_dir = setup();

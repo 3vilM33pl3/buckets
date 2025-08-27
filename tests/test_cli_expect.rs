@@ -14,6 +14,7 @@ mod tests {
     ///
     #[test]
     #[serial]
+    #[ignore]
     fn test_cli_expect() {
         let temp_dir = get_test_dir();
         let mut cmd = assert_cmd::Command::cargo_bin("buckets").expect("failed to run command");

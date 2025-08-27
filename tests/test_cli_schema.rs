@@ -14,8 +14,8 @@ mod tests {
     /// Prints the SQL schema used to create the database
     ///
     #[test]
-    #[ignore]
     #[serial]
+    #[ignore]
     fn test_cli_schema() {
         let mut cmd = Command::cargo_bin("buckets").expect("failed to run command");
 
