@@ -7,7 +7,6 @@ use crate::utils::checks;
 use crate::utils::checks::{find_directory_in_parents, is_valid_bucket};
 use crate::CURRENT_DIR;
 use chrono::Utc;
-use log::error;
 use tokio_postgres::types::ToSql;
 use uuid::Uuid;
 

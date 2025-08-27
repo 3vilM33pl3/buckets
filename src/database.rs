@@ -1,7 +1,7 @@
 use crate::errors::BucketError;
-use crate::postgres_db::{DatabaseConfig, DatabaseManager, init_database};
+use crate::postgres_db::{DatabaseConfig, init_database};
 use std::path::Path;
-use std::{env, fs};
+use std::fs;
 
 #[derive(Debug, Clone, Copy)]
 pub enum DatabaseType {

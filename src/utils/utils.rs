@@ -1,5 +1,4 @@
 use crate::errors::BucketError;
-use crate::postgres_db::{get_database, with_database};
 use blake3::{Hash, Hasher};
 use std::fs::File;
 use std::io::Read;
@@ -640,8 +639,25 @@ pub fn get_db_path() -> Result<std::path::PathBuf, BucketError> {
 /// Create a database connection from a path (useful for reusing path lookups)
 /// This is a compatibility wrapper - PostgreSQL connections are managed differently
 #[allow(dead_code)]
-pub fn connect_to_db_with_path(_db_path: &std::path::Path) -> Result<(), BucketError> {
+pub fn connect_to_db_with_path(db_path: &std::path::Path) -> Result<(), BucketError> {
+    // Check if the path is valid - for PostgreSQL migration compatibility
+    if !db_path.exists() {
+        let parent = db_path.parent();
+        if let Some(parent_dir) = parent {
+            if !parent_dir.exists() {
+                return Err(BucketError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "Database directory does not exist"
+                )));
+            }
+        } else {
+            return Err(BucketError::IoError(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Invalid database path"
+            )));
+        }
+    }
+    
     // PostgreSQL connections are handled by the connection pool
-    // This is just a compatibility stub
     Ok(())
 }

@@ -5,7 +5,7 @@ use crate::data::bucket::{Bucket, BucketTrait};
 use crate::errors::BucketError;
 use crate::utils::checks;
 use crate::utils::config::RepositoryConfig;
-use crate::utils::utils::{find_bucket_path, with_db_connection};
+use crate::utils::utils::find_bucket_path;
 use crate::CURRENT_DIR;
 use log::{debug, info, error};
 use serde::{Deserialize, Serialize};

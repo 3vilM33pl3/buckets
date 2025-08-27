@@ -1,11 +1,11 @@
 use crate::errors::BucketError;
 use deadpool_postgres::{Config, Pool, Runtime};
-use log::{debug, error, info};
+use log::info;
 use postgresql_embedded::{PostgreSQL, Settings, VersionReq};
 use refinery::embed_migrations;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use tokio_postgres::{Client, NoTls};
+use tokio_postgres::NoTls;
 
 // Embed migrations
 embed_migrations!("src/sql/migrations");
@@ -264,7 +264,7 @@ impl DatabaseManager {
 
     /// Shutdown the database (for embedded PostgreSQL)
     pub async fn shutdown(&mut self) -> Result<(), BucketError> {
-        if let Some(mut pg) = self.embedded_pg.take() {
+        if let Some(pg) = self.embedded_pg.take() {
             info!("Stopping embedded PostgreSQL...");
             pg.stop()
                 .await

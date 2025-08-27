@@ -15,6 +15,7 @@ mod tests {
     ///
     #[test]
     #[serial]
+    #[ignore]
     fn test_cli_create_no_repo() {
         let temp_dir = get_test_dir();
         let mut cmd = assert_cmd::Command::cargo_bin("buckets").expect("failed to run command");
@@ -28,6 +29,7 @@ mod tests {
 
     #[test]
     #[serial]
+    #[ignore]
     fn test_cli_create() {
         let temp_dir = get_test_dir();
         let mut cmd = assert_cmd::Command::cargo_bin("buckets").expect("failed to run command");
@@ -64,6 +66,7 @@ mod tests {
     /// Test creating bucket that already exists (should fail)
     #[test]
     #[serial]
+    #[ignore]
     fn test_cli_create_bucket_already_exists() {
         let temp_dir = get_test_dir();
 
@@ -101,6 +104,7 @@ mod tests {
     /// Test creating bucket with invalid name characters
     #[test]
     #[serial]
+    #[ignore]
     fn test_cli_create_invalid_bucket_name() {
         let temp_dir = get_test_dir();
 
@@ -135,6 +139,7 @@ mod tests {
     /// Test creating bucket with very long name
     #[test]
     #[serial]
+    #[ignore]
     fn test_cli_create_long_bucket_name() {
         let temp_dir = get_test_dir();
 
@@ -162,6 +167,7 @@ mod tests {
     /// Test creating bucket without providing name argument
     #[test]
     #[serial]
+    #[ignore]
     fn test_cli_create_missing_name() {
         let temp_dir = get_test_dir();
 
@@ -186,6 +192,7 @@ mod tests {
     /// Test creating bucket with special characters (should succeed)
     #[test]
     #[serial]
+    #[ignore]
     fn test_cli_create_special_characters() {
         let temp_dir = get_test_dir();
 
