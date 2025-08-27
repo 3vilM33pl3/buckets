@@ -114,6 +114,11 @@ pub fn close_connection(_connection: ()) -> Result<(), BucketError> {
 
 /// Compatibility wrapper for database operations
 /// This is a temporary bridge while migrating from DuckDB to PostgreSQL
+///
+/// TODO(buckets-db-migration): This wrapper accepts a closure that takes `&()` (unit reference)
+/// instead of an actual database connection. This is a temporary measure and does not provide
+/// the intended functionality. All usages should be migrated to use the new PostgreSQL connection
+/// interface by Q3 2024, after which this function should be removed.
 pub fn with_db_connection<F, R>(f: F) -> Result<R, BucketError>
 where
     F: FnOnce(&()) -> Result<R, BucketError>,
