@@ -1,3 +1,16 @@
+buckets (0.2.0-1) unstable; urgency=medium
+
+  * Major database migration from DuckDB to embedded PostgreSQL
+  * Improved performance and SQL compatibility with PostgreSQL backend
+  * Added async operations with connection pooling for better scalability
+  * Enhanced error handling and graceful network failure recovery
+  * Updated CLI arguments to support embedded/external PostgreSQL options
+  * Comprehensive test suite improvements with network resilience
+  * Breaking change: database format migration required for existing installations
+  * Added migration documentation and automatic schema setup
+
+ -- 3vilM33pl3 <your-email@example.com>  Wed, 27 Aug 2025 12:00:00 +0000
+
 buckets (0.1.6-1) unstable; urgency=medium
 
   * Initial Debian package release

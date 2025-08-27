@@ -4,8 +4,7 @@
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 export DEB_LDFLAGS_MAINT_APPEND = -Wl,-z,defs
 
-# Cargo home for downloading dependencies
-export CARGO_HOME = $(CURDIR)/debian/cargo
+# No cargo operations needed for pre-built binary
 
 %:
 	dh $@
@@ -14,7 +13,8 @@ override_dh_auto_configure:
 	# No configure step needed for Rust projects
 
 override_dh_auto_build:
-	cargo build --release --locked --no-default-features
+	# Binary is pre-built by build script to avoid system Rust dependency conflicts
+	@echo "Using pre-built binary from target/release/buckets"
 
 override_dh_auto_test:
 	# Skip tests during package build to save time
@@ -27,8 +27,7 @@ override_dh_auto_install:
 		$(CURDIR)/debian/buckets/usr/bin/buckets
 
 override_dh_auto_clean:
-	cargo clean
-	rm -rf $(CARGO_HOME)
+	# No cargo operations needed since binary is pre-built
 	dh_auto_clean
 
 override_dh_strip:
