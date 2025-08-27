@@ -32,7 +32,13 @@ pub fn find_directory_in_parents(start_path: &Path, target_dir_name: &str) -> Op
 }
 
 /// Checks if the given directory is a valid bucket repository.
-/// It verifies the presence of a `.buckets` directory and database configuration.
+///
+/// A valid bucket repository must contain a `.buckets` directory and a valid database configuration.
+/// The database configuration is validated as follows:
+/// - The `.buckets` directory must contain either:
+///   - a `database_type` file (indicating a file-based database), or
+///   - a `postgres` directory (indicating a PostgreSQL-based database).
+/// At least one of these must be present for the repository to be considered valid.
 pub fn is_valid_bucket_repo(dir_path: &Path) -> bool {
     debug!("{:?}", dir_path);
     // Find the .buckets directory
