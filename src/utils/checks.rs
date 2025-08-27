@@ -32,7 +32,13 @@ pub fn find_directory_in_parents(start_path: &Path, target_dir_name: &str) -> Op
 }
 
 /// Checks if the given directory is a valid bucket repository.
-/// It verifies the presence of a `.buckets` directory and a valid `buckets.db` DuckDB database file.
+///
+/// A valid bucket repository must contain a `.buckets` directory and a valid database configuration.
+/// The database configuration is validated as follows:
+/// - The `.buckets` directory must contain either:
+///   - a `database_type` file (indicating a file-based database), or
+///   - a `postgres` directory (indicating a PostgreSQL-based database).
+/// At least one of these must be present for the repository to be considered valid.
 pub fn is_valid_bucket_repo(dir_path: &Path) -> bool {
     debug!("{:?}", dir_path);
     // Find the .buckets directory
@@ -47,45 +53,24 @@ pub fn is_valid_bucket_repo(dir_path: &Path) -> bool {
                 return false;
             }
 
-            // Check if `buckets.db` exists
-            let db_path = path.join("buckets.db");
-            if !db_path.is_file() {
-                debug!("buckets.db file is missing");
+            // Check for either database type marker or PostgreSQL directory structure
+            let db_type_path = path.join("database_type");
+            let postgres_path = path.join("postgres");
+            
+            if !db_type_path.exists() && !postgres_path.exists() {
+                debug!("Neither database_type file nor postgres directory found");
                 return false;
             }
 
-            // Validate the `buckets.db` file as a DuckDB database
-            if !is_valid_duckdb_database(&db_path) {
-                debug!("buckets.db is not a valid DuckDB database");
-                return false;
-            }
-
+            debug!("Valid bucket repository structure found");
             true
         }
         None => false,
     }
 }
 
-/// Validates if the given file is a DuckDB database.
-fn is_valid_duckdb_database(db_path: &Path) -> bool {
-    // Try opening the database using the DuckDB driver
-    match duckdb::Connection::open(db_path) {
-        Ok(conn) => {
-            // Check for a simple query to validate the database
-            match conn.execute("SELECT 1;", []) {
-                Ok(_) => true,
-                Err(e) => {
-                    debug!("Error querying DuckDB: {}", e);
-                    false
-                }
-            }
-        }
-        Err(e) => {
-            debug!("Error opening DuckDB database: {}", e);
-            false
-        }
-    }
-}
+// Note: is_valid_duckdb_database function removed as we're using PostgreSQL now
+// Database validation is handled differently with PostgreSQL
 
 pub fn is_valid_bucket(path: &Path) -> bool {
     let bucket_path = find_bucket_path(path);
@@ -255,15 +240,12 @@ mod tests {
         // Create a temporary directory to simulate a bucket repository
         let temp_dir = tempdir().expect("Failed to create temporary directory");
         let buckets_dir = temp_dir.path().join(".buckets");
-        let db_path = buckets_dir.join("buckets.db");
         let config_path = buckets_dir.join("config");
+        let db_type_path = buckets_dir.join("database_type");
 
         fs::create_dir_all(&buckets_dir).expect("Failed to create .buckets directory");
         fs::File::create(&config_path).expect("Failed to create config file");
-        let conn = duckdb::Connection::open(&db_path).expect("Failed to create DuckDB connection");
-        conn.execute("CREATE TABLE test (id INTEGER);", [])
-            .expect("error executing sql"); // Create a valid table
-        conn.close().expect("Failed to close DuckDB connection");
+        fs::write(&db_type_path, "embedded").expect("Failed to create database_type file");
 
         assert!(is_valid_bucket_repo(temp_dir.path()));
     }

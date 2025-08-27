@@ -74,15 +74,15 @@ pub struct InitCommand {
     #[clap(required = true)]
     pub repo_name: String,
 
-    #[clap(long, default_value = "duckdb", value_parser = validate_database_type)]
+    #[clap(long, default_value = "embedded", value_parser = validate_database_type)]
     pub database: String,
 }
 
 fn validate_database_type(s: &str) -> Result<String, String> {
     match s.to_lowercase().as_str() {
-        "duckdb" | "postgresql" | "postgres" => Ok(s.to_string()),
+        "embedded" | "external" | "postgresql" | "postgres" => Ok(s.to_string()),
         _ => Err(format!(
-            "Invalid database type '{}'. Valid options are: duckdb, postgresql",
+            "Invalid database type '{}'. Valid options are: embedded, external, postgresql",
             s
         )),
     }

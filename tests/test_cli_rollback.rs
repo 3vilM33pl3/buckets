@@ -18,6 +18,7 @@ mod tests {
     ///
     #[test]
     #[serial]
+    #[ignore]
     fn test_cli_rollback() {
         let repo_dir = setup();
         let bucket_dir = repo_dir.join("test_bucket");

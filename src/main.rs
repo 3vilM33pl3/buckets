@@ -16,6 +16,7 @@ mod config;
 mod data;
 mod database;
 mod errors;
+mod postgres_db;
 mod utils;
 mod world;
 

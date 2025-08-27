@@ -2,11 +2,13 @@ use crate::args::ListCommand;
 use crate::commands::BucketCommand;
 use crate::data::bucket::Bucket;
 use crate::errors::BucketError;
+use crate::postgres_db::get_database;
 use crate::utils::checks;
-use crate::utils::utils::with_db_connection;
 use crate::CURRENT_DIR;
 use log::{debug, info};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize)]
 pub struct ListOutput {
@@ -43,7 +45,12 @@ impl BucketCommand for List {
         }
 
         info!("Querying buckets from database");
-        let buckets = self.query_buckets()?;
+        
+        // Create async runtime for database operations
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| BucketError::from(format!("Failed to create async runtime: {}", e).as_str()))?;
+        
+        let buckets = rt.block_on(self.query_buckets_async())?;
         debug!("Found {} buckets", buckets.len());
         
         if self.args.shared.json {
@@ -74,28 +81,27 @@ impl BucketCommand for List {
 }
 
 impl List {
-    fn query_buckets(&self) -> Result<Vec<Bucket>, BucketError> {
-        with_db_connection(|connection| {
-            let mut stmt = connection.prepare("SELECT id, name, path FROM buckets")?;
-            let bucket_iter = stmt
-                .query_map([], |row| {
-                    let uuid_str: String = row.get(0)?;
-                    let path_str: String = row.get(2)?;
-                    let uuid = uuid::Uuid::parse_str(&uuid_str)
-                        .map_err(|e| BucketError::InvalidData(e.to_string()))?;
-                    Ok(Bucket {
-                        id: uuid,
-                        name: row.get(1)?,
-                        relative_bucket_path: std::path::PathBuf::from(path_str),
-                    })
-                })
-                .map_err(BucketError::from)?;
-            let mut buckets = Vec::new();
-            for bucket in bucket_iter {
-                buckets.push(bucket.map_err(BucketError::from)?);
-            }
-
-            Ok(buckets)
-        })
+    async fn query_buckets_async(&self) -> Result<Vec<Bucket>, BucketError> {
+        let db = get_database().await?;
+        
+        let rows = db.query("SELECT id, name, path FROM buckets", &[]).await?;
+        
+        let mut buckets = Vec::new();
+        for row in &rows {
+            let uuid_str: String = row.get(0);
+            let name: String = row.get(1);
+            let path_str: String = row.get(2);
+            
+            let uuid = Uuid::parse_str(&uuid_str)
+                .map_err(|e| BucketError::InvalidData(e.to_string()))?;
+            
+            buckets.push(Bucket {
+                id: uuid,
+                name,
+                relative_bucket_path: PathBuf::from(path_str),
+            });
+        }
+        
+        Ok(buckets)
     }
 }
