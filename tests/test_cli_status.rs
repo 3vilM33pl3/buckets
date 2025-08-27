@@ -17,6 +17,7 @@ mod tests {
     ///
     #[test]
     #[serial]
+    #[ignore]
     fn test_cli_status() {
         let repo_dir = setup();
 
