@@ -15,7 +15,7 @@ impl DatabaseType {
             "embedded" | "postgresql_embedded" => Ok(DatabaseType::Embedded),
             "external" | "postgresql" | "postgres" => Ok(DatabaseType::External),
             _ => Err(BucketError::InvalidData(format!(
-                "Unsupported database type: {}. Use 'embedded' or 'external'",
+                "Unsupported database type: {}. Use one of: 'embedded', 'postgresql_embedded', 'external', 'postgresql', or 'postgres'",
                 s
             ))),
         }
