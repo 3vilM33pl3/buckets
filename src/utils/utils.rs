@@ -90,9 +90,9 @@ pub fn find_bucket_repo(dir_path: &Path) -> Option<PathBuf> {
     }
 }
 
-/// Compatibility wrapper for database operations
-/// This provides a similar interface to the old DuckDB connection
-pub fn connect_to_db() -> Result<(), BucketError> {
+/// Validates that the current directory is inside a valid repository.
+/// This function checks for the presence of a `.buckets` directory in the parent hierarchy.
+pub fn validate_repo() -> Result<(), BucketError> {
     let current_dir = env::current_dir()?;
 
     let _buckets_path = match find_directory_in_parents(&current_dir, ".buckets") {
