@@ -290,9 +290,10 @@ pub async fn init_database(config: DatabaseConfig) -> Result<(), BucketError> {
 
 /// Get the global database manager
 pub async fn get_database() -> Result<tokio::sync::MutexGuard<'static, DatabaseManager>, BucketError> {
-    DATABASE.get()
-        .ok_or_else(|| BucketError::from("Database not initialized"))
-        .map(|db| db.blocking_lock())
+    let db = DATABASE
+        .get()
+        .ok_or_else(|| BucketError::from("Database not initialized"))?;
+    Ok(db.lock().await)
 }
 
 /// Execute a database operation with the global database
