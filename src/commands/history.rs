@@ -158,7 +158,7 @@ mod tests {
             .assert()
             .success();
 
-        // Change to bucket directory so connect_to_db() can find .buckets
+        // Change to bucket directory for PostgreSQL database access
         let original_dir = env::current_dir().ok();
         env::set_current_dir(&bucket_dir).expect("Failed to change to bucket directory");
         
