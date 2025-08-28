@@ -13,20 +13,19 @@ command -v dpkg-buildpackage >/dev/null 2>&1 || {
     exit 1
 }
 
-command -v cargo >/dev/null 2>&1 || { 
-    echo "Error: cargo not found. Please install Rust:"
-    echo "  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+# Check if the binary exists
+if [ ! -f "target/release/buckets" ]; then
+    echo "Error: Binary not found at target/release/buckets"
+    echo "Please build the binary first with: cargo build --release"
     exit 1
-}
+fi
 
-# Clean any previous builds
-echo "Cleaning previous builds..."
-cargo clean 2>/dev/null || true
+# Clean any previous packages
+echo "Cleaning previous packages..."
 rm -f ../buckets_*.deb ../buckets_*.dsc ../buckets_*.tar.gz ../buckets_*.buildinfo ../buckets_*.changes
 
-# Build the package
-echo "Building package (this may take several minutes on first run)..."
-echo "Downloading and compiling dependencies..."
+# Build the package (binary is already built)
+echo "Creating Debian package..."
 dpkg-buildpackage -us -uc -b -j$(nproc)
 
 echo ""

@@ -2,11 +2,7 @@ Source: buckets
 Section: utils
 Priority: optional
 Maintainer: 3vilM33pl3 <your-email@example.com>
-Build-Depends: debhelper-compat (= 13),
-               cargo,
-               rustc (>= 1.70),
-               libssl-dev,
-               pkg-config
+Build-Depends: debhelper-compat (= 13)
 Standards-Version: 4.6.0
 Homepage: https://github.com/3vilM33pl3/buckets
 Rules-Requires-Root: no
@@ -25,4 +21,6 @@ Description: CLI tool for game asset and expectation management
   - Bucket-based workflow management
   - File integrity checking with BLAKE3 hashing
   - Compression support with zstd
-  - DuckDB-based data persistence
+  - Embedded PostgreSQL database backend
+  - Async operations with connection pooling
+  - Support for external PostgreSQL servers
