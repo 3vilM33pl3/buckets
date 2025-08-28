@@ -30,6 +30,7 @@ impl DatabaseType {
 }
 
 /// Get the database configuration for the repository
+/// Returns an error if no configuration exists - never defaults
 pub fn get_database_config(repo_path: &Path) -> Result<DatabaseConfig, BucketError> {
     let config_file = repo_path.join(".buckets").join("db_config.toml");
     
@@ -37,7 +38,20 @@ pub fn get_database_config(repo_path: &Path) -> Result<DatabaseConfig, BucketErr
         let content = fs::read_to_string(&config_file)?;
         parse_database_config(&content, repo_path)
     } else {
-        // Default to embedded PostgreSQL
+        Err(BucketError::from("No database configuration found. Use 'buckets init' to initialize a repository with database settings."))
+    }
+}
+
+/// Get the database configuration with embedded fallback for backwards compatibility
+/// Only use this for commands that can work with embedded by default
+pub fn get_database_config_with_fallback(repo_path: &Path) -> Result<DatabaseConfig, BucketError> {
+    let config_file = repo_path.join(".buckets").join("db_config.toml");
+    
+    if config_file.exists() {
+        let content = fs::read_to_string(&config_file)?;
+        parse_database_config(&content, repo_path)
+    } else {
+        // Default to embedded PostgreSQL for backwards compatibility
         Ok(DatabaseConfig::Embedded {
             data_dir: repo_path.join(".buckets").join("postgres"),
             port: None,
@@ -147,6 +161,38 @@ pub fn initialize_database(repo_path: &Path, db_type: DatabaseType) -> Result<()
     rt.block_on(initialize_database_async(repo_path, db_type))
 }
 
+/// Initialize database with explicit external configuration
+pub async fn initialize_database_with_external_config_async(
+    repo_path: &Path, 
+    config: DatabaseConfig
+) -> Result<(), BucketError> {
+    // Validate external configuration if needed
+    if let DatabaseConfig::External { host, username, .. } = &config {
+        if host.is_empty() {
+            return Err(BucketError::from("External database host cannot be empty"));
+        }
+        if username.is_empty() {
+            return Err(BucketError::from("External database username cannot be empty"));
+        }
+    }
+    
+    // Save the config to file for future use
+    save_database_config(repo_path.parent().unwrap_or(repo_path), &config)?;
+    
+    // Initialize the database
+    init_database(config.clone()).await?;
+    
+    // Create a database type marker file for compatibility
+    let db_type = match config {
+        DatabaseConfig::Embedded { .. } => DatabaseType::Embedded,
+        DatabaseConfig::External { .. } => DatabaseType::External,
+    };
+    let db_type_file = repo_path.join("database_type");
+    fs::write(db_type_file, db_type.as_str())?;
+    
+    Ok(())
+}
+
 /// Async version of initialize_database
 pub async fn initialize_database_async(repo_path: &Path, db_type: DatabaseType) -> Result<(), BucketError> {
     let config = match db_type {
@@ -155,20 +201,87 @@ pub async fn initialize_database_async(repo_path: &Path, db_type: DatabaseType) 
             port: None,
         },
         DatabaseType::External => {
-            // For external, try to get from config file or environment
-            get_database_config(repo_path.parent().unwrap_or(repo_path))?
+            // For external, we must have a valid configuration - never default to embedded
+            return Err(BucketError::from("External database type specified but no configuration provided. External databases require explicit configuration with host, username, and other connection details. Use the init command with --external-host, --external-username, etc. options."));
         }
     };
     
-    // Save the config to file for future use
-    save_database_config(repo_path.parent().unwrap_or(repo_path), &config)?;
+    initialize_database_with_external_config_async(repo_path, config).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
     
-    // Initialize the database
-    init_database(config).await?;
+    #[test]
+    fn test_get_database_config_fails_without_config() {
+        let temp_dir = tempdir().expect("Failed to create temp dir");
+        let buckets_dir = temp_dir.path().join(".buckets");
+        std::fs::create_dir_all(&buckets_dir).expect("Failed to create .buckets dir");
+        
+        // Should fail because no config file exists
+        let result = get_database_config(&buckets_dir);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("No database configuration found"));
+    }
     
-    // Create a database type marker file for compatibility
-    let db_type_file = repo_path.join("database_type");
-    fs::write(db_type_file, db_type.as_str())?;
+    #[test]
+    fn test_get_database_config_with_fallback_works() {
+        let temp_dir = tempdir().expect("Failed to create temp dir");
+        let buckets_dir = temp_dir.path().join(".buckets");
+        std::fs::create_dir_all(&buckets_dir).expect("Failed to create .buckets dir");
+        
+        // Should default to embedded for backwards compatibility
+        let result = get_database_config_with_fallback(&buckets_dir);
+        assert!(result.is_ok());
+        
+        let config = result.unwrap();
+        match config {
+            crate::postgres_db::DatabaseConfig::Embedded { .. } => {},
+            _ => panic!("Expected embedded config"),
+        }
+    }
     
-    Ok(())
+    #[test]
+    fn test_initialize_external_database_fails_without_config() {
+        let temp_dir = tempdir().expect("Failed to create temp dir");
+        let buckets_dir = temp_dir.path().join(".buckets");
+        std::fs::create_dir_all(&buckets_dir).expect("Failed to create .buckets dir");
+        
+        // Should fail because external requires explicit configuration
+        let result = initialize_database(&buckets_dir, DatabaseType::External);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("External database type specified but no configuration provided"));
+    }
+    
+    #[test]
+    fn test_parse_external_database_config_missing_host() {
+        let config_content = r#"
+type = "external"
+port = 5432
+database = "buckets"
+username = "user"
+"#;
+        let temp_dir = tempdir().expect("Failed to create temp dir");
+        
+        let result = parse_database_config(config_content, temp_dir.path());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Missing 'host'"));
+    }
+    
+    #[test]
+    fn test_parse_external_database_config_missing_username() {
+        let config_content = r#"
+type = "external"
+host = "localhost"  
+port = 5432
+database = "buckets"
+"#;
+        let temp_dir = tempdir().expect("Failed to create temp dir");
+        
+        let result = parse_database_config(config_content, temp_dir.path());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Missing 'username'"));
+    }
 }

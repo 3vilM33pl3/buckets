@@ -3,3 +3,12 @@
 /.idea
 .vscode/settings.json
 *.code-workspace
+
+# Debian packaging artifacts
+debian/cargo/
+debian/.debhelper/
+debian/buckets.substvars
+debian/buckets/
+debian/files
+debian/*.log
+debian/*.debhelper
