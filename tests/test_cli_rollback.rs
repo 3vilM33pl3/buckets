@@ -24,7 +24,7 @@ mod tests {
         let bucket_dir = repo_dir.join("test_bucket");
 
         let file_path = bucket_dir.join("test_file.txt");
-        
+
         // Create and write initial content
         {
             let mut file_1 = File::create(&file_path).expect("Failed to create file");
@@ -42,7 +42,8 @@ mod tests {
 
         // Modify the file after the commit
         {
-            let mut file_1 = File::create(&file_path).expect("Failed to create file for modification");
+            let mut file_1 =
+                File::create(&file_path).expect("Failed to create file for modification");
             file_1
                 .write_all(b"change file 1")
                 .expect("Failed to write to file");

@@ -61,7 +61,7 @@ pub struct CliArguments {
 pub struct SharedArguments {
     #[clap(short, long)]
     pub verbose: bool,
-    
+
     #[clap(long)]
     pub json: bool,
 }
@@ -113,8 +113,12 @@ pub struct RevertCommand {
 
     #[clap(required = true, help = "File path to revert")]
     pub file: String,
-    
-    #[clap(short = 'c', long = "commit", help = "Commit ID to revert from (defaults to most recent)")]
+
+    #[clap(
+        short = 'c',
+        long = "commit",
+        help = "Commit ID to revert from (defaults to most recent)"
+    )]
     pub commit_id: Option<String>,
 }
 

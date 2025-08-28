@@ -59,14 +59,14 @@ pub trait BucketCommand {
 #[macro_export]
 macro_rules! impl_command {
     ($command_struct:ident, $args_type:ty, $execute_body:block) => {
-        impl crate::commands::Command for $command_struct {
+        impl $crate::commands::Command for $command_struct {
             type Args = $args_type;
 
             fn new(args: Self::Args) -> Self {
                 Self { args }
             }
 
-            fn execute(&self) -> Result<(), crate::errors::BucketError> {
+            fn execute(&self) -> Result<(), $crate::errors::BucketError> {
                 $execute_body
             }
         }

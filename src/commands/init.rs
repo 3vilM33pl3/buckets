@@ -46,7 +46,7 @@ impl Init {
         self.create_config_file(&repo_buckets_path)?;
 
         let db_type = DatabaseType::from_str(&self.args.database)?;
-        
+
         // Initialize PostgreSQL database
         self.initialize_postgresql(&repo_buckets_path, db_type)?;
 
@@ -63,14 +63,13 @@ impl Init {
 
         // Serialize the configuration to TOML format
         let toml_content = toml::to_string(&config).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
+            io::Error::other(
                 format!("Failed to serialize config: {}", e),
             )
         })?;
 
         // Create the .buckets directory if it doesn't exist
-        fs::create_dir_all(&location)?;
+        fs::create_dir_all(location)?;
 
         // Write the configuration file
         let config_path = location.join("config");
@@ -101,16 +100,19 @@ impl Init {
         }
         Ok(())
     }
-    
+
     /// Initialize PostgreSQL database for the repository
-    fn initialize_postgresql(&self, repo_path: &Path, db_type: DatabaseType) -> Result<(), BucketError> {
+    fn initialize_postgresql(
+        &self,
+        repo_path: &Path,
+        db_type: DatabaseType,
+    ) -> Result<(), BucketError> {
         // Create a tokio runtime for async database operations
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| BucketError::from(format!("Failed to create async runtime: {}", e).as_str()))?;
-            
-        rt.block_on(async {
-            initialize_database_async(repo_path, db_type).await
-        })
+        let rt = tokio::runtime::Runtime::new().map_err(|e| {
+            BucketError::from(format!("Failed to create async runtime: {}", e).as_str())
+        })?;
+
+        rt.block_on(async { initialize_database_async(repo_path, db_type).await })
     }
 }
 
@@ -261,13 +263,13 @@ mod tests {
         let test_repo_name = "temp_test_existing_bucket_repo";
         let existing_repo = temp_dir.path().join(test_repo_name);
         let buckets_dir = existing_repo.join(".buckets");
-        
+
         // Save the original current directory to restore it later
         let original_dir = std::env::current_dir().unwrap_or_else(|_| {
             // If we can't get the current directory, use the temp directory
             temp_dir.path().to_path_buf()
         });
-        
+
         // Set current directory to temp directory for the test
         std::env::set_current_dir(temp_dir.path()).expect("Failed to change to temp directory");
 
@@ -281,7 +283,7 @@ mod tests {
         // Create PostgreSQL directory structure to make it look like a valid repo
         let postgres_dir = buckets_dir.join("postgres");
         fs::create_dir_all(&postgres_dir).expect("Failed to create postgres directory");
-        
+
         // Create a database_type file to indicate PostgreSQL
         let db_type_file = buckets_dir.join("database_type");
         fs::write(&db_type_file, "PostgreSQL").expect("Failed to create database_type file");
@@ -291,7 +293,7 @@ mod tests {
 
         // Restore original directory before cleanup
         std::env::set_current_dir(&original_dir).ok(); // Ignore errors if original_dir is invalid
-        
+
         // Clean up the test directory
         fs::remove_dir_all(&existing_repo).expect("Failed to remove test directory");
 
@@ -314,7 +316,9 @@ mod tests {
         // Handle network issues gracefully
         if result.is_err() {
             let error = result.unwrap_err();
-            if error.to_string().contains("rate limit") || error.to_string().contains("Failed to install PostgreSQL") {
+            if error.to_string().contains("rate limit")
+                || error.to_string().contains("Failed to install PostgreSQL")
+            {
                 eprintln!("Skipping test due to network issues: {}", error);
                 return;
             } else {
@@ -357,14 +361,16 @@ mod tests {
         // Handle network issues gracefully
         if result.is_err() {
             let error = result.unwrap_err();
-            if error.to_string().contains("rate limit") || error.to_string().contains("Failed to install PostgreSQL") {
+            if error.to_string().contains("rate limit")
+                || error.to_string().contains("Failed to install PostgreSQL")
+            {
                 eprintln!("Skipping test due to network issues: {}", error);
                 return;
             } else {
                 panic!("Unexpected error: {}", error);
             }
         }
-        
+
         let repo_path = temp_dir.path().join("test_repo");
         let buckets_path = repo_path.join(".buckets");
 

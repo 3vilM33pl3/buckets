@@ -35,10 +35,9 @@ pub enum BucketError {
 
 impl From<&str> for BucketError {
     fn from(error: &str) -> Self {
-        BucketError::IoError(io::Error::new(io::ErrorKind::Other, error))
+        BucketError::IoError(io::Error::other(error))
     }
 }
-
 
 #[cfg(test)]
 mod tests {

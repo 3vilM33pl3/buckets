@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 use crate::args::HistoryCommand;
 use crate::errors::BucketError;
@@ -39,13 +39,14 @@ impl CommitRecord {
 
 pub fn execute(command: HistoryCommand) -> Result<(), BucketError> {
     let current_dir = std::env::current_dir()?;
-    
+
     // Create async runtime for database operations
-    let rt = tokio::runtime::Runtime::new()
-        .map_err(|e| BucketError::from(format!("Failed to create async runtime: {}", e).as_str()))?;
-    
+    let rt = tokio::runtime::Runtime::new().map_err(|e| {
+        BucketError::from(format!("Failed to create async runtime: {}", e).as_str())
+    })?;
+
     let commits = rt.block_on(fetch_commit_history_async(&current_dir))?;
-    
+
     if command.shared.json {
         let output = HistoryOutput { commits };
         match serde_json::to_string_pretty(&output) {
@@ -59,19 +60,23 @@ pub fn execute(command: HistoryCommand) -> Result<(), BucketError> {
     Ok(())
 }
 
-async fn fetch_commit_history_async(_bucket_dir: &PathBuf) -> Result<Vec<CommitRecord>, BucketError> {
+async fn fetch_commit_history_async(
+    _bucket_dir: &PathBuf,
+) -> Result<Vec<CommitRecord>, BucketError> {
     let db = get_database().await?;
-    
-    let rows = db.query(
-        "SELECT c.id, c.message, c.created_at::text, b.name as bucket_name 
+
+    let rows = db
+        .query(
+            "SELECT c.id, c.message, c.created_at::text, b.name as bucket_name 
          FROM commits c 
          JOIN buckets b ON c.bucket_id = b.id 
          ORDER BY c.created_at DESC",
-        &[],
-    ).await?;
+            &[],
+        )
+        .await?;
 
     let mut commits = Vec::new();
-    
+
     for row in &rows {
         let id: String = row.get(0);
         let message: String = row.get(1);
@@ -122,16 +127,23 @@ mod tests {
         // Setup test environment
         let temp_dir = tempdir().expect("invalid temp dir").keep();
         let mut cmd1 = assert_cmd::Command::cargo_bin("buckets").expect("invalid command");
-        let init_output = cmd1.current_dir(temp_dir.as_path())
+        let init_output = cmd1
+            .current_dir(temp_dir.as_path())
             .arg("init")
             .arg("test_repo")
             .output();
-            
+
         // Check if init failed due to network issues
         if let Ok(output) = init_output {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            if stderr.contains("rate limit") || stderr.contains("Failed to install PostgreSQL") || !output.status.success() {
-                eprintln!("Skipping test due to init failure (network issues): {}", stderr);
+            if stderr.contains("rate limit")
+                || stderr.contains("Failed to install PostgreSQL")
+                || !output.status.success()
+            {
+                eprintln!(
+                    "Skipping test due to init failure (network issues): {}",
+                    stderr
+                );
                 return;
             }
         } else {
@@ -161,11 +173,13 @@ mod tests {
         // Change to bucket directory so connect_to_db() can find .buckets
         let original_dir = env::current_dir().ok();
         env::set_current_dir(&bucket_dir).expect("Failed to change to bucket directory");
-        
+
         // Test fetch_commit_history
         let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
-        let commits = rt.block_on(fetch_commit_history_async(&bucket_dir)).expect("Failed to fetch commit history");
-        
+        let commits = rt
+            .block_on(fetch_commit_history_async(&bucket_dir))
+            .expect("Failed to fetch commit history");
+
         // Restore original directory
         if let Some(orig_dir) = original_dir {
             env::set_current_dir(orig_dir).ok();
@@ -183,19 +197,26 @@ mod tests {
     fn test_history_command() {
         // Setup test environment
         let temp_dir = tempdir().expect("invalid temp dir").keep();
-        
+
         // First try to initialize - if it fails due to network issues, skip the test
         let mut cmd1 = assert_cmd::Command::cargo_bin("buckets").expect("invalid command");
-        let init_output = cmd1.current_dir(temp_dir.as_path())
+        let init_output = cmd1
+            .current_dir(temp_dir.as_path())
             .arg("init")
             .arg("test_repo")
             .output();
-            
+
         // Check if init failed due to network issues
         if let Ok(output) = init_output {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            if stderr.contains("rate limit") || stderr.contains("Failed to install PostgreSQL") || !output.status.success() {
-                eprintln!("Skipping test due to init failure (network issues): {}", stderr);
+            if stderr.contains("rate limit")
+                || stderr.contains("Failed to install PostgreSQL")
+                || !output.status.success()
+            {
+                eprintln!(
+                    "Skipping test due to init failure (network issues): {}",
+                    stderr
+                );
                 return;
             }
         } else {

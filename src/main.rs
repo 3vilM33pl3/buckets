@@ -32,7 +32,7 @@ static ARGS: Lazy<CliArguments> = Lazy::new(|| {
 
 // Define the thread-local EXIT variable with initial value of SUCCESS
 thread_local! {
-    static EXIT: Cell<ExitCode> = Cell::new(ExitCode::SUCCESS);
+    static EXIT: Cell<ExitCode> = const { Cell::new(ExitCode::SUCCESS) };
     static CURRENT_DIR: PathBuf = std::env::current_dir().unwrap_or_else(|_| {
         eprintln!("Error: Failed to get current directory. Using current directory as fallback.");
         PathBuf::from(".")
@@ -46,20 +46,18 @@ fn set_failed() {
 
 fn init_logging(verbose: bool) {
     let log_level = if verbose {
-        LevelFilter::Debug  // -v: debug level
+        LevelFilter::Debug // -v: debug level
     } else {
-        LevelFilter::Warn   // Default: warnings and errors only
+        LevelFilter::Warn // Default: warnings and errors only
     };
 
-    Builder::from_default_env()
-        .filter_level(log_level)
-        .init();
+    Builder::from_default_env().filter_level(log_level).init();
 }
 
 fn main() -> ExitCode {
     // Initialize logging based on verbose flag
     init_logging(ARGS.command.shared_args().verbose);
-    
+
     let res = dispatch();
 
     if let Err(msg) = res {

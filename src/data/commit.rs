@@ -10,9 +10,11 @@ use uuid::Uuid;
 use crate::utils::compression::{compress_file, decompress_file, DEFAULT_COMPRESSION_LEVEL};
 
 #[derive(Serialize, Deserialize, Debug)]
+#[derive(Default)]
 pub enum CommitStatus {
     Unknown,
     New,
+    #[default]
     Committed,
     Modified,
     Deleted,
@@ -30,11 +32,6 @@ impl Display for CommitStatus {
     }
 }
 
-impl Default for CommitStatus {
-    fn default() -> Self {
-        CommitStatus::Committed
-    }
-}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CommittedFile {
@@ -105,16 +102,16 @@ impl Commit {
                         status_all_files.push(CommittedFile {
                             id: file.id,
                             name: file.name.clone(),
-                            hash: file.hash.clone(),
-                            previous_hash: other_file.hash.clone(),
+                            hash: file.hash,
+                            previous_hash: other_file.hash,
                             status: CommitStatus::Modified,
                         });
                     } else if file.name == other_file.name && file.hash == other_file.hash {
                         status_all_files.push(CommittedFile {
                             id: file.id,
                             name: file.name.clone(),
-                            hash: other_file.hash.clone(),
-                            previous_hash: file.hash.clone(),
+                            hash: other_file.hash,
+                            previous_hash: file.hash,
                             status: CommitStatus::Committed,
                         });
                     }
@@ -133,7 +130,7 @@ impl Commit {
                     status_all_files.push(CommittedFile {
                         id: file.id,
                         name: file.name.clone(),
-                        hash: file.hash.clone(),
+                        hash: file.hash,
                         previous_hash: Hash::from_str(
                             "0000000000000000000000000000000000000000000000000000000000000000",
                         )
@@ -156,7 +153,7 @@ impl Commit {
                         status_all_files.push(CommittedFile {
                             id: other_file.id,
                             name: other_file.name.clone(),
-                            hash: other_file.hash.clone(),
+                            hash: other_file.hash,
                             previous_hash: Hash::from_str(
                                 "0000000000000000000000000000000000000000000000000000000000000000",
                             )
@@ -188,7 +185,7 @@ impl CommittedFile {
         let output_path = bucket_path
             .join(".b")
             .join("storage")
-            .join(&self.hash.to_string());
+            .join(self.hash.to_string());
 
         compress_file(&input_path, &output_path, DEFAULT_COMPRESSION_LEVEL)
     }
@@ -197,7 +194,7 @@ impl CommittedFile {
         let input_path = bucket_path
             .join(".b")
             .join("storage")
-            .join(&self.previous_hash.to_string());
+            .join(self.previous_hash.to_string());
         let output_path = bucket_path.join(&self.name);
 
         // Create parent directories if they don't exist
@@ -466,7 +463,11 @@ mod tests {
 
         // Manually compress the file to simulate stored version
         use crate::utils::compression::compress_file;
-        compress_file(&bucket_path.join("original.txt"), &compressed_path, DEFAULT_COMPRESSION_LEVEL)?;
+        compress_file(
+            &bucket_path.join("original.txt"),
+            &compressed_path,
+            DEFAULT_COMPRESSION_LEVEL,
+        )?;
 
         // Remove original file
         fs::remove_file(bucket_path.join("original.txt"))?;

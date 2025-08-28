@@ -13,12 +13,12 @@ pub const DEFAULT_COMPRESSION_LEVEL: i32 = 3;
 pub const MAX_COMPRESSION_LEVEL: i32 = 22;
 
 /// Compress a file using zstd and store it at the specified path
-/// 
+///
 /// # Arguments
 /// * `input_path` - Path to the input file to compress
 /// * `output_path` - Path where the compressed file will be stored
 /// * `compression_level` - Compression level (0 for default, 1-22 for specific levels)
-/// 
+///
 /// # Returns
 /// * `Ok(())` on success
 /// * `Err(io::Error)` on failure with descriptive error message
@@ -30,11 +30,13 @@ pub fn compress_file(
     // Validate compression level
     let level = if compression_level == 0 {
         DEFAULT_COMPRESSION_LEVEL
-    } else if compression_level < 1 || compression_level > MAX_COMPRESSION_LEVEL {
+    } else if !(1..=MAX_COMPRESSION_LEVEL).contains(&compression_level) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            format!("Invalid compression level: {}. Must be 0 (default) or 1-{}", 
-                    compression_level, MAX_COMPRESSION_LEVEL),
+            format!(
+                "Invalid compression level: {}. Must be 0 (default) or 1-{}",
+                compression_level, MAX_COMPRESSION_LEVEL
+            ),
         ));
     } else {
         compression_level
@@ -43,30 +45,41 @@ pub fn compress_file(
     let input_file = File::open(input_path).map_err(|e| {
         io::Error::new(
             e.kind(),
-            format!("Failed to open input file '{}': {}", input_path.display(), e),
+            format!(
+                "Failed to open input file '{}': {}",
+                input_path.display(),
+                e
+            ),
         )
     })?;
-    
+
     // Create parent directories if they don't exist
     if let Some(parent) = output_path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| {
             io::Error::new(
                 e.kind(),
-                format!("Failed to create output directory '{}': {}", parent.display(), e),
+                format!(
+                    "Failed to create output directory '{}': {}",
+                    parent.display(),
+                    e
+                ),
             )
         })?;
     }
-    
+
     let mut output_file = File::create(output_path).map_err(|e| {
         io::Error::new(
             e.kind(),
-            format!("Failed to create output file '{}': {}", output_path.display(), e),
+            format!(
+                "Failed to create output file '{}': {}",
+                output_path.display(),
+                e
+            ),
         )
     })?;
 
     copy_encode(&input_file, &mut output_file, level).map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::Other,
+        io::Error::other(
             format!(
                 "Failed to compress file from '{}' to '{}': {}",
                 input_path.display(),
@@ -80,11 +93,11 @@ pub fn compress_file(
 }
 
 /// Decompress a zstd-compressed file and restore it to the specified path
-/// 
+///
 /// # Arguments
 /// * `input_path` - Path to the compressed file
 /// * `output_path` - Path where the decompressed file will be restored
-/// 
+///
 /// # Returns
 /// * `Ok(())` on success
 /// * `Err(io::Error)` on failure with descriptive error message
@@ -92,27 +105,39 @@ pub fn decompress_file(input_path: &Path, output_path: &Path) -> io::Result<()> 
     let input_file = File::open(input_path).map_err(|e| {
         io::Error::new(
             e.kind(),
-            format!("Failed to open compressed file '{}': {}", input_path.display(), e),
+            format!(
+                "Failed to open compressed file '{}': {}",
+                input_path.display(),
+                e
+            ),
         )
     })?;
-    
+
     // Create parent directories if they don't exist
     if let Some(parent) = output_path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| {
             io::Error::new(
                 e.kind(),
-                format!("Failed to create output directory '{}': {}", parent.display(), e),
+                format!(
+                    "Failed to create output directory '{}': {}",
+                    parent.display(),
+                    e
+                ),
             )
         })?;
     }
-    
+
     let output_file = File::create(output_path).map_err(|e| {
         io::Error::new(
             e.kind(),
-            format!("Failed to create output file '{}': {}", output_path.display(), e),
+            format!(
+                "Failed to create output file '{}': {}",
+                output_path.display(),
+                e
+            ),
         )
     })?;
-    
+
     copy_decode(input_file, output_file).map_err(|e| {
         io::Error::new(
             io::ErrorKind::InvalidData,
@@ -124,7 +149,7 @@ pub fn decompress_file(input_path: &Path, output_path: &Path) -> io::Result<()> 
             ),
         )
     })?;
-    
+
     Ok(())
 }
 
@@ -210,7 +235,8 @@ mod tests {
         fs::remove_file(&restored_file_path).expect("Failed to remove original file");
 
         // Restore the file
-        decompress_file(&compressed_file_path, &restored_file_path).expect("Failed to restore file");
+        decompress_file(&compressed_file_path, &restored_file_path)
+            .expect("Failed to restore file");
         log::info!("File restored successfully");
 
         // Check if the restored file exists and contains the expected content
@@ -233,8 +259,7 @@ mod tests {
         file.write_all(&buffer).expect("Failed to write test data");
 
         // Compress the file
-        compress_file(&input_path, &output_path, 3)
-            .expect("Failed to compress large file");
+        compress_file(&input_path, &output_path, 3).expect("Failed to compress large file");
 
         // Check if the compressed file exists
         assert!(output_path.exists());
@@ -265,8 +290,7 @@ mod tests {
         file.write_all(&buffer).expect("Failed to write test data");
 
         // Compress the file
-        compress_file(&input_path, &output_path, 3)
-            .expect("Failed to compress large file");
+        compress_file(&input_path, &output_path, 3).expect("Failed to compress large file");
 
         // Restore the file
         decompress_file(&output_path, &result_path).expect("Failed to restore large file");
@@ -301,10 +325,16 @@ mod tests {
 
         // Test compression to non-existent directory (should succeed because we auto-create directories)
         let result = compress_file(&input_path, &invalid_output_path, 3);
-        assert!(result.is_ok(), "Compression should succeed because parent directories are auto-created");
-        
+        assert!(
+            result.is_ok(),
+            "Compression should succeed because parent directories are auto-created"
+        );
+
         // Verify the file was created
-        assert!(invalid_output_path.exists(), "Output file should exist after compression");
+        assert!(
+            invalid_output_path.exists(),
+            "Output file should exist after compression"
+        );
     }
 
     #[test]
@@ -401,8 +431,7 @@ mod tests {
         File::create(&input_path).expect("Failed to create empty file");
 
         // Compress empty file
-        compress_file(&input_path, &output_path, 3)
-            .expect("Failed to compress empty file");
+        compress_file(&input_path, &output_path, 3).expect("Failed to compress empty file");
         assert!(output_path.exists());
 
         // Restore empty file
@@ -476,7 +505,8 @@ mod tests {
             assert!(compressed_path.exists());
 
             // Restore
-            decompress_file(&compressed_path, &restored_path).expect("Failed to restore test content");
+            decompress_file(&compressed_path, &restored_path)
+                .expect("Failed to restore test content");
             assert!(restored_path.exists());
 
             // Verify content matches
@@ -493,13 +523,21 @@ mod tests {
     #[test]
     fn test_binary_file_roundtrip() {
         let dir = tempdir().expect("Failed to create temp dir");
-        
+
         // Test various binary patterns
         let test_cases = vec![
             ("zeros", vec![0u8; 1000]),
             ("ones", vec![255u8; 1000]),
-            ("alternating", (0..1000).map(|i| if i % 2 == 0 { 0xAA } else { 0x55 }).collect()),
-            ("random_pattern", (0..1000).map(|i| (i * 17 + 42) as u8).collect()),
+            (
+                "alternating",
+                (0..1000)
+                    .map(|i| if i % 2 == 0 { 0xAA } else { 0x55 })
+                    .collect(),
+            ),
+            (
+                "random_pattern",
+                (0..1000).map(|i| (i * 17 + 42) as u8).collect(),
+            ),
             ("all_bytes", (0u8..=255u8).cycle().take(2000).collect()),
             ("sparse", {
                 let mut data = vec![0u8; 1000];
@@ -529,11 +567,15 @@ mod tests {
             assert!(restored_path.exists());
 
             // Verify binary content matches exactly
-            let restored_data = fs::read(&restored_path).expect("Failed to read restored binary data");
+            let restored_data =
+                fs::read(&restored_path).expect("Failed to read restored binary data");
             assert_eq!(
-                restored_data, binary_data,
+                restored_data,
+                binary_data,
                 "Binary data mismatch for test case: {} (original len: {}, restored len: {})",
-                name, binary_data.len(), restored_data.len()
+                name,
+                binary_data.len(),
+                restored_data.len()
             );
         }
     }
@@ -541,10 +583,10 @@ mod tests {
     #[test]
     fn test_large_binary_file_roundtrip() {
         let dir = tempdir().expect("Failed to create temp dir");
-        
+
         // Generate a large binary file with patterns
         let mut large_binary = Vec::with_capacity(1024 * 1024); // 1MB
-        
+
         // Fill with structured binary data
         for chunk in 0..(1024 * 1024 / 1024) {
             for byte_idx in 0..1024 {
@@ -553,7 +595,7 @@ mod tests {
                 large_binary.push(pattern_byte);
             }
         }
-        
+
         let input_path = dir.path().join("large_binary.bin");
         let compressed_path = dir.path().join("large_binary.zst");
         let restored_path = dir.path().join("large_binary_restored.bin");
@@ -570,11 +612,15 @@ mod tests {
         let original_size = fs::metadata(&input_path).unwrap().len();
         let compressed_size = fs::metadata(&compressed_path).unwrap().len();
         let compression_ratio = compressed_size as f64 / original_size as f64;
-        
+
         // Pattern-based data should compress well, expect at least 50% compression
-        assert!(compression_ratio < 0.8, 
-                "Compression ratio too low: {:.2}% (compressed: {} bytes, original: {} bytes)",
-                compression_ratio * 100.0, compressed_size, original_size);
+        assert!(
+            compression_ratio < 0.8,
+            "Compression ratio too low: {:.2}% (compressed: {} bytes, original: {} bytes)",
+            compression_ratio * 100.0,
+            compressed_size,
+            original_size
+        );
 
         // Decompress
         decompress_file(&compressed_path, &restored_path)
@@ -582,44 +628,52 @@ mod tests {
         assert!(restored_path.exists());
 
         // Verify exact binary match
-        let restored_data = fs::read(&restored_path).expect("Failed to read restored large binary file");
-        assert_eq!(restored_data.len(), large_binary.len(), "Size mismatch after decompression");
-        assert_eq!(restored_data, large_binary, "Large binary data corrupted during compression round-trip");
+        let restored_data =
+            fs::read(&restored_path).expect("Failed to read restored large binary file");
+        assert_eq!(
+            restored_data.len(),
+            large_binary.len(),
+            "Size mismatch after decompression"
+        );
+        assert_eq!(
+            restored_data, large_binary,
+            "Large binary data corrupted during compression round-trip"
+        );
     }
 
     #[test]
     fn test_executable_binary_roundtrip() {
         let dir = tempdir().expect("Failed to create temp dir");
-        
+
         // Simulate executable binary with header, code sections, and data
         let mut executable_data = Vec::new();
-        
+
         // ELF-like header (fake)
         executable_data.extend_from_slice(b"\x7fELF\x02\x01\x01\x00");
         executable_data.extend_from_slice(&[0u8; 8]); // padding
-        
+
         // Machine code patterns (x86_64-like)
         let code_patterns = [
-            &[0x48, 0x89, 0xe5][..], // mov %rsp, %rbp
+            &[0x48, 0x89, 0xe5][..],             // mov %rsp, %rbp
             &[0xb8, 0x00, 0x00, 0x00, 0x00][..], // mov $0, %eax
-            &[0x5d][..], // pop %rbp
-            &[0xc3][..], // ret
+            &[0x5d][..],                         // pop %rbp
+            &[0xc3][..],                         // ret
         ];
-        
+
         for _ in 0..100 {
             for pattern in &code_patterns {
                 executable_data.extend_from_slice(pattern);
             }
         }
-        
+
         // String table
         executable_data.extend_from_slice(b"\0main\0printf\0exit\0");
-        
+
         // Padding/alignment
         while executable_data.len() % 16 != 0 {
             executable_data.push(0);
         }
-        
+
         let input_path = dir.path().join("fake_executable.bin");
         let compressed_path = dir.path().join("fake_executable.zst");
         let restored_path = dir.path().join("fake_executable_restored.bin");
@@ -639,21 +693,23 @@ mod tests {
 
         // Verify exact match (critical for executables)
         let restored_data = fs::read(&restored_path).expect("Failed to read restored executable");
-        assert_eq!(restored_data, executable_data, 
-                   "Executable binary corrupted during compression - this would break the program!");
+        assert_eq!(
+            restored_data, executable_data,
+            "Executable binary corrupted during compression - this would break the program!"
+        );
     }
 
     #[test]
     fn test_multimedia_binary_roundtrip() {
         let dir = tempdir().expect("Failed to create temp dir");
-        
+
         // Simulate multimedia file patterns (like JPEG, PNG headers and data)
         let mut multimedia_data = Vec::new();
-        
+
         // JPEG-like header
         multimedia_data.extend_from_slice(&[0xFF, 0xD8, 0xFF, 0xE0]);
         multimedia_data.extend_from_slice(b"JFIF");
-        
+
         // Random image-like data with some structure
         for y in 0..100 {
             for x in 0..100 {
@@ -664,10 +720,10 @@ mod tests {
                 multimedia_data.extend_from_slice(&[r, g, b]);
             }
         }
-        
+
         // JPEG-like footer
         multimedia_data.extend_from_slice(&[0xFF, 0xD9]);
-        
+
         let input_path = dir.path().join("multimedia.bin");
         let compressed_path = dir.path().join("multimedia.zst");
         let restored_path = dir.path().join("multimedia_restored.bin");
@@ -687,12 +743,22 @@ mod tests {
 
         // Verify exact match
         let restored_data = fs::read(&restored_path).expect("Failed to read restored multimedia");
-        assert_eq!(restored_data, multimedia_data, 
-                   "Multimedia binary corrupted during compression");
-        
+        assert_eq!(
+            restored_data, multimedia_data,
+            "Multimedia binary corrupted during compression"
+        );
+
         // Verify header and footer integrity specifically
-        assert_eq!(&restored_data[0..4], &[0xFF, 0xD8, 0xFF, 0xE0], "JPEG header corrupted");
-        assert_eq!(&restored_data[restored_data.len()-2..], &[0xFF, 0xD9], "JPEG footer corrupted");
+        assert_eq!(
+            &restored_data[0..4],
+            &[0xFF, 0xD8, 0xFF, 0xE0],
+            "JPEG header corrupted"
+        );
+        assert_eq!(
+            &restored_data[restored_data.len() - 2..],
+            &[0xFF, 0xD9],
+            "JPEG footer corrupted"
+        );
     }
 
     #[test]
@@ -700,27 +766,35 @@ mod tests {
         let dir = tempdir().expect("Failed to create temp dir");
         let input_path = dir.path().join("test.txt");
         let output_path = dir.path().join("test.zst");
-        
+
         fs::write(&input_path, "test content").expect("Failed to write test file");
-        
+
         // Test invalid compression levels
         let invalid_levels = [-1, 23, 100];
         for level in invalid_levels {
             let result = compress_file(&input_path, &output_path, level);
-            assert!(result.is_err(), "Should fail for invalid compression level: {}", level);
-            
+            assert!(
+                result.is_err(),
+                "Should fail for invalid compression level: {}",
+                level
+            );
+
             if let Err(e) = result {
                 assert_eq!(e.kind(), io::ErrorKind::InvalidInput);
                 assert!(e.to_string().contains("Invalid compression level"));
             }
         }
-        
+
         // Test valid compression levels
         let valid_levels = [0, 1, 3, 9, 22];
         for level in valid_levels {
             let output_path = dir.path().join(format!("test_{}.zst", level));
             let result = compress_file(&input_path, &output_path, level);
-            assert!(result.is_ok(), "Should succeed for valid compression level: {}", level);
+            assert!(
+                result.is_ok(),
+                "Should succeed for valid compression level: {}",
+                level
+            );
             assert!(output_path.exists());
         }
     }
@@ -729,22 +803,22 @@ mod tests {
     fn test_new_functions_with_path_types() {
         let dir = tempdir().expect("Failed to create temp dir");
         let content = b"Test content for new functions";
-        
+
         // Test with &Path (preferred)
         let input_path = dir.path().join("input.txt");
         let compressed_path = dir.path().join("compressed.zst");
         let restored_path = dir.path().join("restored.txt");
-        
+
         fs::write(&input_path, content).expect("Failed to write test file");
-        
+
         // Test compress_file with &Path
         compress_file(&input_path, &compressed_path, 0).expect("compress_file failed");
         assert!(compressed_path.exists());
-        
+
         // Test decompress_file with &Path
         decompress_file(&compressed_path, &restored_path).expect("decompress_file failed");
         assert!(restored_path.exists());
-        
+
         let restored_content = fs::read(&restored_path).expect("Failed to read restored file");
         assert_eq!(restored_content, content);
     }

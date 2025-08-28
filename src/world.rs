@@ -41,10 +41,7 @@ impl World {
 
         let repo_db_path = repo_root.join(".buckets").join("buckets.db");
 
-        let bucket = match Bucket::from_meta_data(&work_dir) {
-            Ok(bucket) => Some(bucket),
-            Err(_e) => None,
-        };
+        let bucket = Bucket::from_meta_data(&work_dir).ok();
 
         let verbose = args.verbose;
 

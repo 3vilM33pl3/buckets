@@ -25,22 +25,21 @@ impl BucketCommand for Create {
     fn execute(&self) -> Result<(), BucketError> {
         let bucket_name = &self.args.bucket_name;
 
-        self.checks(&bucket_name)?;
+        self.checks(bucket_name)?;
 
-        let bucket_path = CURRENT_DIR.with(|dir| dir.join(&bucket_name));
-        std::fs::create_dir_all(&bucket_path.join(".b").join("storage"))?;
+        let bucket_path = CURRENT_DIR.with(|dir| dir.join(bucket_name));
+        std::fs::create_dir_all(bucket_path.join(".b").join("storage"))?;
 
         let buckets_repo_path = find_directory_in_parents(&bucket_path, ".buckets")
             .ok_or_else(|| BucketError::NotInRepo)?;
         let relative_path = match bucket_path.strip_prefix(
-            &buckets_repo_path
+            buckets_repo_path
                 .parent()
                 .ok_or_else(|| BucketError::NotInRepo)?,
         ) {
             Ok(x) => x,
             Err(_) => {
-                return Err(BucketError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                return Err(BucketError::IoError(std::io::Error::other(
                     "Error stripping prefix",
                 )))
             }
@@ -48,19 +47,20 @@ impl BucketCommand for Create {
         .to_path_buf();
 
         // Create async runtime for database operations
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| BucketError::from(format!("Failed to create async runtime: {}", e).as_str()))?;
-        
+        let rt = tokio::runtime::Runtime::new().map_err(|e| {
+            BucketError::from(format!("Failed to create async runtime: {}", e).as_str())
+        })?;
+
         let bucket_id = rt.block_on(async {
             let db = get_database().await?;
             let timestamp = Utc::now().to_rfc3339();
-            
+
             let path_str = relative_path.to_str().ok_or_else(|| {
                 BucketError::from("Invalid path string")
             })?;
-            
+
             let params: Vec<&(dyn ToSql + Sync)> = vec![bucket_name, &path_str, &timestamp];
-            
+
             // Insert and get the new bucket ID in one query
             let rows = db.query(
                 "INSERT INTO buckets (id, name, path, created_at) VALUES (uuid_generate_v4(), $1, $2, $3) RETURNING id",
@@ -68,7 +68,7 @@ impl BucketCommand for Create {
             ).await.map_err(|e| {
                 BucketError::from(format!("Error inserting into database: {}", e).as_str())
             })?;
-            
+
             if let Some(row) = rows.first() {
                 let id_str: String = row.get(0);
                 Uuid::parse_str(&id_str).map_err(|e| {
@@ -78,11 +78,11 @@ impl BucketCommand for Create {
                 Err(BucketError::from("Failed to get bucket ID from insert"))
             }
         })?;
-        
+
         let bucket = Bucket::default(bucket_id, bucket_name, &relative_path);
         bucket
             .write_bucket_info()
-            .map_err(|e| BucketError::from(e))?;
+            .map_err(BucketError::from)?;
 
         Ok(())
     }
@@ -159,8 +159,7 @@ impl Create {
                     "Directory already exists",
                 )));
             } else {
-                return Err(BucketError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                return Err(BucketError::IoError(std::io::Error::other(
                     "Unknown error",
                 )));
             }

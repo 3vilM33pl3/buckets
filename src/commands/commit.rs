@@ -2,7 +2,7 @@ use crate::args::CommitCommand;
 use crate::commands::BucketCommand;
 use crate::data::commit::{Commit as CommitData, CommitStatus, CommittedFile};
 use crate::errors::BucketError;
-use crate::postgres_db::{get_database};
+use crate::postgres_db::get_database;
 use crate::utils::utils::{find_files_excluding_top_level_b, hash_file};
 use crate::world::World;
 use blake3::Hash;
@@ -45,8 +45,7 @@ impl BucketCommand for Commit {
 
         // create a list of each file in the bucket directory, recursively
         // and create a blake3 hash for each file and add to current_commit
-        let current_commit =
-            self.list_files_with_metadata_in_bucket(world.work_dir.clone())?;
+        let current_commit = self.list_files_with_metadata_in_bucket(world.work_dir.clone())?;
         if current_commit.files.is_empty() {
             return Err(
                 Error::new(ErrorKind::NotFound, "No commitable files found in bucket.").into(),
@@ -56,8 +55,9 @@ impl BucketCommand for Commit {
         println!("Current commit: ########################################################## ");
 
         // Create async runtime for database operations
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| BucketError::from(format!("Failed to create async runtime: {}", e).as_str()))?;
+        let rt = tokio::runtime::Runtime::new().map_err(|e| {
+            BucketError::from(format!("Failed to create async runtime: {}", e).as_str())
+        })?;
 
         // Load the previous commit, if it exists
         match rt.block_on(Commit::load_last_commit_async(bucket.id)) {
@@ -93,8 +93,7 @@ impl BucketCommand for Commit {
             Err(_) => {
                 println!("Failed to load previous commit. ########################################################## ");
                 error!("Failed to load previous commit.");
-                return Err(BucketError::from(Error::new(
-                    ErrorKind::Other,
+                return Err(BucketError::from(Error::other(
                     "Failed to load previous commit.",
                 )));
             }
@@ -114,22 +113,20 @@ impl Commit {
         message: &String,
     ) -> Result<(), BucketError> {
         let db = get_database().await?;
-        
+
         // Insert the commit into the database
-        let commit_id = self.insert_commit_into_db_async(&*db, bucket_id, message).await?;
+        let commit_id = self
+            .insert_commit_into_db_async(&db, bucket_id, message)
+            .await?;
 
         // Process each file in the commit
         for file in files {
             // Insert the file into the database
-            self.insert_file_into_db_async(
-                &*db,
-                &commit_id,
-                &file.name,
-                &file.hash.to_string(),
-            ).await?;
+            self.insert_file_into_db_async(&db, &commit_id, &file.name, &file.hash.to_string())
+                .await?;
 
             // Compress and store the file (no database operation)
-            file.compress_and_store(&bucket_path).map_err(|e| {
+            file.compress_and_store(bucket_path).map_err(|e| {
                 error!("Error compressing and storing file: {}", e);
                 e
             })?;
@@ -145,14 +142,13 @@ impl Commit {
         hash: &str,
     ) -> Result<(), BucketError> {
         let params: Vec<&(dyn ToSql + Sync)> = vec![&commit_id, &file_path, &hash];
-        
+
         db.execute(
             "INSERT INTO files (id, commit_id, file_path, hash) VALUES (uuid_generate_v4(), $1, $2, $3)",
             &params,
         ).await
         .map_err(|e| {
-            BucketError::from(Error::new(
-                ErrorKind::Other,
+            BucketError::from(Error::other(
                 format!("Error inserting file into database: {}, commit id: {}, file path: {}, hash: {}", e, commit_id, file_path, hash),
             ))
         })?;
@@ -166,10 +162,10 @@ impl Commit {
         message: &String,
     ) -> Result<String, BucketError> {
         debug!("CommitCommand: inserting commit into PostgreSQL database");
-        
+
         let bucket_id_str = bucket_id.to_string();
         let params: Vec<&(dyn ToSql + Sync)> = vec![&bucket_id_str, message];
-        
+
         let rows = db.query(
             "INSERT INTO commits (id, bucket_id, message) VALUES (uuid_generate_v4(), $1, $2) RETURNING id",
             &params,
@@ -179,8 +175,7 @@ impl Commit {
             let id_str: String = row.get(0);
             Ok(id_str)
         } else {
-            Err(BucketError::from(Error::new(
-                ErrorKind::Other,
+            Err(BucketError::from(Error::other(
                 "Query returned no rows".to_string(),
             )))
         }
@@ -238,21 +233,25 @@ impl Commit {
         })
     }
 
-    pub async fn load_last_commit_async(bucket_id: Uuid) -> Result<Option<CommitData>, BucketError> {
+    pub async fn load_last_commit_async(
+        bucket_id: Uuid,
+    ) -> Result<Option<CommitData>, BucketError> {
         let db = get_database().await?;
 
         let bucket_id_str = bucket_id.to_string();
         let params: Vec<&(dyn ToSql + Sync)> = vec![&bucket_id_str];
-        
-        let rows = db.query(
-            "SELECT f.id, f.file_path, f.hash
+
+        let rows = db
+            .query(
+                "SELECT f.id, f.file_path, f.hash
              FROM files f
              JOIN commits c ON f.commit_id = c.id
              WHERE c.bucket_id = $1
              ORDER BY c.created_at DESC
              LIMIT 1",
-            &params,
-        ).await?;
+                &params,
+            )
+            .await?;
 
         let mut files = Vec::new();
         for row in &rows {
@@ -322,16 +321,23 @@ mod tests {
         // Need to setup a proper test environment
         let temp_dir = tempdir().expect("invalid temp dir").keep();
         let mut cmd1 = assert_cmd::Command::cargo_bin("buckets").expect("invalid command");
-        let init_output = cmd1.current_dir(temp_dir.as_path())
+        let init_output = cmd1
+            .current_dir(temp_dir.as_path())
             .arg("init")
             .arg("test_repo")
             .output();
-            
+
         // Check if init failed due to network issues
         if let Ok(output) = init_output {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            if stderr.contains("rate limit") || stderr.contains("Failed to install PostgreSQL") || !output.status.success() {
-                eprintln!("Skipping test due to init failure (network issues): {}", stderr);
+            if stderr.contains("rate limit")
+                || stderr.contains("Failed to install PostgreSQL")
+                || !output.status.success()
+            {
+                eprintln!(
+                    "Skipping test due to init failure (network issues): {}",
+                    stderr
+                );
                 return;
             }
         } else {
@@ -388,8 +394,13 @@ mod tests {
         });
         // Create async runtime for testing
         let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
-        let result = rt.block_on(commit_cmd
-            .process_files_async(bucket.id, &bucket_dir, &[committed_file], &commit_message))
+        let result = rt
+            .block_on(commit_cmd.process_files_async(
+                bucket.id,
+                &bucket_dir,
+                &[committed_file],
+                &commit_message,
+            ))
             .map_err(|e| {
                 error!("Error processing files: {}", e);
                 e

@@ -18,8 +18,8 @@ pub(crate) fn find_files_excluding_top_level_b(dir: &Path) -> Vec<PathBuf> {
     WalkDir::new(dir)
         .into_iter()
         .filter_map(Result::ok)
-        .filter(|entry| is_not_in_dir(entry, &dir, ".b"))
-        .filter_map(|entry| make_relative_path(entry.path(), &dir))
+        .filter(|entry| is_not_in_dir(entry, dir, ".b"))
+        .filter_map(|entry| make_relative_path(entry.path(), dir))
         .collect()
 }
 
@@ -73,10 +73,7 @@ pub fn find_directory_in_parents(start_path: &Path, target_dir_name: &str) -> Op
 }
 
 pub fn find_bucket_path(dir_path: &Path) -> Option<PathBuf> {
-    match find_directory_in_parents(dir_path, ".b") {
-        Some(path) => Some(path),
-        None => None,
-    }
+    find_directory_in_parents(dir_path, ".b")
     .map(|mut path| {
         path.pop();
         path
@@ -84,10 +81,7 @@ pub fn find_bucket_path(dir_path: &Path) -> Option<PathBuf> {
 }
 
 pub fn find_bucket_repo(dir_path: &Path) -> Option<PathBuf> {
-    match find_directory_in_parents(dir_path, ".buckets") {
-        Some(path) => Some(path),
-        None => None,
-    }
+    find_directory_in_parents(dir_path, ".buckets")
 }
 
 /// Validates that the current directory is inside a valid repository.
@@ -332,7 +326,7 @@ mod tests {
         // Create `.buckets` directory
         fs::create_dir_all(&buckets_dir).expect("failed to create .buckets directory");
         fs::create_dir_all(&child_dir).expect("failed to create child directory");
-        
+
         // Change the current directory to the child directory
         env::set_current_dir(&child_dir).expect("failed to change directory");
 
@@ -344,7 +338,7 @@ mod tests {
     #[test]
     fn test_connect_to_db_invalid_database() {
         let temp_dir = tempdir().expect("failed to create temp dir");
-        
+
         env::set_current_dir(&temp_dir).expect("failed to change directory");
 
         // Should fail because we're not in a .buckets directory
@@ -593,18 +587,21 @@ mod tests {
 
         let db_path = result.unwrap();
         let expected_path = buckets_dir.join("buckets.db");
-        
+
         // On macOS, /var is a symlink to /private/var, so we need to handle this
         // Instead of comparing paths directly, check if they resolve to the same file
         let db_path_str = db_path.to_string_lossy();
         let expected_path_str = expected_path.to_string_lossy();
-        
+
         // Check if both paths end with the same relative part or are canonically equivalent
         assert!(
-            db_path_str == expected_path_str || 
-            db_path_str.ends_with("/.buckets/buckets.db") && expected_path_str.ends_with("/.buckets/buckets.db") ||
-            db_path.canonicalize().ok() == expected_path.canonicalize().ok(),
-            "Expected db_path: {:?}, got: {:?}", expected_path, db_path
+            db_path_str == expected_path_str
+                || db_path_str.ends_with("/.buckets/buckets.db")
+                    && expected_path_str.ends_with("/.buckets/buckets.db")
+                || db_path.canonicalize().ok() == expected_path.canonicalize().ok(),
+            "Expected db_path: {:?}, got: {:?}",
+            expected_path,
+            db_path
         );
 
         Ok(())
@@ -652,17 +649,17 @@ pub fn connect_to_db_with_path(db_path: &std::path::Path) -> Result<(), BucketEr
             if !parent_dir.exists() {
                 return Err(BucketError::IoError(std::io::Error::new(
                     std::io::ErrorKind::NotFound,
-                    "Database directory does not exist"
+                    "Database directory does not exist",
                 )));
             }
         } else {
             return Err(BucketError::IoError(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
-                "Invalid database path"
+                "Invalid database path",
             )));
         }
     }
-    
+
     // PostgreSQL connections are handled by the connection pool
     Ok(())
 }

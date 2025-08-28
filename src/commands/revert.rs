@@ -41,13 +41,14 @@ impl BucketCommand for Revert {
         let file_path = self.args.file.clone();
 
         // Create async runtime for database operations
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| BucketError::from(format!("Failed to create async runtime: {}", e).as_str()))?;
+        let rt = tokio::runtime::Runtime::new().map_err(|e| {
+            BucketError::from(format!("Failed to create async runtime: {}", e).as_str())
+        })?;
 
         // Get the file's hash from the specified commit or the last commit
         let hash = rt.block_on(async {
             let db = get_database().await?;
-            
+
             let relative_path = PathBuf::from(&file_path)
                 .strip_prefix(&bucket_path)
                 .unwrap_or(&PathBuf::from(&file_path))
@@ -55,7 +56,7 @@ impl BucketCommand for Revert {
                 .to_string();
 
             let bucket_id_str = bucket.id.to_string();
-            
+
             let (query, params): (String, Vec<&(dyn ToSql + Sync)>) = match &self.args.commit_id {
                 Some(commit_id) => {
                     // Query for specific commit ID
@@ -64,10 +65,12 @@ impl BucketCommand for Revert {
                         JOIN commits c ON f.commit_id = c.id
                         WHERE f.file_path = $1
                         AND c.id = $2
-                        AND c.bucket_id = $3".to_string();
-                    let params: Vec<&(dyn ToSql + Sync)> = vec![&relative_path, commit_id, &bucket_id_str];
+                        AND c.bucket_id = $3"
+                        .to_string();
+                    let params: Vec<&(dyn ToSql + Sync)> =
+                        vec![&relative_path, commit_id, &bucket_id_str];
                     (query, params)
-                },
+                }
                 None => {
                     // Query for latest commit (existing behavior)
                     let query = "SELECT f.hash 
@@ -78,7 +81,8 @@ impl BucketCommand for Revert {
                             SELECT MAX(created_at) 
                             FROM commits 
                             WHERE bucket_id = $2
-                        )".to_string();
+                        )"
+                    .to_string();
                     let params: Vec<&(dyn ToSql + Sync)> = vec![&relative_path, &bucket_id_str];
                     (query, params)
                 }
@@ -90,13 +94,14 @@ impl BucketCommand for Revert {
                 Some(row) => {
                     let hash: String = row.get(0);
                     Ok(hash)
-                },
-                None => match &self.args.commit_id {
-                    Some(commit_id) => Err(BucketError::from(format!(
-                        "File '{}' not found in commit '{}'", file_path, commit_id
-                    ).as_str())),
-                    None => Err(BucketError::FileNotFound(file_path.clone())),
                 }
+                None => match &self.args.commit_id {
+                    Some(commit_id) => Err(BucketError::from(
+                        format!("File '{}' not found in commit '{}'", file_path, commit_id)
+                            .as_str(),
+                    )),
+                    None => Err(BucketError::FileNotFound(file_path.clone())),
+                },
             }
         })?;
 
@@ -170,8 +175,7 @@ mod tests {
 
     fn should_skip_database_tests() -> bool {
         // Check for environment variables that indicate we should skip database tests
-        std::env::var("BUCKETS_SKIP_DB_TESTS").is_ok() || 
-        std::env::var("NO_NETWORK").is_ok()
+        std::env::var("BUCKETS_SKIP_DB_TESTS").is_ok() || std::env::var("NO_NETWORK").is_ok()
     }
 
     #[test]
@@ -185,19 +189,26 @@ mod tests {
         // Setup test environment
         let temp_dir = tempdir().expect("invalid temp dir").keep();
         log::debug!("temp_dir: {:?}", temp_dir);
-        
+
         // First try to initialize - if it fails due to network issues, skip the test
         let mut cmd1 = assert_cmd::Command::cargo_bin("buckets").expect("invalid command");
-        let init_output = cmd1.current_dir(temp_dir.as_path())
+        let init_output = cmd1
+            .current_dir(temp_dir.as_path())
             .arg("init")
             .arg("test_repo")
             .output();
-            
+
         // Check if init failed due to network issues
         if let Ok(output) = init_output {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            if stderr.contains("rate limit") || stderr.contains("Failed to install PostgreSQL") || !output.status.success() {
-                eprintln!("Skipping test due to init failure (network issues): {}", stderr);
+            if stderr.contains("rate limit")
+                || stderr.contains("Failed to install PostgreSQL")
+                || !output.status.success()
+            {
+                eprintln!(
+                    "Skipping test due to init failure (network issues): {}",
+                    stderr
+                );
                 return;
             }
         } else {
