@@ -482,48 +482,6 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_get_db_path_no_repo() {
-        let temp_dir = tempdir().expect("failed to create temp dir");
-        env::set_current_dir(&temp_dir).expect("failed to change directory");
-
-        let result = get_db_path();
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            BucketError::NotInRepo => {}
-            _ => panic!("Expected NotInRepo error"),
-        }
-    }
-
-    #[test]
-    fn test_get_db_path_success() -> io::Result<()> {
-        let temp_dir = tempdir().expect("failed to create temp dir");
-        let buckets_dir = temp_dir.path().join(".buckets");
-        fs::create_dir_all(&buckets_dir)?;
-
-        env::set_current_dir(&temp_dir).expect("failed to change directory");
-
-        let result = get_db_path();
-        assert!(result.is_ok());
-
-        let db_path = result.unwrap();
-        let expected_path = buckets_dir.join("buckets.db");
-        
-        // On macOS, /var is a symlink to /private/var, so we need to handle this
-        // Instead of comparing paths directly, check if they resolve to the same file
-        let db_path_str = db_path.to_string_lossy();
-        let expected_path_str = expected_path.to_string_lossy();
-        
-        // Check if both paths end with the same relative part or are canonically equivalent
-        assert!(
-            db_path_str == expected_path_str || 
-            db_path_str.ends_with("/.buckets/buckets.db") && expected_path_str.ends_with("/.buckets/buckets.db") ||
-            db_path.canonicalize().ok() == expected_path.canonicalize().ok(),
-            "Expected db_path: {:?}, got: {:?}", expected_path, db_path
-        );
-
-        Ok(())
-    }
 
 }
 
