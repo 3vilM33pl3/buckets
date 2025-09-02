@@ -105,29 +105,6 @@ pub fn validate_repo() -> Result<(), BucketError> {
     Ok(())
 }
 
-/// Helper for compatibility - PostgreSQL connections are managed automatically
-pub fn close_connection(_connection: ()) -> Result<(), BucketError> {
-    // PostgreSQL connections are managed by the connection pool
-    // No explicit close needed
-    Ok(())
-}
-
-/// Compatibility wrapper for database operations
-/// This is a temporary bridge while migrating from DuckDB to PostgreSQL
-///
-/// TODO(buckets-db-migration): This wrapper accepts a closure that takes `&()` (unit reference)
-/// instead of an actual database connection. This is a temporary measure and does not provide
-/// the intended functionality. All usages should be migrated to use the new PostgreSQL connection
-/// interface by Q3 2024, after which this function should be removed.
-pub fn with_db_connection<F, R>(f: F) -> Result<R, BucketError>
-where
-    F: FnOnce(&()) -> Result<R, BucketError>,
-{
-    // For now, just pass a dummy connection
-    // Individual commands will need to be updated to use PostgreSQL directly
-    let dummy_connection = ();
-    f(&dummy_connection)
-}
 
 #[cfg(test)]
 mod tests {
@@ -323,69 +300,7 @@ mod tests {
         assert_eq!(result, None);
     }
 
-    #[test]
-    fn test_connect_to_db() {
-        let temp_dir = tempdir().expect("failed to create temp dir");
-        let buckets_dir = temp_dir.path().join(".buckets");
-        let child_dir = temp_dir.path().join("child");
 
-        // Create `.buckets` directory
-        fs::create_dir_all(&buckets_dir).expect("failed to create .buckets directory");
-        fs::create_dir_all(&child_dir).expect("failed to create child directory");
-        
-        // Change the current directory to the child directory
-        env::set_current_dir(&child_dir).expect("failed to change directory");
-
-        // Connect to the database using the function
-        let result = connect_to_db();
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_connect_to_db_invalid_database() {
-        let temp_dir = tempdir().expect("failed to create temp dir");
-        
-        env::set_current_dir(&temp_dir).expect("failed to change directory");
-
-        // Should fail because we're not in a .buckets directory
-        let result = connect_to_db();
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_with_db_connection_success() {
-        let temp_dir = tempdir().expect("failed to create temp dir");
-        let buckets_dir = temp_dir.path().join(".buckets");
-        fs::create_dir_all(&buckets_dir).expect("failed to create .buckets directory");
-
-        env::set_current_dir(&temp_dir).expect("failed to change directory");
-
-        let result = with_db_connection(|_connection| {
-            // Just return a test value for now
-            Ok(42)
-        });
-
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 42);
-    }
-
-    #[test]
-    fn test_with_db_connection_error_propagation() {
-        let temp_dir = tempdir().expect("failed to create temp dir");
-        let buckets_dir = temp_dir.path().join(".buckets");
-        fs::create_dir_all(&buckets_dir).expect("failed to create .buckets directory");
-
-        env::set_current_dir(&temp_dir).expect("failed to change directory");
-
-        let result: Result<i32, BucketError> =
-            with_db_connection(|_connection| Err(BucketError::NotInRepo));
-
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            BucketError::NotInRepo => {}
-            _ => panic!("Expected NotInRepo error"),
-        }
-    }
 
     #[test]
     fn test_hash_file_large_file() -> io::Result<()> {
@@ -567,102 +482,6 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_get_db_path_no_repo() {
-        let temp_dir = tempdir().expect("failed to create temp dir");
-        env::set_current_dir(&temp_dir).expect("failed to change directory");
 
-        let result = get_db_path();
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            BucketError::NotInRepo => {}
-            _ => panic!("Expected NotInRepo error"),
-        }
-    }
-
-    #[test]
-    fn test_get_db_path_success() -> io::Result<()> {
-        let temp_dir = tempdir().expect("failed to create temp dir");
-        let buckets_dir = temp_dir.path().join(".buckets");
-        fs::create_dir_all(&buckets_dir)?;
-
-        env::set_current_dir(&temp_dir).expect("failed to change directory");
-
-        let result = get_db_path();
-        assert!(result.is_ok());
-
-        let db_path = result.unwrap();
-        let expected_path = buckets_dir.join("buckets.db");
-        
-        // On macOS, /var is a symlink to /private/var, so we need to handle this
-        // Instead of comparing paths directly, check if they resolve to the same file
-        let db_path_str = db_path.to_string_lossy();
-        let expected_path_str = expected_path.to_string_lossy();
-        
-        // Check if both paths end with the same relative part or are canonically equivalent
-        assert!(
-            db_path_str == expected_path_str || 
-            db_path_str.ends_with("/.buckets/buckets.db") && expected_path_str.ends_with("/.buckets/buckets.db") ||
-            db_path.canonicalize().ok() == expected_path.canonicalize().ok(),
-            "Expected db_path: {:?}, got: {:?}", expected_path, db_path
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_connect_to_db_with_path_invalid() {
-        let invalid_path = PathBuf::from("/definitely/does/not/exist/db.db");
-        let result = connect_to_db_with_path(&invalid_path);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_connect_to_db_with_path_valid() -> io::Result<()> {
-        let temp_dir = tempdir().expect("failed to create temp dir");
-        let db_path = temp_dir.path().join("test.db");
-
-        // Test the compatibility wrapper
-        let result = connect_to_db_with_path(&db_path);
-        assert!(result.is_ok());
-
-        Ok(())
-    }
 }
 
-/// Get the database path without opening a connection
-#[allow(dead_code)]
-pub fn get_db_path() -> Result<std::path::PathBuf, BucketError> {
-    let current_dir = env::current_dir()?;
-
-    match find_directory_in_parents(&current_dir, ".buckets") {
-        Some(path) => Ok(path.join("buckets.db")),
-        None => Err(BucketError::NotInRepo),
-    }
-}
-
-/// Create a database connection from a path (useful for reusing path lookups)
-/// This is a compatibility wrapper - PostgreSQL connections are managed differently
-#[allow(dead_code)]
-pub fn connect_to_db_with_path(db_path: &std::path::Path) -> Result<(), BucketError> {
-    // Check if the path is valid - for PostgreSQL migration compatibility
-    if !db_path.exists() {
-        let parent = db_path.parent();
-        if let Some(parent_dir) = parent {
-            if !parent_dir.exists() {
-                return Err(BucketError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "Database directory does not exist"
-                )));
-            }
-        } else {
-            return Err(BucketError::IoError(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "Invalid database path"
-            )));
-        }
-    }
-    
-    // PostgreSQL connections are handled by the connection pool
-    Ok(())
-}

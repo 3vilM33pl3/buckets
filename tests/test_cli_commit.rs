@@ -2,6 +2,11 @@ mod common;
 
 #[cfg(test)]
 mod tests {
+    use std::{fs::File, io::Write, path::PathBuf};
+
+    use predicates::str::contains;
+    use serial_test::serial;
+
     use crate::common::tests::get_test_dir;
     /// Test the `commit` command.
     ///
