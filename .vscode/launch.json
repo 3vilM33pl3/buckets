@@ -4,7 +4,27 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-        
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'buckets init narrowboat --database postgres'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=buckets",
+                    "--package=buckets"
+                ],
+                "filter": {
+                    "name": "buckets",
+                    "kind": "bin"
+                }
+            },
+            "args": ["init", "narrowboat", "--database", "postgres"],
+            "cwd": "/home/olivier/Projects/BucketsRepositories",
+            "env": {
+                "DATABASE_URL": "postgresql://olivier:4ppeltaart@monolith:5432/buckets"
+            }
+        },        
         {
             "type": "lldb",
             "request": "launch",
