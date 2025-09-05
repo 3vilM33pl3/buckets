@@ -56,12 +56,21 @@ impl Init {
     }
 
     pub fn create_config_file(&self, location: &Path) -> Result<(), BucketError> {
-        // Define the default configuration
-        let config = Config {
+        // Start with default configuration
+        let mut config = Config {
             ntp_server: "pool.ntp.org".to_string(),
             ip_check: "8.8.8.8".to_string(),
             url_check: "api.ipify.org".to_string(),
+            postgresql_connection: None,
         };
+
+        // Override with global config values if available
+        if let Ok(global_config) = crate::utils::config::GlobalConfig::load() {
+            config.ntp_server = global_config.ntp_server;
+            if global_config.postgresql_connection.is_some() {
+                config.postgresql_connection = global_config.postgresql_connection;
+            }
+        }
 
         // Serialize the configuration to TOML format
         let toml_content = toml::to_string(&config).map_err(|e| {

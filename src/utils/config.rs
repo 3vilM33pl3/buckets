@@ -10,6 +10,7 @@ pub(crate) struct RepositoryConfig {
     pub ntp_server: String,
     pub ip_check: String,
     pub url_check: String,
+    pub postgresql_connection: Option<String>,
 }
 
 impl RepositoryConfig {
@@ -35,6 +36,9 @@ impl RepositoryConfig {
         if use_global {
             if let Ok(global_config) = GlobalConfig::load() {
                 config.ntp_server = global_config.ntp_server;
+                if global_config.postgresql_connection.is_some() {
+                    config.postgresql_connection = global_config.postgresql_connection;
+                }
             }
         }
 
@@ -61,12 +65,16 @@ impl RepositoryConfig {
             ntp_server: "pool.ntp.org".to_string(),
             ip_check: "8.8.8.8".to_string(),
             url_check: "api.ipify.org".to_string(),
+            postgresql_connection: None,
         };
 
         // Override with global config values if available and requested
         if use_global {
             if let Ok(global_config) = GlobalConfig::load() {
                 config.ntp_server = global_config.ntp_server;
+                if global_config.postgresql_connection.is_some() {
+                    config.postgresql_connection = global_config.postgresql_connection;
+                }
             }
         }
 
@@ -111,6 +119,7 @@ mod tests {
         assert_eq!(config.ip_check, "8.8.8.8");
         assert_eq!(config.ntp_server, "pool.ntp.org");
         assert_eq!(config.url_check, "api.ipify.org");
+        assert_eq!(config.postgresql_connection, None);
     }
 
     #[test]
@@ -119,6 +128,7 @@ mod tests {
         assert_eq!(config.ntp_server, "pool.ntp.org");
         assert_eq!(config.ip_check, "8.8.8.8");
         assert_eq!(config.url_check, "api.ipify.org");
+        assert_eq!(config.postgresql_connection, None);
     }
 
     #[test]
@@ -140,6 +150,7 @@ mod tests {
 ntp_server = "custom.ntp.server"
 ip_check = "1.1.1.1"
 url_check = "custom.check.url"
+postgresql_connection = "postgresql://test:test@localhost:5432/test"
 "#;
         let config: RepositoryConfig =
             toml::from_str(toml_content).expect("Failed to deserialize config");
@@ -147,6 +158,7 @@ url_check = "custom.check.url"
         assert_eq!(config.ntp_server, "custom.ntp.server");
         assert_eq!(config.ip_check, "1.1.1.1");
         assert_eq!(config.url_check, "custom.check.url");
+        assert_eq!(config.postgresql_connection, Some("postgresql://test:test@localhost:5432/test".to_string()));
     }
 
     #[test]
@@ -214,6 +226,7 @@ url_check = "custom.check.url"
         assert_eq!(config.ip_check, "8.8.8.8");
         assert_eq!(config.ntp_server, "pool.ntp.org");
         assert_eq!(config.url_check, "api.ipify.org");
+        assert_eq!(config.postgresql_connection, None);
         Ok(())
     }
 
