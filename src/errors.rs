@@ -8,6 +8,7 @@ pub enum BucketError {
     #[error("Database Error: {0}")]
     PostgreSQL(#[from] tokio_postgres::Error),
     #[error("Database Error: {0}")]
+    #[allow(dead_code)] // Used for PostgreSQL migration
     DatabaseError(String),
     #[error("Bucket already exists")]
     BucketAlreadyExists,
@@ -24,6 +25,7 @@ pub enum BucketError {
     #[error("Invalid data {0}")]
     InvalidData(String),
     #[error("Not found {0}")]
+    #[allow(dead_code)] // Used for PostgreSQL migration
     NotFound(String),
     #[error("File not found {0}")]
     FileNotFound(String),
@@ -38,7 +40,6 @@ impl From<&str> for BucketError {
         BucketError::IoError(io::Error::new(io::ErrorKind::Other, error))
     }
 }
-
 
 #[cfg(test)]
 mod tests {

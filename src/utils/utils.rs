@@ -3,7 +3,7 @@ use blake3::{Hash, Hasher};
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::{env, fs, io};
+use std::{fs, io};
 use walkdir::{DirEntry, WalkDir};
 
 #[allow(dead_code)]
@@ -90,26 +90,10 @@ pub fn find_bucket_repo(dir_path: &Path) -> Option<PathBuf> {
     }
 }
 
-/// Validates that the current directory is inside a valid repository.
-/// This function checks for the presence of a `.buckets` directory in the parent hierarchy.
-pub fn validate_repo() -> Result<(), BucketError> {
-    let current_dir = env::current_dir()?;
-
-    let _buckets_path = match find_directory_in_parents(&current_dir, ".buckets") {
-        Some(path) => path,
-        None => return Err(BucketError::NotInRepo),
-    };
-
-    // For now, just check if we're in a valid repo
-    // The actual database connections are handled by the PostgreSQL module
-    Ok(())
-}
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs::create_dir_all;
+    use std::{env, fs::create_dir_all};
     use tempfile::tempdir;
 
     #[test]
@@ -300,8 +284,6 @@ mod tests {
         assert_eq!(result, None);
     }
 
-
-
     #[test]
     fn test_hash_file_large_file() -> io::Result<()> {
         let temp_dir = tempdir().expect("failed to create temp dir");
@@ -481,7 +463,4 @@ mod tests {
 
         Ok(())
     }
-
-
 }
-
