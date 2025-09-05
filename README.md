@@ -88,6 +88,22 @@ sudo apt-get purge buckets        # Remove package and config files
 
 ## Commands
 
+### Global Configuration
+
+#### `buckets setup`
+Configure global settings for all Buckets repositories on your system.
+
+```bash
+buckets setup
+```
+
+This interactive command allows you to configure:
+- PostgreSQL connection strings for external databases
+- Custom NTP servers for time synchronization
+- Global defaults inherited by new repositories
+
+See [Setup Command Documentation](docs/setup_command.md) for detailed usage.
+
 ### Repository Management
 
 #### `buckets init <repo_name>`

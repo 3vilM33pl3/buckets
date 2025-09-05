@@ -1,7 +1,8 @@
 use crate::utils::checks::find_directory_in_parents;
+use crate::errors::BucketError;
 use serde::{Deserialize, Serialize};
-use std::fs::File;
-use std::io::Read;
+use std::fs::{self, File};
+use std::io::{Read, Write};
 use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -13,6 +14,10 @@ pub(crate) struct RepositoryConfig {
 
 impl RepositoryConfig {
     pub(crate) fn from_file(path: PathBuf) -> Result<Self, std::io::Error> {
+        Self::from_file_with_global_config(path, true)
+    }
+
+    fn from_file_with_global_config(path: PathBuf, use_global: bool) -> Result<Self, std::io::Error> {
         let buckets_repo_path = find_directory_in_parents(&path, ".buckets").ok_or(
             std::io::Error::new(std::io::ErrorKind::NotFound, "No .buckets directory found"),
         )?;
@@ -23,18 +28,55 @@ impl RepositoryConfig {
         file.read_to_string(&mut toml_string)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
 
-        toml::from_str(&toml_string)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
+        let mut config: RepositoryConfig = toml::from_str(&toml_string)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
+
+        // Override with global config values if available and requested
+        if use_global {
+            if let Ok(global_config) = GlobalConfig::load() {
+                config.ntp_server = global_config.ntp_server;
+            }
+        }
+
+        Ok(config)
+    }
+
+    /// Load config from file without global config influence (for tests)
+    #[cfg(test)]
+    fn from_file_no_global(path: PathBuf) -> Result<Self, std::io::Error> {
+        Self::from_file_with_global_config(path, false)
     }
 }
 
 impl Default for RepositoryConfig {
     fn default() -> Self {
-        RepositoryConfig {
+        Self::default_with_global_config(true)
+    }
+}
+
+impl RepositoryConfig {
+    /// Create default config with option to use global config or not
+    fn default_with_global_config(use_global: bool) -> Self {
+        let mut config = RepositoryConfig {
             ntp_server: "pool.ntp.org".to_string(),
             ip_check: "8.8.8.8".to_string(),
             url_check: "api.ipify.org".to_string(),
+        };
+
+        // Override with global config values if available and requested
+        if use_global {
+            if let Ok(global_config) = GlobalConfig::load() {
+                config.ntp_server = global_config.ntp_server;
+            }
         }
+
+        config
+    }
+
+    /// Create default config without global config influence (for tests)
+    #[cfg(test)]
+    fn default_no_global() -> Self {
+        Self::default_with_global_config(false)
     }
 }
 
@@ -62,7 +104,7 @@ mod tests {
             .expect("Failed to create config file");
 
         // Read the file
-        let config = RepositoryConfig::from_file(temp_dir.path().to_path_buf())
+        let config = RepositoryConfig::from_file_no_global(temp_dir.path().to_path_buf())
             .expect("Failed to read config file");
 
         // Assertions
@@ -73,7 +115,7 @@ mod tests {
 
     #[test]
     fn test_config_default_values() {
-        let config = RepositoryConfig::default();
+        let config = RepositoryConfig::default_no_global();
         assert_eq!(config.ntp_server, "pool.ntp.org");
         assert_eq!(config.ip_check, "8.8.8.8");
         assert_eq!(config.url_check, "api.ipify.org");
@@ -81,7 +123,7 @@ mod tests {
 
     #[test]
     fn test_config_serialization() {
-        let config = RepositoryConfig::default();
+        let config = RepositoryConfig::default_no_global();
         let serialized = toml::to_string(&config).expect("Failed to serialize config");
 
         assert!(serialized.contains("ntp_server"));
@@ -168,7 +210,7 @@ url_check = "custom.check.url"
         let nested_dir = temp_dir.path().join("nested").join("directory");
         fs::create_dir_all(&nested_dir)?;
 
-        let config = RepositoryConfig::from_file(nested_dir)?;
+        let config = RepositoryConfig::from_file_no_global(nested_dir)?;
         assert_eq!(config.ip_check, "8.8.8.8");
         assert_eq!(config.ntp_server, "pool.ntp.org");
         assert_eq!(config.url_check, "api.ipify.org");
@@ -184,5 +226,70 @@ url_check = "custom.check.url"
         assert!(debug_str.contains("ntp_server"));
         assert!(debug_str.contains("ip_check"));
         assert!(debug_str.contains("url_check"));
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub(crate) struct GlobalConfig {
+    pub ntp_server: String,
+    pub postgresql_connection: Option<String>,
+}
+
+impl GlobalConfig {
+    pub(crate) fn config_path() -> Result<PathBuf, BucketError> {
+        let home_dir = dirs::home_dir()
+            .ok_or_else(|| BucketError::IoError(std::io::Error::new(
+                std::io::ErrorKind::NotFound, 
+                "Could not find home directory"
+            )))?;
+        Ok(home_dir.join(".buckets_config.toml"))
+    }
+
+    pub(crate) fn load() -> Result<Self, BucketError> {
+        let config_path = Self::config_path()?;
+        
+        if !config_path.exists() {
+            return Ok(Self::default());
+        }
+
+        let mut file = File::open(&config_path)?;
+        let mut content = String::new();
+        file.read_to_string(&mut content)?;
+
+        toml::from_str(&content)
+            .map_err(|e| BucketError::IoError(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Failed to parse global config: {}", e)
+            )))
+    }
+
+    pub(crate) fn save(&self) -> Result<(), BucketError> {
+        let config_path = Self::config_path()?;
+        
+        // Create parent directory if it doesn't exist
+        if let Some(parent) = config_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        let content = toml::to_string_pretty(self)
+            .map_err(|e| BucketError::IoError(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Failed to serialize global config: {}", e)
+            )))?;
+
+        let mut file = File::create(&config_path)?;
+        file.write_all(content.as_bytes())?;
+        file.flush()?;
+
+        Ok(())
+    }
+}
+
+impl Default for GlobalConfig {
+    fn default() -> Self {
+        Self {
+            ntp_server: "pool.ntp.org".to_string(),
+            postgresql_connection: None,
+        }
     }
 }
