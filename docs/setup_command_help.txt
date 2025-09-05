@@ -1,0 +1,62 @@
+USAGE:
+    buckets setup [OPTIONS]
+
+DESCRIPTION:
+    Configure global settings for Buckets CLI that apply to all repositories
+    on this system. This command creates and manages a configuration file
+    in your home directory (~/.buckets_config.toml) that provides default
+    values for new repositories.
+
+    The setup process is interactive and will guide you through configuring:
+    
+    • PostgreSQL connection string (optional)
+      - Used for external database connections
+      - Inherits to all new repositories using external databases
+      - Format: postgresql://user:pass@host:port/database
+    
+    • NTP server (required)
+      - Used for time synchronization across repositories
+      - Defaults to "pool.ntp.org" if not specified
+      - Common alternatives: time.google.com, time.cloudflare.com
+
+OPTIONS:
+    -v, --verbose    Enable verbose output
+        --json       Output configuration in JSON format
+    -h, --help       Print help information
+
+CONFIGURATION FILE:
+    Location: ~/.buckets_config.toml
+    Format:   TOML (Tom's Obvious, Minimal Language)
+    
+    Example content:
+    ntp_server = "time.google.com"
+    postgresql_connection = "postgresql://user:pass@localhost:5432/buckets"
+
+USAGE EXAMPLES:
+    # Interactive configuration setup
+    buckets setup
+    
+    # View current configuration
+    cat ~/.buckets_config.toml
+    
+    # Update existing configuration
+    buckets setup
+    
+    # Remove configuration (start fresh)
+    rm ~/.buckets_config.toml && buckets setup
+
+INTEGRATION:
+    After running setup, new repositories created with `buckets init` will
+    automatically inherit the global configuration values. This ensures
+    consistent database connections and time synchronization across all
+    your Buckets repositories.
+
+SECURITY NOTE:
+    The configuration file may contain sensitive database credentials.
+    Consider setting restrictive permissions:
+    
+    chmod 600 ~/.buckets_config.toml
+
+SEE ALSO:
+    buckets init    Initialize a new repository (inherits global config)
+    buckets --help  General help and command overview

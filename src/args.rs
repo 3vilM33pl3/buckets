@@ -22,6 +22,8 @@ pub enum Command {
     Link(LinkCommand),
     Finalize(FinalizeCommand),
     Schema(SchemaCommand),
+    // Global commands
+    Setup(SetupCommand),
 }
 
 impl Command {
@@ -42,6 +44,7 @@ impl Command {
             Command::Link(cmd) => &cmd.shared,
             Command::Finalize(cmd) => &cmd.shared,
             Command::Schema(cmd) => &cmd.shared,
+            Command::Setup(cmd) => &cmd.shared,
         }
     }
 }
@@ -183,6 +186,12 @@ pub struct FinalizeCommand {
 
 #[derive(Args, Clone)]
 pub struct SchemaCommand {
+    #[clap(flatten)]
+    pub shared: SharedArguments,
+}
+
+#[derive(Args, Clone)]
+pub struct SetupCommand {
     #[clap(flatten)]
     pub shared: SharedArguments,
 }
