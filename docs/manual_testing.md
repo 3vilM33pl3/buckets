@@ -164,7 +164,7 @@ cat .buckets/config
 grep "time.ntp.org" .buckets/config || grep "pool.ntp.org" .buckets/config
 
 # Verify PostgreSQL connection inheritance
-grep "postgresql_connection" .buckets/config || echo "No PostgreSQL connection inherited"
+grep "postgresql://" .buckets/config || echo "No PostgreSQL connection inherited"
 ```
 
 **Post-conditions:** Repository uses global configuration values
