@@ -58,7 +58,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: debian-package
-          path: **/buckets_*.deb
+          path: !**/buckets_*.deb
           if-no-files-found: error
           overwrite: true
 
