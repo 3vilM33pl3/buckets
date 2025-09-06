@@ -1,5 +1,18 @@
 # Manual Test Plan for Buckets CLI
 
+## Table of Contents
+
+1. [Test Environment Setup](#test-environment-setup)
+2. [Setup Command Tests](#setup-command-tests)
+3. [Core Functionality Tests](#core-functionality-tests)
+4. [Information Command Tests](#information-command-tests)
+5. [Expectation Management Tests](#expectation-management-tests)
+6. [Database Management Tests](#database-management-tests)
+7. [Integration and Performance Tests](#integration-and-performance-tests)
+8. [Error Handling Tests](#error-handling-tests)
+9. [Test Automation Scripts](#test-automation-scripts)
+10. [Test Execution Guidelines](#test-execution-guidelines)
+
 ## Test Environment Setup
 
 ### Prerequisites
@@ -36,9 +49,177 @@ Set-Alias buckets "C:\Users\WindowsUser\.cargo\bin\buckets.exe"
 buckets --version
 ```
 
-## Test Suite
+---
 
-### TC001: Repository Initialization - Default (Embedded PostgreSQL)
+## Setup Command Tests
+
+### TC001: Setup Command Testing - Global Configuration
+
+**Priority:** Critical
+**Category:** Configuration Management
+
+**Objective:** Verify global configuration setup functionality
+
+**Preconditions:** Clean environment, no existing global configuration
+
+**Test Steps:**
+```bash
+# Test setup command help
+buckets setup --help
+
+# Test interactive setup with default values
+echo -e "\n\n" | buckets setup
+
+# Verify configuration file creation
+ls -la ~/.buckets_config.toml
+cat ~/.buckets_config.toml
+```
+
+**Expected Results:**
+- Exit code: 0
+- Configuration file created at `~/.buckets_config.toml`
+- Default NTP server: "pool.ntp.org"
+- No PostgreSQL connection by default
+- Interactive prompts display current values
+
+**Verification Commands:**
+```bash
+# Check configuration file format
+buckets setup --help | grep -E "(PostgreSQL|NTP)"
+cat ~/.buckets_config.toml | grep ntp_server
+```
+
+**Post-conditions:** Global configuration file exists and is valid
+
+**Notes:** Setup command should work outside any buckets repository
+
+---
+
+### TC002: Setup Command Testing - PostgreSQL Configuration
+
+**Priority:** High
+**Category:** Configuration Management
+
+**Objective:** Verify PostgreSQL connection string configuration
+
+**Preconditions:** Setup command available
+
+**Test Steps:**
+```bash
+# Configure PostgreSQL connection
+echo -e "postgresql://user:pass@localhost:5432/buckets\ntime.ntp.org\n" | buckets setup
+
+# Verify updated configuration
+cat ~/.buckets_config.toml
+
+# Test configuration persistence
+echo -e "\n\n" | buckets setup
+```
+
+**Expected Results:**
+- PostgreSQL connection string saved correctly
+- Custom NTP server saved
+- Subsequent runs show existing values
+- Configuration persists between invocations
+
+**Verification Commands:**
+```bash
+grep "postgresql_connection" ~/.buckets_config.toml
+grep "ntp_server" ~/.buckets_config.toml
+```
+
+**Post-conditions:** Global configuration contains PostgreSQL connection string
+
+---
+
+### TC003: Setup Command Testing - Configuration Integration
+
+**Priority:** Critical  
+**Category:** Integration
+
+**Objective:** Verify repository configs inherit global settings
+
+**Preconditions:** Global configuration set (from TC002)
+
+**Test Steps:**
+```bash
+# Clean up any existing test repos
+rm -rf setup_test_repo
+
+# Initialize repository and check inherited config
+buckets init setup_test_repo
+cd setup_test_repo
+cat .buckets/config
+```
+
+**Expected Results:**
+- Repository configuration inherits NTP server from global config
+- Repository configuration inherits PostgreSQL connection from global config
+- Local repository settings use global defaults where applicable
+- No errors during initialization with global config present
+
+**Verification Commands:**
+```bash
+# Verify NTP server inheritance
+grep "time.ntp.org" .buckets/config || grep "pool.ntp.org" .buckets/config
+
+# Verify PostgreSQL connection inheritance
+grep "postgresql://" .buckets/config || echo "No PostgreSQL connection inherited"
+```
+
+**Post-conditions:** Repository uses global configuration values
+
+**Notes:** This tests the integration between setup command and repository initialization
+
+---
+
+### TC004: Setup Command Testing - Error Handling
+
+**Priority:** Medium
+**Category:** Error Handling
+
+**Objective:** Verify setup command handles errors gracefully
+
+**Test Steps:**
+```bash
+# Test with invalid input/interruption
+echo -e "\x03" | buckets setup || true
+
+# Test with various corrupted config file contents
+echo "invalid toml content {[" > ~/.buckets_config.toml
+buckets setup || true
+
+echo 'unclosed = "string' > ~/.buckets_config.toml
+buckets setup || true
+
+echo "key-without-value =" > ~/.buckets_config.toml
+buckets setup || true
+
+echo "[section" > ~/.buckets_config.toml
+buckets setup || true
+```
+
+**Expected Results:**
+- Graceful handling of interrupted input
+- Clear error messages for permission issues
+- Recovery from corrupted configuration files
+- Non-zero exit codes for error conditions
+
+**Verification Commands:**
+```bash
+# Verify setup can recover from errors
+rm -f ~/.buckets_config.toml
+echo -e "\n\n" | buckets setup
+echo $?
+```
+
+**Post-conditions:** Setup command recovers from error conditions
+
+---
+
+## Core Functionality Tests
+
+### TC005: Repository Initialization - Default (Embedded PostgreSQL)
 
 **Priority:** Critical
 **Category:** Core Functionality
@@ -78,7 +259,7 @@ buckets list --json  # This will verify database connectivity
 
 ---
 
-### TC002: Repository Initialization - External PostgreSQL Backend
+### TC006: Repository Initialization - External PostgreSQL Backend
 
 **Priority:** High
 **Category:** Core Functionality
@@ -123,7 +304,7 @@ Expected tables: `buckets`, `commits`, `files`
 
 ---
 
-### TC003: Database Option Validation
+### TC007: Database Option Validation
 
 **Priority:** High
 **Category:** Input Validation
@@ -132,7 +313,7 @@ Expected tables: `buckets`, `commits`, `files`
 
 **Test Cases:**
 
-#### TC003a: Valid Database Types
+#### TC007a: Valid Database Types
 ```bash
 buckets init test_valid_embedded --database embedded    # Should succeed
 buckets init test_valid_external --database external    # Should succeed  
@@ -140,7 +321,7 @@ buckets init test_valid_postgres --database postgres    # Should succeed
 buckets init test_valid_postgresql --database postgresql # Should succeed
 ```
 
-#### TC003b: Invalid Database Type
+#### TC007b: Invalid Database Type
 ```bash
 buckets init test_invalid --database mysql
 ```
@@ -148,7 +329,7 @@ buckets init test_invalid --database mysql
 - Exit code: non-zero
 - Error message: "Invalid database type 'mysql'. Valid options are: embedded, external, postgresql"
 
-#### TC003c: External PostgreSQL Without Connection
+#### TC007c: External PostgreSQL Without Connection
 ```bash
 # Unset environment variables
 unset POSTGRES_HOST POSTGRES_PORT POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB
@@ -160,14 +341,14 @@ buckets init test_no_connection --database external
 
 ---
 
-### TC004: Bucket Creation
+### TC008: Bucket Creation
 
 **Priority:** Critical
 **Category:** Core Functionality
 
 **Objective:** Verify bucket creation functionality
 
-**Preconditions:** Valid repository initialized (from TC001 or TC002)
+**Preconditions:** Valid repository initialized (from TC005 or TC006)
 
 **Test Steps:**
 ```bash
@@ -195,11 +376,14 @@ buckets create test_bucket
 
 ---
 
-### TC005: File Commit Operations
+### TC009: File Commit Operations
+
+**Priority:** Critical
+**Category:** Core Functionality
 
 **Objective:** Verify file commit functionality across database backends
 
-**Preconditions:** Bucket created (from TC004)
+**Preconditions:** Bucket created (from TC008)
 
 **Test Steps:**
 ```bash
@@ -234,11 +418,14 @@ buckets history --json
 
 ---
 
-### TC006: Cross-Platform Compatibility
+### TC010: Cross-Platform Compatibility
+
+**Priority:** Medium
+**Category:** Core Functionality
 
 **Objective:** Verify functionality across different operating systems
 
-#### TC006a: Unix/Linux Commands
+#### TC010a: Unix/Linux Commands
 ```bash
 cd test_bucket
 touch boat.blend
@@ -246,7 +433,7 @@ echo "Blender file content" > boat.blend
 buckets commit "new boat"
 ```
 
-#### TC006b: Windows Commands  
+#### TC010b: Windows Commands  
 ```powershell
 cd test_bucket
 New-Item boat.blend -ItemType File
@@ -258,7 +445,10 @@ buckets commit "new boat"
 
 ---
 
-### TC007: Status and File Tracking
+### TC011: Status and File Tracking
+
+**Priority:** High
+**Category:** Core Functionality
 
 **Objective:** Verify status reporting functionality
 
@@ -288,7 +478,10 @@ Status details:
 
 ---
 
-### TC008: Rollback Functionality
+### TC012: Rollback Functionality
+
+**Priority:** High
+**Category:** Core Functionality
 
 **Objective:** Verify rollback operations
 
@@ -305,76 +498,7 @@ buckets status
 
 ---
 
-### TC009: Help and Documentation
-
-**Objective:** Verify help system functionality
-
-**Test Cases:**
-```bash
-buckets --help                           # General help
-buckets init --help                      # Init command help  
-buckets create --help                    # Create command help
-buckets commit --help                    # Commit command help
-```
-
-**Expected Results:** 
-- Comprehensive help text displayed
-- Database option documented for init command
-- All required parameters clearly indicated
-
----
-
-### TC009: History Command Testing
-
-**Priority:** Medium  
-**Category:** Information Commands
-
-**Objective:** Verify commit history retrieval functionality
-
-**Preconditions:** Repository with multiple commits (from previous tests)
-
-**Test Steps:**
-```bash
-cd test_bucket
-buckets history
-buckets history --json
-buckets history -v
-```
-
-**Expected Results:**
-- Default format shows commit history with IDs, messages, timestamps, bucket names
-- JSON format provides structured data for programmatic use
-- Verbose mode shows additional debug information
-- Commits ordered by creation timestamp (newest first)
-
----
-
-### TC010: List Command Testing
-
-**Priority:** Medium
-**Category:** Information Commands  
-
-**Objective:** Verify bucket listing functionality
-
-**Preconditions:** Repository with multiple buckets created
-
-**Test Steps:**
-```bash
-cd test_repo_embedded
-buckets create bucket_one
-buckets create bucket_two
-buckets list
-buckets list --json
-```
-
-**Expected Results:**
-- Shows all buckets with names, IDs, and relative paths
-- JSON output provides structured bucket information
-- Empty repositories show "No buckets found"
-
----
-
-### TC011: Revert Command Testing
+### TC013: Revert Command Testing
 
 **Priority:** High
 **Category:** Core Functionality
@@ -391,8 +515,13 @@ buckets commit "Add revert test file"
 echo "modified content" > revert_test.txt
 buckets commit "Modify revert test file"
 # Get commit ID from history
-COMMIT_ID=$(buckets history --json | jq -r '.commits[1].id')
-buckets revert $COMMIT_ID
+# Get previous commit ID from history, with error handling
+COMMIT_ID=$(buckets history --json | jq -r 'if (.commits | length) > 1 then .commits[1].id else empty end')
+if [ -z "$COMMIT_ID" ]; then
+  echo "Error: Not enough commits to revert. At least two commits are required."
+  exit 1
+fi
+buckets revert "$COMMIT_ID"
 ```
 
 **Expected Results:**
@@ -402,7 +531,7 @@ buckets revert $COMMIT_ID
 
 ---
 
-### TC012: Stash Command Testing
+### TC014: Stash Command Testing
 
 **Priority:** Medium
 **Category:** Core Functionality
@@ -430,7 +559,59 @@ cat stash_test.txt  # Should show "stash test content"
 
 ---
 
-### TC013: Stats Command Testing
+## Information Command Tests
+
+### TC015: History Command Testing
+
+**Priority:** Medium  
+**Category:** Information Commands
+
+**Objective:** Verify commit history retrieval functionality
+
+**Preconditions:** Repository with multiple commits (from previous tests)
+
+**Test Steps:**
+```bash
+cd test_bucket
+buckets history
+buckets history --json
+buckets history -v
+```
+
+**Expected Results:**
+- Default format shows commit history with IDs, messages, timestamps, bucket names
+- JSON format provides structured data for programmatic use
+- Verbose mode shows additional debug information
+- Commits ordered by creation timestamp (newest first)
+
+---
+
+### TC016: List Command Testing
+
+**Priority:** Medium
+**Category:** Information Commands  
+
+**Objective:** Verify bucket listing functionality
+
+**Preconditions:** Repository with multiple buckets created
+
+**Test Steps:**
+```bash
+cd test_repo_embedded
+buckets create bucket_one
+buckets create bucket_two
+buckets list
+buckets list --json
+```
+
+**Expected Results:**
+- Shows all buckets with names, IDs, and relative paths
+- JSON output provides structured bucket information
+- Empty repositories show "No buckets found"
+
+---
+
+### TC017: Stats Command Testing
 
 **Priority:** Low
 **Category:** Information Commands
@@ -452,7 +633,43 @@ buckets stats --json
 
 ---
 
-### TC014: Expect Command Testing
+### TC018: JSON Output Validation
+
+**Priority:** Medium
+**Category:** Information Commands
+
+**Objective:** Verify JSON output format consistency
+
+**Test Steps:**
+```bash
+# Test all commands that support JSON output
+buckets list --json | jq '.'
+buckets history --json | jq '.'
+buckets stats --json | jq '.'
+buckets status --json | jq '.'
+
+# Validate specific JSON schema
+buckets list --json | jq -e '.buckets | type == "array"'
+buckets history --json | jq -e '.commits | type == "array"'
+
+# Test JSON with complex data
+echo '{"test": "data"}' > complex.json
+buckets commit "Add JSON file"
+buckets history --json | jq -e '.commits[0].message == "Add JSON file"'
+```
+
+**Expected Results:**
+- Valid JSON format for all commands
+- Consistent field naming and structure
+- Proper data types (strings, numbers, arrays, objects)
+- No syntax errors when parsed
+- Schema validation passes for known fields
+
+---
+
+## Expectation Management Tests
+
+### TC019: Expect Command Testing
 
 **Priority:** Medium
 **Category:** Expectation Management
@@ -475,14 +692,14 @@ buckets expect "Add 10 texture files" --priority high
 
 ---
 
-### TC015: Check Command Testing
+### TC020: Check Command Testing
 
 **Priority:** Medium
 **Category:** Expectation Management
 
 **Objective:** Verify expectation checking and status reporting
 
-**Preconditions:** Expectations set (from TC014)
+**Preconditions:** Expectations set (from TC019)
 
 **Test Steps:**
 ```bash
@@ -497,7 +714,7 @@ buckets check --detailed
 
 ---
 
-### TC016: Link Command Testing
+### TC021: Link Command Testing
 
 **Priority:** Low
 **Category:** Expectation Management
@@ -519,7 +736,7 @@ buckets link expectation file_path
 
 ---
 
-### TC017: Finalize Command Testing
+### TC022: Finalize Command Testing
 
 **Priority:** Medium
 **Category:** Expectation Management
@@ -541,7 +758,9 @@ buckets finalize --all
 
 ---
 
-### TC018: Schema Command Testing
+## Database Management Tests
+
+### TC023: Schema Command Testing
 
 **Priority:** Low
 **Category:** Database Management
@@ -562,163 +781,9 @@ buckets schema migrate  # If applicable
 
 ---
 
-### TC019: Setup Command Testing - Global Configuration
+## Integration and Performance Tests
 
-**Priority:** Medium
-**Category:** Configuration Management
-
-**Objective:** Verify global configuration setup functionality
-
-**Preconditions:** Clean environment, no existing global configuration
-
-**Test Steps:**
-```bash
-# Test setup command help
-buckets setup --help
-
-# Test interactive setup with default values
-echo -e "\n\n" | buckets setup
-
-# Verify configuration file creation
-ls -la ~/.buckets_config.toml
-cat ~/.buckets_config.toml
-```
-
-**Expected Results:**
-- Exit code: 0
-- Configuration file created at `~/.buckets_config.toml`
-- Default NTP server: "pool.ntp.org"
-- No PostgreSQL connection by default
-- Interactive prompts display current values
-
-**Verification Commands:**
-```bash
-# Check configuration file format
-buckets setup --help | grep -E "(PostgreSQL|NTP)"
-cat ~/.buckets_config.toml | grep ntp_server
-```
-
-**Post-conditions:** Global configuration file exists and is valid
-
-**Notes:** Setup command should work outside any buckets repository
-
----
-
-### TC020: Setup Command Testing - PostgreSQL Configuration
-
-**Priority:** Medium
-**Category:** Configuration Management
-
-**Objective:** Verify PostgreSQL connection string configuration
-
-**Preconditions:** Setup command available
-
-**Test Steps:**
-```bash
-# Configure PostgreSQL connection
-echo -e "postgresql://user:pass@localhost:5432/buckets\ntime.ntp.org\n" | buckets setup
-
-# Verify updated configuration
-cat ~/.buckets_config.toml
-
-# Test configuration persistence
-echo -e "\n\n" | buckets setup
-```
-
-**Expected Results:**
-- PostgreSQL connection string saved correctly
-- Custom NTP server saved
-- Subsequent runs show existing values
-- Configuration persists between invocations
-
-**Verification Commands:**
-```bash
-grep "postgresql_connection" ~/.buckets_config.toml
-grep "ntp_server" ~/.buckets_config.toml
-```
-
-**Post-conditions:** Global configuration contains PostgreSQL connection string
-
----
-
-### TC021: Setup Command Testing - Configuration Integration
-
-**Priority:** High  
-**Category:** Integration
-
-**Objective:** Verify repository configs inherit global settings
-
-**Preconditions:** Global configuration set (from TC020)
-
-**Test Steps:**
-```bash
-# Clean up any existing test repos
-rm -rf setup_test_repo
-
-# Initialize repository and check inherited config
-buckets init setup_test_repo
-cd setup_test_repo
-cat .buckets/config
-```
-
-**Expected Results:**
-- Repository configuration inherits NTP server from global config
-- Local repository settings use global defaults where applicable
-- No errors during initialization with global config present
-
-**Verification Commands:**
-```bash
-# Verify NTP server inheritance
-grep "time.ntp.org" .buckets/config || grep "pool.ntp.org" .buckets/config
-```
-
-**Post-conditions:** Repository uses global configuration values
-
-**Notes:** This tests the integration between setup command and repository initialization
-
----
-
-### TC022: Setup Command Testing - Error Handling
-
-**Priority:** Medium
-**Category:** Error Handling
-
-**Objective:** Verify setup command handles errors gracefully
-
-**Test Steps:**
-```bash
-# Test with invalid input/interruption
-echo -e "\x03" | buckets setup || true
-
-# Test with insufficient permissions (if possible)
-# chmod 000 ~/.buckets_config.toml 2>/dev/null || true
-# buckets setup || true
-# chmod 644 ~/.buckets_config.toml 2>/dev/null || true
-
-# Test with corrupted config file
-echo "invalid toml content {[" > ~/.buckets_config.toml
-buckets setup || true
-```
-
-**Expected Results:**
-- Graceful handling of interrupted input
-- Clear error messages for permission issues
-- Recovery from corrupted configuration files
-- Non-zero exit codes for error conditions
-
-**Verification Commands:**
-```bash
-# Verify setup can recover from errors
-rm -f ~/.buckets_config.toml
-echo -e "\n\n" | buckets setup
-echo $?
-```
-
-**Post-conditions:** Setup command recovers from error conditions
-
----
-
-### TC023: Performance and Load Testing
+### TC024: Performance and Load Testing
 
 **Priority:** Medium
 **Category:** Performance
@@ -727,14 +792,14 @@ echo $?
 
 **Test Scenarios:**
 
-#### TC019a: Large File Handling
+#### TC024a: Large File Handling
 ```bash
 # Create large test file (100MB)
 dd if=/dev/zero of=large_file.bin bs=1M count=100
 buckets commit "Add large file"
 ```
 
-#### TC019b: Many Small Files
+#### TC024b: Many Small Files
 ```bash
 # Create many small files
 for i in {1..1000}; do
@@ -743,7 +808,7 @@ done
 buckets commit "Add 1000 small files"
 ```
 
-#### TC019c: Deep Directory Structure
+#### TC024c: Deep Directory Structure
 ```bash
 # Create deep nested directories
 mkdir -p deep/nested/directory/structure/with/many/levels
@@ -758,7 +823,7 @@ buckets commit "Add deeply nested file"
 
 ---
 
-### TC024: Multi-Bucket Workflow Testing
+### TC025: Multi-Bucket Workflow Testing
 
 **Priority:** High
 **Category:** Integration
@@ -804,39 +869,7 @@ buckets stats
 
 ---
 
-### TC025: JSON Output Validation
-
-**Priority:** Medium
-**Category:** API Compatibility
-
-**Objective:** Verify JSON output format consistency
-
-**Test Steps:**
-```bash
-# Test all commands that support JSON output
-buckets list --json | jq '.'
-buckets history --json | jq '.'
-buckets stats --json | jq '.'
-buckets status --json | jq '.'
-
-# Validate specific JSON schema
-buckets list --json | jq -e '.buckets | type == "array"'
-buckets history --json | jq -e '.commits | type == "array"'
-
-# Test JSON with complex data
-echo '{"test": "data"}' > complex.json
-buckets commit "Add JSON file"
-buckets history --json | jq -e '.commits[0].message == "Add JSON file"'
-```
-
-**Expected Results:**
-- Valid JSON format for all commands
-- Consistent field naming and structure
-- Proper data types (strings, numbers, arrays, objects)
-- No syntax errors when parsed
-- Schema validation passes for known fields
-
----
+## Error Handling Tests
 
 ### TC026: Error Handling and Edge Cases
 
@@ -845,20 +878,20 @@ buckets history --json | jq -e '.commits[0].message == "Add JSON file"'
 
 **Objective:** Verify robust error handling
 
-#### TC022a: Duplicate Repository
+#### TC026a: Duplicate Repository
 ```bash
 buckets init existing_repo
 buckets init existing_repo  # Should fail
 ```
 
-#### TC022b: Operations Outside Repository
+#### TC026b: Operations Outside Repository
 ```bash
 mkdir /tmp/not_a_repo
 cd /tmp/not_a_repo  
 buckets create test_bucket  # Should fail
 ```
 
-#### TC022c: Invalid Bucket Names
+#### TC026c: Invalid Bucket Names
 ```bash
 buckets create ""           # Empty name
 buckets create "invalid/name"  # Invalid characters
@@ -866,21 +899,21 @@ buckets create "bucket with spaces"  # Spaces in name
 buckets create "very-long-bucket-name-that-exceeds-reasonable-limits"  # Too long
 ```
 
-#### TC022d: Network Failure Handling (External PostgreSQL)
+#### TC026d: Network Failure Handling (External PostgreSQL)
 ```bash
 # With external PostgreSQL configured but server down
 export POSTGRES_HOST=unreachable-server.com
 buckets init test_network_failure --database external
 ```
 
-#### TC022e: Disk Space Exhaustion
+#### TC026e: Disk Space Exhaustion
 ```bash
 # Simulate low disk space conditions
 # Create large file that fills available space
 buckets commit "Test disk space handling"
 ```
 
-#### TC022f: Permission Errors
+#### TC026f: Permission Errors
 ```bash
 # Test with read-only directories
 chmod 444 test_readonly_bucket
@@ -890,6 +923,28 @@ buckets commit "Test permission error"
 **Expected Results:** Appropriate error messages and non-zero exit codes for all failure scenarios
 
 ---
+
+### TC027: Help and Documentation
+
+**Priority:** Medium
+**Category:** Error Handling
+
+**Objective:** Verify help system functionality
+
+**Test Cases:**
+```bash
+buckets --help                           # General help
+buckets init --help                      # Init command help  
+buckets create --help                    # Create command help
+buckets commit --help                    # Commit command help
+buckets setup --help                     # Setup command help
+```
+
+**Expected Results:** 
+- Comprehensive help text displayed
+- Database option documented for init command
+- Setup command options clearly explained
+- All required parameters clearly indicated
 
 ---
 
@@ -1116,24 +1171,25 @@ cargo install --path .
 ### Test Execution Strategy
 
 #### Phase 1: Critical Path Testing
-1. **TC019** - Setup command (global configuration)
-2. **TC001** - Repository initialization (embedded)
-3. **TC021** - Setup integration with repository config
-4. **TC004** - Bucket creation
-5. **TC005** - File commit operations
-6. **TC007** - Status and file tracking
-7. **TC008** - Rollback functionality
+1. **TC001** - Setup command (global configuration)
+2. **TC002** - Setup PostgreSQL configuration
+3. **TC003** - Setup integration with repository config
+4. **TC005** - Repository initialization (embedded)
+5. **TC008** - Bucket creation
+6. **TC009** - File commit operations
+7. **TC011** - Status and file tracking
+8. **TC012** - Rollback functionality
 
 #### Phase 2: Extended Functionality
-1. **TC002** - External PostgreSQL
-2. **TC009-TC013** - Information commands
-3. **TC014-TC018** - Expectation management
-4. **TC020** - Multi-bucket workflows
+1. **TC006** - External PostgreSQL
+2. **TC015-TC018** - Information commands
+3. **TC019-TC023** - Expectation and database management
+4. **TC025** - Multi-bucket workflows
 
 #### Phase 3: Performance and Edge Cases
-1. **TC019** - Performance testing
-2. **TC021** - JSON validation
-3. **TC022** - Error handling
+1. **TC024** - Performance testing
+2. **TC018** - JSON validation
+3. **TC026-TC027** - Error handling
 
 ### Test Data Management
 
@@ -1209,8 +1265,11 @@ echo "✅ Cleanup completed (including global configuration)"
 ## Test Results
 | Test Case | Status | Notes |
 |-----------|--------|-------|
-| TC001     | ✅     | -     |
-| TC002     | ❌     | Connection timeout |
+| TC001     | ✅     | Setup command working |
+| TC002     | ✅     | PostgreSQL config OK |
+| TC003     | ✅     | Config inheritance working |
+| TC005     | ✅     | -     |
+| TC006     | ❌     | Connection timeout |
 
 ## Performance Metrics
 - Repository init: X.X seconds
@@ -1240,44 +1299,46 @@ echo "**Global Config:** $(test -f ~/.buckets_config.toml && echo "Present" || e
 
 ### Recent Changes Made:
 
-#### ✅ **New Command Coverage**
-- **TC019-TC022**: Comprehensive setup command testing
-- Global configuration creation and management
-- PostgreSQL connection string configuration  
-- Configuration inheritance testing
-- Setup command error handling
+#### ✅ **Reorganized Document Structure**
+- **Setup Command Tests** moved to top priority position (after environment setup)
+- **Table of Contents** added with clear navigation
+- **Tests categorized by command type** for better organization
+- **Test cases renumbered** for logical flow
 
-#### ✅ **Updated Test Automation**
-- Quick test script includes setup command testing
-- Integration test validates configuration inheritance
-- Performance benchmarks remain unchanged (no performance impact)
-- Cleanup scripts now remove global configuration files
+#### ✅ **Setup Command Priority**
+- **TC001-TC004**: Setup command tests now appear first in testing sequence
+- **Critical path testing** updated to include setup command as first step
+- **Integration testing** emphasizes setup command inheritance verification
 
-#### ✅ **Improved Test Execution Strategy**
-- Setup command added to critical path testing
-- Configuration tests prioritized before repository operations
-- Extended functionality phase includes setup integration tests
+#### ✅ **Command-Based Categorization**
+- **Setup Command Tests** (TC001-TC004)
+- **Core Functionality Tests** (TC005-TC014)
+- **Information Command Tests** (TC015-TC018)
+- **Expectation Management Tests** (TC019-TC022)
+- **Database Management Tests** (TC023)
+- **Integration and Performance Tests** (TC024-TC025)
+- **Error Handling Tests** (TC026-TC027)
 
-#### ✅ **Database References Updated**
-- Removed DuckDB references from Windows setup
-- Updated documentation to reflect PostgreSQL as primary database
-- Maintained backward compatibility expectations
+#### ✅ **Enhanced Test Coverage**
+- **Total Commands**: 16 (including setup)
+- **Setup Command**: 4 dedicated test cases covering all aspects
+- **Configuration inheritance**: Explicitly tested in TC003
+- **Error handling**: Comprehensive coverage including setup command
 
-#### ✅ **Standardized Test Case Format**
-- All test cases follow consistent priority/category structure
-- Verification commands added where applicable
-- Post-conditions and notes sections standardized
-- Clear objective statements for each test case
+#### ✅ **Improved Navigation and Usability**
+- **Table of Contents**: Links to all major sections
+- **Logical test ordering**: Setup → Core → Information → Advanced
+- **Clear test priorities**: Critical setup tests first
+- **Consistent formatting**: All test cases follow standard structure
 
 ### Test Coverage Status:
-- **Total Commands**: 16 (including setup)
-- **Documented Commands**: 16 (100% coverage)
-- **Critical Path Tests**: 7 test cases
-- **Total Test Cases**: 26 (TC001-TC026)
+- **Total Commands**: 16 (100% coverage)
+- **Setup Command Tests**: 4 comprehensive test cases
+- **Critical Path Tests**: 8 test cases (including setup)
+- **Total Test Cases**: 27 (TC001-TC027)
 
-### Next Steps for Testing:
-1. Execute TC019-TC022 to validate setup command functionality
-2. Run updated automation scripts to ensure they work correctly
-3. Validate configuration inheritance in real repository scenarios
-4. Consider adding setup command integration to CI/CD pipeline
-
+### Test Execution Priority:
+1. **Setup Command Tests** (TC001-TC004) - **Must run first**
+2. **Core Functionality** (TC005-TC014)
+3. **Information Commands** (TC015-TC018)
+4. **Advanced Features** (TC019-TC027)
