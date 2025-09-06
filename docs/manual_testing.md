@@ -185,8 +185,17 @@ grep "postgresql://" .buckets/config || echo "No PostgreSQL connection inherited
 # Test with invalid input/interruption
 echo -e "\x03" | buckets setup || true
 
-# Test with corrupted config file
+# Test with various corrupted config file contents
 echo "invalid toml content {[" > ~/.buckets_config.toml
+buckets setup || true
+
+echo 'unclosed = "string' > ~/.buckets_config.toml
+buckets setup || true
+
+echo "key-without-value =" > ~/.buckets_config.toml
+buckets setup || true
+
+echo "[section" > ~/.buckets_config.toml
 buckets setup || true
 ```
 
