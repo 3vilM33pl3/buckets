@@ -515,8 +515,13 @@ buckets commit "Add revert test file"
 echo "modified content" > revert_test.txt
 buckets commit "Modify revert test file"
 # Get commit ID from history
-COMMIT_ID=$(buckets history --json | jq -r '.commits[1].id')
-buckets revert $COMMIT_ID
+# Get previous commit ID from history, with error handling
+COMMIT_ID=$(buckets history --json | jq -r 'if (.commits | length) > 1 then .commits[1].id else empty end')
+if [ -z "$COMMIT_ID" ]; then
+  echo "Error: Not enough commits to revert. At least two commits are required."
+  exit 1
+fi
+buckets revert "$COMMIT_ID"
 ```
 
 **Expected Results:**
