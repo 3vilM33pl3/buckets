@@ -23,6 +23,7 @@ buckets setup [OPTIONS]
 |--------|-------------|
 | `-v, --verbose` | Enable verbose output |
 | `--json` | Output configuration in JSON format |
+| `--test-connection` | Test the database connection after configuration |
 | `-h, --help` | Display help information |
 
 ## Usage
@@ -89,6 +90,46 @@ postgresql://user:pass@secure-db.com:5432/buckets?sslmode=require
 - Shared team database setups
 - Production environments with dedicated database servers
 - When you need consistent database configuration across multiple repositories
+
+### Database Connection Testing
+
+Test your PostgreSQL connection configuration to ensure it's working correctly.
+
+```bash
+# Test connection after setup
+buckets setup --test-connection
+
+# Setup with connection testing
+buckets setup --test-connection
+```
+
+**What it tests:**
+- Connection pool creation
+- Database server connectivity  
+- Authentication credentials
+- Basic query execution (`SELECT 1`)
+
+**Example output:**
+```bash
+Testing Database Connection
+===========================
+Testing PostgreSQL connection: postgresql://user:***@localhost:5432/buckets
+✅ PostgreSQL connection successful!
+```
+
+**Connection testing features:**
+- **Password masking**: Passwords are hidden in output for security
+- **Timeout handling**: 10-second connection timeout to prevent hanging
+- **Error reporting**: Clear error messages for connection failures
+- **Authentication validation**: Verifies username/password combination
+- **Query testing**: Ensures database is accessible and responsive
+
+**Common connection issues:**
+- **Connection refused**: Database server not running or wrong port
+- **Authentication failed**: Incorrect username/password
+- **Database not found**: Specified database doesn't exist
+- **Network timeout**: Server unreachable or network issues
+- **SSL errors**: SSL configuration mismatch
 
 ### NTP Server Configuration
 

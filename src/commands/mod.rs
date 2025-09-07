@@ -133,3 +133,4 @@ pub(crate) mod stash;
 pub(crate) mod stats;
 pub(crate) mod status;
 pub(crate) mod setup;
+pub(crate) mod doctor;
