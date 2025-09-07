@@ -92,6 +92,7 @@ fn dispatch() -> Result<(), BucketError> {
         Command::Schema(command) => commands::schema::Schema::new(command).execute()?,
         // Global commands  
         Command::Setup(command) => commands::setup::Setup::new(command).execute()?,
+        Command::Doctor(command) => commands::doctor::Doctor::new(command).execute()?,
     }
 
     Ok(())
