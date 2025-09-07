@@ -24,6 +24,7 @@ pub enum Command {
     Schema(SchemaCommand),
     // Global commands
     Setup(SetupCommand),
+    Doctor(DoctorCommand),
 }
 
 impl Command {
@@ -45,6 +46,7 @@ impl Command {
             Command::Finalize(cmd) => &cmd.shared,
             Command::Schema(cmd) => &cmd.shared,
             Command::Setup(cmd) => &cmd.shared,
+            Command::Doctor(cmd) => &cmd.shared,
         }
     }
 }
@@ -194,4 +196,22 @@ pub struct SchemaCommand {
 pub struct SetupCommand {
     #[clap(flatten)]
     pub shared: SharedArguments,
+    
+    #[clap(long, help = "Test the database connection after configuration")]
+    pub test_connection: bool,
+}
+
+#[derive(Args, Clone)]
+pub struct DoctorCommand {
+    #[clap(flatten)]
+    pub shared: SharedArguments,
+    
+    #[clap(long, help = "Skip database connection test")]
+    pub skip_database: bool,
+    
+    #[clap(long, help = "Skip NTP server test")]
+    pub skip_ntp: bool,
+    
+    #[clap(long, help = "Use repository config instead of global config")]
+    pub use_repo: bool,
 }

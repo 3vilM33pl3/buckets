@@ -1,18 +1,22 @@
 use crate::args::SetupCommand;
 use crate::commands::BucketCommand;
 use crate::errors::BucketError;
+use crate::postgres_db::DatabaseConfig;
 use crate::utils::config::GlobalConfig;
+use deadpool_postgres::{Config, Runtime};
 use std::io::{self, Write};
+use std::time::Duration;
+use tokio_postgres::NoTls;
 
 pub struct Setup {
-    _args: SetupCommand,
+    args: SetupCommand,
 }
 
 impl BucketCommand for Setup {
     type Args = SetupCommand;
 
     fn new(args: &Self::Args) -> Self {
-        Self { _args: args.clone() }
+        Self { args: args.clone() }
     }
 
     fn execute(&self) -> Result<(), BucketError> {
@@ -33,6 +37,12 @@ impl BucketCommand for Setup {
         println!();
         println!("Global configuration saved successfully!");
         println!("Configuration file: {}", GlobalConfig::config_path()?.display());
+        
+        // Test database connection if requested
+        if self.args.test_connection {
+            println!();
+            self.test_database_connection(&config)?;
+        }
         
         Ok(())
     }
@@ -88,5 +98,98 @@ impl Setup {
         
         println!();
         Ok(config)
+    }
+    
+    fn test_database_connection(&self, config: &GlobalConfig) -> Result<(), BucketError> {
+        println!("Testing Database Connection");
+        println!("===========================");
+        
+        if let Some(ref conn_str) = config.postgresql_connection {
+            println!("Testing PostgreSQL connection: {}", 
+                     // Mask password in display
+                     if conn_str.contains("@") {
+                         let parts: Vec<&str> = conn_str.splitn(2, '@').collect();
+                         if parts.len() == 2 {
+                             let auth_part = parts[0];
+                             let host_part = parts[1];
+                             if let Some(colon_pos) = auth_part.rfind(':') {
+                                 format!("{}:***@{}", &auth_part[..colon_pos], host_part)
+                             } else {
+                                 conn_str.clone()
+                             }
+                         } else {
+                             conn_str.clone()
+                         }
+                     } else {
+                         conn_str.clone()
+                     });
+            
+            // Test connection using tokio runtime
+            let rt = tokio::runtime::Runtime::new().map_err(|e| {
+                BucketError::from(format!("Failed to create async runtime: {}", e).as_str())
+            })?;
+            
+            rt.block_on(async {
+                self.test_postgresql_connection(conn_str).await
+            })?;
+            
+            println!("✅ PostgreSQL connection successful!");
+        } else {
+            println!("No PostgreSQL connection string configured to test.");
+            println!("Configure a PostgreSQL connection first, then use --test-connection");
+        }
+        
+        Ok(())
+    }
+    
+    async fn test_postgresql_connection(&self, connection_string: &str) -> Result<(), BucketError> {
+        // Parse connection string into database config
+        let db_config = DatabaseConfig::from_url(connection_string)?;
+        
+        // Create connection configuration
+        let mut cfg = Config::new();
+        
+        match db_config {
+            DatabaseConfig::External {
+                host,
+                port,
+                database,
+                username,
+                password,
+            } => {
+                cfg.host = Some(host);
+                cfg.port = Some(port);
+                cfg.user = Some(username);
+                cfg.password = password;
+                cfg.dbname = Some(database);
+            }
+            DatabaseConfig::Embedded { .. } => {
+                return Err(BucketError::from("Cannot test embedded database connection from setup command"));
+            }
+        }
+        
+        // Set connection timeout
+        cfg.connect_timeout = Some(Duration::from_secs(10));
+        
+        // Create pool and test connection
+        let pool = cfg.create_pool(Some(Runtime::Tokio1), NoTls).map_err(|e| {
+            BucketError::from(format!("Failed to create connection pool: {}", e).as_str())
+        })?;
+        
+        // Test the connection
+        let _conn = pool.get().await.map_err(|e| {
+            BucketError::from(format!("Failed to connect to PostgreSQL database: {}", e).as_str())
+        })?;
+        
+        // Try to execute a simple query
+        let client = pool.get().await.map_err(|e| {
+            BucketError::from(format!("Failed to get database connection: {}", e).as_str())
+        })?;
+        
+        client.execute("SELECT 1", &[]).await.map_err(|e| {
+            BucketError::from(format!("Failed to execute test query: {}", e).as_str())
+        })?;
+        
+        Ok(())
     }
 }

@@ -9,9 +9,10 @@
 5. [Expectation Management Tests](#expectation-management-tests)
 6. [Database Management Tests](#database-management-tests)
 7. [Integration and Performance Tests](#integration-and-performance-tests)
-8. [Error Handling Tests](#error-handling-tests)
-9. [Test Automation Scripts](#test-automation-scripts)
-10. [Test Execution Guidelines](#test-execution-guidelines)
+8. [System Diagnostics Tests](#system-diagnostics-tests)
+9. [Error Handling Tests](#error-handling-tests)
+10. [Test Automation Scripts](#test-automation-scripts)
+11. [Test Execution Guidelines](#test-execution-guidelines)
 
 ## Test Environment Setup
 
@@ -70,6 +71,9 @@ buckets setup --help
 # Test interactive setup with default values
 echo -e "\n\n" | buckets setup
 
+# Test connection testing flag (should show no PostgreSQL configured)
+buckets setup --test-connection
+
 # Verify configuration file creation
 ls -la ~/.buckets_config.toml
 cat ~/.buckets_config.toml
@@ -81,6 +85,7 @@ cat ~/.buckets_config.toml
 - Default NTP server: "pool.ntp.org"
 - No PostgreSQL connection by default
 - Interactive prompts display current values
+- Connection test shows "No PostgreSQL connection string configured to test"
 
 **Verification Commands:**
 ```bash
@@ -108,6 +113,9 @@ cat ~/.buckets_config.toml | grep ntp_server
 ```bash
 # Configure PostgreSQL connection
 echo -e "postgresql://user:pass@localhost:5432/buckets\ntime.ntp.org\n" | buckets setup
+
+# Test database connection (may fail if no actual PostgreSQL server)
+buckets setup --test-connection
 
 # Verify updated configuration
 cat ~/.buckets_config.toml
@@ -869,6 +877,68 @@ buckets stats
 
 ---
 
+## System Diagnostics Tests
+
+### TC028: Doctor Command Testing - System Health Checks
+
+**Priority:** High
+**Category:** System Diagnostics
+
+**Objective:** Verify comprehensive system health checking functionality
+
+**Preconditions:** Buckets environment with global configuration
+
+**Test Steps:**
+```bash
+# Test doctor command help
+buckets doctor --help
+
+# Test all diagnostics (default)
+buckets doctor
+
+# Test selective diagnostics
+buckets doctor --skip-database
+buckets doctor --skip-ntp
+
+# Test JSON output
+buckets doctor --json
+
+# Test with repository config
+cd test_repo_embedded
+buckets doctor --use-repo
+
+# Test verbose output with potential errors
+buckets doctor --verbose
+```
+
+**Expected Results:**
+- Exit code: 0 for successful tests
+- Clear section headers for each test
+- ✅ success indicators for working components
+- Database connection time displayed
+- NTP server response time shown
+- Password masking in database connection strings
+- JSON output valid and parseable
+- Repository config used when --use-repo specified
+
+**Verification Commands:**
+```bash
+# Check JSON output structure
+buckets doctor --json | jq '.'
+
+# Verify exit codes
+buckets doctor && echo "Success" || echo "Failed"
+
+# Test selective testing
+buckets doctor --skip-database --json | jq '.tests | has("ntp")'
+```
+
+**Post-conditions:** System health status verified
+
+**Notes:** Tests both global and repository configurations
+
+---
+
 ## Error Handling Tests
 
 ### TC026: Error Handling and Edge Cases
@@ -1317,11 +1387,13 @@ echo "**Global Config:** $(test -f ~/.buckets_config.toml && echo "Present" || e
 - **Expectation Management Tests** (TC019-TC022)
 - **Database Management Tests** (TC023)
 - **Integration and Performance Tests** (TC024-TC025)
+- **System Diagnostics Tests** (TC028)
 - **Error Handling Tests** (TC026-TC027)
 
 #### ✅ **Enhanced Test Coverage**
-- **Total Commands**: 16 (including setup)
+- **Total Commands**: 17 (including setup and doctor)
 - **Setup Command**: 4 dedicated test cases covering all aspects
+- **Doctor Command**: 1 comprehensive system diagnostics test case
 - **Configuration inheritance**: Explicitly tested in TC003
 - **Error handling**: Comprehensive coverage including setup command
 
@@ -1332,13 +1404,14 @@ echo "**Global Config:** $(test -f ~/.buckets_config.toml && echo "Present" || e
 - **Consistent formatting**: All test cases follow standard structure
 
 ### Test Coverage Status:
-- **Total Commands**: 16 (100% coverage)
+- **Total Commands**: 17 (100% coverage)
 - **Setup Command Tests**: 4 comprehensive test cases
+- **Doctor Command Tests**: 1 system diagnostics test case
 - **Critical Path Tests**: 8 test cases (including setup)
-- **Total Test Cases**: 27 (TC001-TC027)
+- **Total Test Cases**: 28 (TC001-TC028)
 
 ### Test Execution Priority:
 1. **Setup Command Tests** (TC001-TC004) - **Must run first**
 2. **Core Functionality** (TC005-TC014)
 3. **Information Commands** (TC015-TC018)
-4. **Advanced Features** (TC019-TC027)
+4. **Advanced Features** (TC019-TC028)
