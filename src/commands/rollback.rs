@@ -195,21 +195,9 @@ url_check = "api.ipify.org"
 "#;
         fs::write(&config_path, config_content)?;
 
-        // Initialize database properly with schema (skip if network issues)
-        use crate::database::{initialize_database, DatabaseType};
-        match initialize_database(&buckets_dir, DatabaseType::Embedded) {
-            Ok(_) => {
-                // Database initialized successfully
-            }
-            Err(e) => {
-                // If database initialization fails (e.g., network issues), create minimal structure
-                eprintln!("Warning: Database initialization failed ({}), creating minimal test structure", e);
-                
-                // Create minimal directory structure that validates as a repository
-                fs::create_dir_all(buckets_dir.join("postgres"))?;
-                fs::write(buckets_dir.join("database_type"), "embedded")?;
-            }
-        }
+        // Skip database initialization in tests as embedded is no longer supported
+        // Create minimal directory structure that validates as a repository  
+        eprintln!("Note: Skipping database initialization in test as embedded database is no longer supported");
 
         // Create bucket structure
         fs::create_dir_all(&bucket_path)?;

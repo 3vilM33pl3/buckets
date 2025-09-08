@@ -79,19 +79,23 @@ pub struct InitCommand {
     #[clap(required = true)]
     pub repo_name: String,
 
-    #[clap(long, default_value = "embedded", value_parser = validate_database_type)]
-    pub database: String,
+    // External database configuration (required)
+    #[clap(long, help = "External database host")]
+    pub external_host: Option<String>,
+
+    #[clap(long, help = "External database port", default_value = "5432")]
+    pub external_port: Option<u16>,
+
+    #[clap(long, help = "External database name", default_value = "buckets")]
+    pub external_database: Option<String>,
+
+    #[clap(long, help = "External database username")]
+    pub external_username: Option<String>,
+
+    #[clap(long, help = "External database password (optional)")]
+    pub external_password: Option<String>,
 }
 
-fn validate_database_type(s: &str) -> Result<String, String> {
-    match s.to_lowercase().as_str() {
-        "embedded" | "external" | "postgresql" | "postgres" => Ok(s.to_string()),
-        _ => Err(format!(
-            "Invalid database type '{}'. Valid options are: embedded, external, postgresql",
-            s
-        )),
-    }
-}
 
 #[derive(Args, Clone)]
 pub struct CreateCommand {

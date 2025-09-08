@@ -1,9 +1,7 @@
 use crate::errors::BucketError;
 use deadpool_postgres::{Config, Pool, Runtime};
 use log::info;
-use postgresql_embedded::{PostgreSQL, Settings, VersionReq};
 use refinery::embed_migrations;
-use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio_postgres::NoTls;
 
@@ -12,38 +10,23 @@ embed_migrations!("src/sql/migrations");
 
 /// Configuration for database connection
 #[derive(Debug, Clone)]
-pub enum DatabaseConfig {
-    /// Use an embedded PostgreSQL instance
-    Embedded {
-        data_dir: PathBuf,
-        port: Option<u16>,
-    },
-    /// Connect to an external PostgreSQL server
-    #[allow(dead_code)] // Used for PostgreSQL migration
-    External {
-        host: String,
-        port: u16,
-        database: String,
-        username: String,
-        password: Option<String>,
-    },
+pub struct DatabaseConfig {
+    pub host: String,
+    pub port: u16,
+    pub database: String,
+    pub username: String,
+    pub password: Option<String>,
 }
 
 impl DatabaseConfig {
     /// Create config from environment or defaults
-    #[allow(dead_code)] // Used for PostgreSQL migration
-    pub fn from_env(repo_path: &Path) -> Self {
+    #[allow(dead_code)]
+    pub fn from_env() -> Result<Self, BucketError> {
         if let Ok(url) = std::env::var("DATABASE_URL") {
             // Parse PostgreSQL connection URL
-            Self::from_url(&url).unwrap_or_else(|_| Self::Embedded {
-                data_dir: repo_path.join(".b").join("postgres"),
-                port: None,
-            })
+            Self::from_url(&url)
         } else {
-            Self::Embedded {
-                data_dir: repo_path.join(".b").join("postgres"),
-                port: None,
-            }
+            Err(BucketError::from("No DATABASE_URL environment variable found. External database configuration is required."))
         }
     }
 
@@ -76,7 +59,7 @@ impl DatabaseConfig {
             (host_port.to_string(), 5432)
         };
 
-        Ok(Self::External {
+        Ok(Self {
             host,
             port,
             database: database.to_string(),
@@ -88,35 +71,20 @@ impl DatabaseConfig {
     /// Get connection string for this configuration
     #[allow(dead_code)] // Used for PostgreSQL migration
     pub fn connection_string(&self) -> String {
-        match self {
-            Self::Embedded { port, .. } => {
-                let port = port.unwrap_or(5432);
-                format!("host=localhost port={} user=postgres dbname=buckets", port)
-            }
-            Self::External {
-                host,
-                port,
-                database,
-                username,
-                password,
-            } => {
-                let mut conn = format!(
-                    "host={} port={} user={} dbname={}",
-                    host, port, username, database
-                );
-                if let Some(pwd) = password {
-                    conn.push_str(&format!(" password={}", pwd));
-                }
-                conn
-            }
+        let mut conn = format!(
+            "host={} port={} user={} dbname={}",
+            self.host, self.port, self.username, self.database
+        );
+        if let Some(pwd) = &self.password {
+            conn.push_str(&format!(" password={}", pwd));
         }
+        conn
     }
 }
 
 /// Database connection manager
 pub struct DatabaseManager {
     config: DatabaseConfig,
-    embedded_pg: Option<PostgreSQL>,
     pool: Option<Pool>,
 }
 
@@ -125,12 +93,11 @@ impl DatabaseManager {
     pub fn new(config: DatabaseConfig) -> Self {
         Self {
             config,
-            embedded_pg: None,
             pool: None,
         }
     }
 
-    /// Initialize the database (start embedded if needed, run migrations)
+    /// Initialize the database (create pool, run migrations)
     pub async fn initialize(&mut self) -> Result<(), BucketError> {
         // Check if we're in a test environment and should skip database initialization
         if std::env::var("BUCKETS_SKIP_DB_INIT").is_ok() {
@@ -140,48 +107,7 @@ impl DatabaseManager {
             return Ok(());
         }
 
-        // Start embedded PostgreSQL if needed
-        if let DatabaseConfig::Embedded { data_dir, port } = &self.config {
-            info!("Starting embedded PostgreSQL...");
-
-            // Create data directory if it doesn't exist
-            std::fs::create_dir_all(data_dir).map_err(|e| {
-                BucketError::from(format!("Failed to create data directory: {}", e).as_str())
-            })?;
-
-            let mut settings = Settings::default();
-            settings.version = VersionReq::parse(">=13.0.0").map_err(|e| {
-                BucketError::from(format!("Invalid version requirement: {}", e).as_str())
-            })?;
-            settings.installation_dir = data_dir.join("install");
-            settings.data_dir = data_dir.join("data");
-            settings.port = port.unwrap_or(0); // 0 means auto-select port
-            settings.temporary = false;
-            settings.password_file = data_dir.join(".pgpass");
-
-            let mut pg = PostgreSQL::new(settings);
-
-            // Install PostgreSQL if not already installed
-            if !pg.settings().installation_dir.exists() {
-                info!("Installing PostgreSQL...");
-                pg.setup().await.map_err(|e| {
-                    BucketError::from(format!("Failed to install PostgreSQL: {}", e).as_str())
-                })?;
-            }
-
-            // Start PostgreSQL
-            pg.start().await.map_err(|e| {
-                BucketError::from(format!("Failed to start PostgreSQL: {}", e).as_str())
-            })?;
-
-            // Update config with actual port
-            if let DatabaseConfig::Embedded { port: cfg_port, .. } = &mut self.config {
-                *cfg_port = Some(pg.settings().port);
-            }
-
-            info!("PostgreSQL started on port {}", pg.settings().port);
-            self.embedded_pg = Some(pg);
-        }
+        info!("Connecting to external PostgreSQL database at {}:{}", self.config.host, self.config.port);
 
         // Create connection pool
         self.create_pool().await?;
@@ -195,29 +121,11 @@ impl DatabaseManager {
     /// Create connection pool
     async fn create_pool(&mut self) -> Result<(), BucketError> {
         let mut cfg = Config::new();
-
-        match &self.config {
-            DatabaseConfig::Embedded { port, .. } => {
-                cfg.host = Some("localhost".to_string());
-                cfg.port = Some(port.unwrap_or(5432));
-                cfg.user = Some("postgres".to_string());
-                cfg.dbname = Some("buckets".to_string());
-            }
-            DatabaseConfig::External {
-                host,
-                port,
-                database,
-                username,
-                password,
-            } => {
-                cfg.host = Some(host.clone());
-                cfg.port = Some(*port);
-                cfg.user = Some(username.clone());
-                cfg.password = password.clone();
-                cfg.dbname = Some(database.clone());
-            }
-        }
-
+        cfg.host = Some(self.config.host.clone());
+        cfg.port = Some(self.config.port);
+        cfg.user = Some(self.config.username.clone());
+        cfg.password = self.config.password.clone();
+        cfg.dbname = Some(self.config.database.clone());
         cfg.connect_timeout = Some(Duration::from_secs(10));
 
         let pool = cfg.create_pool(Some(Runtime::Tokio1), NoTls).map_err(|e| {
@@ -294,17 +202,6 @@ impl DatabaseManager {
             .map_err(|e| BucketError::from(format!("Query failed: {}", e).as_str()))
     }
 
-    /// Shutdown the database (for embedded PostgreSQL)
-    #[allow(dead_code)] // Used for PostgreSQL migration
-    pub async fn shutdown(&mut self) -> Result<(), BucketError> {
-        if let Some(pg) = self.embedded_pg.take() {
-            info!("Stopping embedded PostgreSQL...");
-            pg.stop().await.map_err(|e| {
-                BucketError::from(format!("Failed to stop PostgreSQL: {}", e).as_str())
-            })?;
-        }
-        Ok(())
-    }
 }
 
 // Global database manager instance
