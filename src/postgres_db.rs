@@ -20,7 +20,7 @@ pub struct DatabaseConfig {
 
 impl DatabaseConfig {
     /// Create config from environment or defaults
-    #[allow(dead_code)] // Used for PostgreSQL migration
+    #[allow(dead_code)]
     pub fn from_env() -> Result<Self, BucketError> {
         if let Ok(url) = std::env::var("DATABASE_URL") {
             // Parse PostgreSQL connection URL
