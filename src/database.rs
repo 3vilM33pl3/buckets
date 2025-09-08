@@ -129,18 +129,6 @@ pub async fn initialize_database_with_config_async(
     Ok(())
 }
 
-/// Initialize database from repo configuration
-pub async fn initialize_database_from_repo_async(
-    repo_path: &Path,
-) -> Result<(), BucketError> {
-    let config = get_database_config(repo_path)?;
-    
-    // Save the config to file for future use
-    save_database_config(repo_path, &config)?;
-    
-    initialize_database_with_config_async(config).await
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
