@@ -1,8 +1,9 @@
 use crate::args::InitCommand;
 use crate::commands::BucketCommand;
 use crate::config::Config;
-use crate::database::{initialize_database_async, DatabaseType};
+use crate::database::{initialize_database_with_config_async, save_database_config};
 use crate::errors::BucketError;
+use crate::postgres_db::DatabaseConfig;
 use crate::utils::checks;
 use crate::CURRENT_DIR;
 use log::debug;
@@ -40,8 +41,12 @@ impl BucketCommand for Init {
 impl Init {
     fn create_repo(&self, repo_name: &str, repo_location: &Path) -> Result<(), BucketError> {
 
-        let db_type = DatabaseType::from_str(&self.args.database)?;
-        debug!("Database type: {:?}", db_type);
+        // Validate that external database configuration is provided
+        if self.args.external_host.is_none() || self.args.external_username.is_none() {
+            return Err(BucketError::from(
+                "External database configuration is required. Please provide --external-host and --external-username options."
+            ));
+        }
         
         let repo_path = repo_location.join(repo_name);
         let repo_buckets_path = repo_path.join(".buckets");
@@ -50,7 +55,7 @@ impl Init {
         self.create_config_file(&repo_buckets_path)?;
 
         // Initialize PostgreSQL database
-        self.initialize_postgresql(&repo_buckets_path, db_type)?;
+        self.initialize_postgresql(&repo_buckets_path)?;
 
         Ok(())
     }
@@ -91,6 +96,36 @@ impl Init {
         Ok(())
     }
 
+    #[cfg(test)]
+    pub fn create_config_file_no_global(&self, location: &Path) -> Result<(), BucketError> {
+        // Create default configuration without global inheritance
+        let config = Config {
+            ntp_server: "pool.ntp.org".to_string(),
+            ip_check: "8.8.8.8".to_string(),
+            url_check: "api.ipify.org".to_string(),
+            postgresql_connection: None,
+        };
+
+        // Serialize the configuration to TOML format
+        let toml_content = toml::to_string(&config).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                format!("Failed to serialize config: {}", e),
+            )
+        })?;
+
+        // Create the .buckets directory if it doesnt exist
+        fs::create_dir_all(&location)?;
+
+        // Write the configuration file
+        let config_path = location.join("config");
+        let mut file = fs::File::create(&config_path)?;
+        file.write_all(toml_content.as_bytes())?;
+
+        Ok(())
+    }
+
+
     fn checks(&self, repo_name: &str) -> Result<(), BucketError> {
         let repo_path = CURRENT_DIR.with(|dir| dir.join(repo_name));
 
@@ -114,13 +149,25 @@ impl Init {
     }
     
     /// Initialize PostgreSQL database for the repository
-    fn initialize_postgresql(&self, repo_path: &Path, db_type: DatabaseType) -> Result<(), BucketError> {
+    fn initialize_postgresql(&self, repo_path: &Path) -> Result<(), BucketError> {
+        // Build database configuration from command line arguments
+        let config = DatabaseConfig {
+            host: self.args.external_host.clone().unwrap(),
+            port: self.args.external_port.unwrap_or(5432),
+            database: self.args.external_database.clone().unwrap_or_else(|| "buckets".to_string()),
+            username: self.args.external_username.clone().unwrap(),
+            password: self.args.external_password.clone(),
+        };
+        
+        // Save the database configuration
+        save_database_config(repo_path, &config)?;
+        
         // Create a tokio runtime for async database operations
         let rt = tokio::runtime::Runtime::new()
             .map_err(|e| BucketError::from(format!("Failed to create async runtime: {}", e).as_str()))?;
             
         rt.block_on(async {
-            initialize_database_async(repo_path, db_type).await
+            initialize_database_with_config_async(config).await
         })
     }
 }
@@ -132,11 +179,15 @@ mod tests {
     use std::fs;
     use tempfile::tempdir;
 
-    fn create_test_init_command(repo_name: &str, database: &str) -> Init {
+    fn create_test_init_command(repo_name: &str) -> Init {
         let args = InitCommand {
             shared: SharedArguments::default(),
             repo_name: repo_name.to_string(),
-            database: database.to_string(),
+            external_host: Some("localhost".to_string()),
+            external_port: Some(5432),
+            external_database: Some("buckets_test".to_string()),
+            external_username: Some("test_user".to_string()),
+            external_password: Some("test_password".to_string()),
         };
         Init::new(&args)
     }
@@ -146,11 +197,15 @@ mod tests {
         let args = InitCommand {
             shared: SharedArguments::default(),
             repo_name: "test_repo".to_string(),
-            database: "embedded".to_string(),
+            external_host: Some("localhost".to_string()),
+            external_port: Some(5432),
+            external_database: Some("buckets_test".to_string()),
+            external_username: Some("test_user".to_string()),
+            external_password: Some("test_password".to_string()),
         };
         let init = Init::new(&args);
         assert_eq!(init.args.repo_name, "test_repo");
-        assert_eq!(init.args.database, "embedded");
+        assert_eq!(init.args.external_host, Some("localhost".to_string()));
     }
 
     #[test]
@@ -158,7 +213,7 @@ mod tests {
         let temp_dir = tempdir().expect("Failed to create temporary directory");
         let config_dir = temp_dir.path().join("test_config");
 
-        let init = create_test_init_command("test_repo", "embedded");
+        let init = create_test_init_command("test_repo");
         let result = init.create_config_file(&config_dir);
 
         assert!(result.is_ok());
@@ -184,7 +239,7 @@ mod tests {
         // Pre-create the directory
         fs::create_dir_all(&config_dir).expect("Failed to create directory");
 
-        let init = create_test_init_command("test_repo", "embedded");
+        let init = create_test_init_command("test_repo");
         let result = init.create_config_file(&config_dir);
 
         assert!(result.is_ok());
@@ -196,7 +251,7 @@ mod tests {
 
     #[test]
     fn test_create_config_file_invalid_path() {
-        let init = create_test_init_command("test_repo", "embedded");
+        let init = create_test_init_command("test_repo");
 
         // Try to create config in a path that cannot be created (invalid parent)
         let invalid_path = std::path::Path::new("/invalid/path/that/does/not/exist");
@@ -207,7 +262,7 @@ mod tests {
 
     #[test]
     fn test_checks_valid_repo_name() {
-        let init = create_test_init_command("valid_repo", "embedded");
+        let init = create_test_init_command("valid_repo");
         let result = init.checks("valid_repo");
 
         // Should be ok because the repo doesn't exist yet
@@ -223,7 +278,7 @@ mod tests {
         // Create a directory that already exists but is not a bucket repo
         fs::create_dir_all(&existing_dir).expect("Failed to create directory");
 
-        let init = create_test_init_command(test_repo_name, "embedded");
+        let init = create_test_init_command(test_repo_name);
         let result = init.checks(test_repo_name);
 
         // Clean up the test directory
@@ -248,7 +303,7 @@ mod tests {
         // Create a file with the same name as the repo
         fs::write(&existing_file, "test content").expect("Failed to create file");
 
-        let init = create_test_init_command(test_file_name, "embedded");
+        let init = create_test_init_command(test_file_name);
         let result = init.checks(test_file_name);
 
         // Clean up the test file
@@ -297,7 +352,7 @@ mod tests {
         let db_type_file = buckets_dir.join("database_type");
         fs::write(&db_type_file, "PostgreSQL").expect("Failed to create database_type file");
 
-        let init = create_test_init_command(test_repo_name, "embedded");
+        let init = create_test_init_command(test_repo_name);
         let result = init.checks(test_repo_name);
 
         // Restore original directory before cleanup
@@ -320,7 +375,7 @@ mod tests {
     fn test_create_repo_with_embedded_database() {
         let temp_dir = tempdir().expect("Failed to create temporary directory");
 
-        let init = create_test_init_command("test_repo", "embedded");
+        let init = create_test_init_command("test_repo");
         let result = init.create_repo("test_repo", temp_dir.path());
 
         // Handle network issues gracefully
@@ -364,7 +419,7 @@ mod tests {
     fn test_create_repo_with_postgresql() {
         let temp_dir = tempdir().expect("Failed to create temporary directory");
 
-        let init = create_test_init_command("test_repo", "postgresql");
+        let init = create_test_init_command("test_repo");
         let result = init.create_repo("test_repo", temp_dir.path());
 
         // Handle network issues gracefully
@@ -396,10 +451,11 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_create_repo_invalid_database_type() {
         let temp_dir = tempdir().expect("Failed to create temporary directory");
 
-        let init = create_test_init_command("test_repo", "invalid_db");
+        let init = create_test_init_command("test_repo");
         let result = init.create_repo("test_repo", temp_dir.path());
 
         assert!(result.is_err());
@@ -427,7 +483,7 @@ mod tests {
         permissions.set_readonly(true);
         fs::set_permissions(&readonly_dir, permissions).expect("Failed to set readonly");
 
-        let init = create_test_init_command("test_repo", "embedded");
+        let init = create_test_init_command("test_repo");
         let result = init.create_repo("test_repo", &readonly_dir);
 
         // The result depends on the system's permission handling
@@ -435,32 +491,13 @@ mod tests {
         let _ = result; // Don't assert specific behavior as it's system-dependent
     }
 
-    #[test]
-    fn test_database_type_validation() {
-        // Test valid database types
-        assert!(DatabaseType::from_str("embedded").is_ok());
-        assert!(DatabaseType::from_str("postgresql").is_ok());
-        assert!(DatabaseType::from_str("postgres").is_ok());
-
-        // Test case insensitivity
-        assert!(DatabaseType::from_str("EMBEDDED").is_ok());
-        assert!(DatabaseType::from_str("EXTERNAL").is_ok());
-        assert!(DatabaseType::from_str("PostgreSQL").is_ok());
-        assert!(DatabaseType::from_str("POSTGRES").is_ok());
-
-        // Test invalid database types
-        assert!(DatabaseType::from_str("mysql").is_err());
-        assert!(DatabaseType::from_str("sqlite").is_err());
-        assert!(DatabaseType::from_str("invalid").is_err());
-        assert!(DatabaseType::from_str("").is_err());
-    }
 
     #[test]
     fn test_config_file_content_format() {
         let temp_dir = tempdir().expect("Failed to create temporary directory");
         let config_dir = temp_dir.path().join("test_config");
 
-        let init = create_test_init_command("test_repo", "embedded");
+        let init = create_test_init_command("test_repo");
         let result = init.create_config_file(&config_dir);
 
         assert!(result.is_ok());

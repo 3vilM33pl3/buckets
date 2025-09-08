@@ -105,10 +105,14 @@ mod tests {
         let init_cmd = crate::commands::init::Init::new(&crate::args::InitCommand {
             shared: crate::args::SharedArguments::default(),
             repo_name: "test".to_string(),
-            database: "embedded".to_string(),
+            external_host: Some("localhost".to_string()),
+            external_port: Some(5432),
+            external_database: Some("buckets_test".to_string()),
+            external_username: Some("test_user".to_string()),
+            external_password: Some("test_password".to_string()),
         });
         init_cmd
-            .create_config_file(&buckets_dir.as_path())
+            .create_config_file_no_global(&buckets_dir.as_path())
             .expect("Failed to create config file");
 
         // Read the file
@@ -212,10 +216,14 @@ postgresql_connection = "postgresql://test:test@localhost:5432/test"
         let init_cmd = crate::commands::init::Init::new(&crate::args::InitCommand {
             shared: crate::args::SharedArguments::default(),
             repo_name: "test".to_string(),
-            database: "embedded".to_string(),
+            external_host: Some("localhost".to_string()),
+            external_port: Some(5432),
+            external_database: Some("buckets_test".to_string()),
+            external_username: Some("test_user".to_string()),
+            external_password: Some("test_password".to_string()),
         });
         init_cmd
-            .create_config_file(&buckets_dir.as_path())
+            .create_config_file_no_global(&buckets_dir.as_path())
             .expect("Failed to create config file");
 
         // Create nested directory and test from there

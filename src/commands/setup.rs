@@ -149,24 +149,11 @@ impl Setup {
         // Create connection configuration
         let mut cfg = Config::new();
         
-        match db_config {
-            DatabaseConfig::External {
-                host,
-                port,
-                database,
-                username,
-                password,
-            } => {
-                cfg.host = Some(host);
-                cfg.port = Some(port);
-                cfg.user = Some(username);
-                cfg.password = password;
-                cfg.dbname = Some(database);
-            }
-            DatabaseConfig::Embedded { .. } => {
-                return Err(BucketError::from("Cannot test embedded database connection from setup command"));
-            }
-        }
+        cfg.host = Some(db_config.host);
+        cfg.port = Some(db_config.port);
+        cfg.user = Some(db_config.username);
+        cfg.password = db_config.password;
+        cfg.dbname = Some(db_config.database);
         
         // Set connection timeout
         cfg.connect_timeout = Some(Duration::from_secs(10));

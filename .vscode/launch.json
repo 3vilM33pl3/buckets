@@ -7,7 +7,7 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'buckets init narrowboat --database postgres'",
+            "name": "Debug executable 'buckets init ../test_repo'",
             "cargo": {
                 "args": [
                     "build",
@@ -19,12 +19,8 @@
                     "kind": "bin"
                 }
             },
-            "args": ["init", "narrowboat", "--database", "postgres"],
-            "cwd": "/home/olivier/Projects/BucketsRepositories",
-            "env": {
-                "DATABASE_URL": "postgresql://username:password@host:5432/database"
-            }
-        },        
+            "args": ["init", "../test_repo"],
+        },
         {
             "type": "lldb",
             "request": "launch",
