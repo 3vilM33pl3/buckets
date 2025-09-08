@@ -267,7 +267,8 @@ impl Doctor {
         });
 
         // Update overall status if schema validation failed
-        if schema_result["overall_status"] == "failed" {
+
+        if schema_result["overall_status"].as_str() == Some("failed") {
             result["status"] = json!("failed");
         }
 
