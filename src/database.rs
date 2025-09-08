@@ -83,7 +83,7 @@ fn parse_database_config(content: &str) -> Result<DatabaseConfig, BucketError> {
 
 /// Save database configuration to file
 pub fn save_database_config(repo_path: &Path, config: &DatabaseConfig) -> Result<(), BucketError> {
-    let config_file = repo_path.join(".buckets").join("db_config.toml");
+    let config_file = repo_path.join("config.toml");
 
     let mut content = String::from("type = \"external\"\n");
     content.push_str(&format!("host = \"{}\"\n", config.host));
