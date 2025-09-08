@@ -31,6 +31,8 @@ impl BucketCommand for Init {
 
         // Create the repository
         let current_dir = CURRENT_DIR.with(|dir| dir.clone());
+        debug!("Current directory: {:?}", current_dir);
+        
         self.create_repo(&self.args.repo_name, &current_dir)?;
 
         println!("Bucket repository initialized successfully.");
@@ -40,14 +42,6 @@ impl BucketCommand for Init {
 
 impl Init {
     fn create_repo(&self, repo_name: &str, repo_location: &Path) -> Result<(), BucketError> {
-
-        // Validate that external database configuration is provided
-        if self.args.external_host.is_none() || self.args.external_username.is_none() {
-            return Err(BucketError::from(
-                "External database configuration is required. Please provide --external-host and --external-username options."
-            ));
-        }
-        
         let repo_path = repo_location.join(repo_name);
         let repo_buckets_path = repo_path.join(".buckets");
 
@@ -150,14 +144,11 @@ impl Init {
     
     /// Initialize PostgreSQL database for the repository
     fn initialize_postgresql(&self, repo_path: &Path) -> Result<(), BucketError> {
-        // Build database configuration from command line arguments
-        let config = DatabaseConfig {
-            host: self.args.external_host.clone().unwrap(),
-            port: self.args.external_port.unwrap_or(5432),
-            database: self.args.external_database.clone().unwrap_or_else(|| "buckets".to_string()),
-            username: self.args.external_username.clone().unwrap(),
-            password: self.args.external_password.clone(),
-        };
+        // Try to build database configuration in priority order:
+        // 1. Command line arguments (if provided)
+        // 2. DATABASE_URL environment variable
+        // 3. Global configuration
+        let config = self.get_database_config()?;
         
         // Save the database configuration
         save_database_config(repo_path, &config)?;
@@ -169,6 +160,40 @@ impl Init {
         rt.block_on(async {
             initialize_database_with_config_async(config).await
         })
+    }
+
+    /// Get database configuration from various sources in priority order
+    fn get_database_config(&self) -> Result<DatabaseConfig, BucketError> {
+        // 1. If command line arguments are provided, use them
+        if self.args.external_host.is_some() && self.args.external_username.is_some() {
+            return Ok(DatabaseConfig {
+                host: self.args.external_host.clone().unwrap(),
+                port: self.args.external_port.unwrap_or(5432),
+                database: self.args.external_database.clone().unwrap_or_else(|| "buckets".to_string()),
+                username: self.args.external_username.clone().unwrap(),
+                password: self.args.external_password.clone(),
+            });
+        }
+
+        // 2. Try DATABASE_URL environment variable
+        if let Ok(database_url) = std::env::var("DATABASE_URL") {
+            return DatabaseConfig::from_url(&database_url);
+        }
+
+        // 3. Try global configuration
+        if let Ok(global_config) = crate::utils::config::GlobalConfig::load() {
+            if let Some(connection_string) = global_config.postgresql_connection {
+                return DatabaseConfig::from_url(&connection_string);
+            }
+        }
+
+        // 4. If none of the above work, return an error with helpful message
+        Err(BucketError::from(
+            "No database configuration found. Please provide one of:\n\
+            1. Command line options: --external-host and --external-username\n\
+            2. DATABASE_URL environment variable\n\
+            3. Global configuration via 'buckets setup' command"
+        ))
     }
 }
 
@@ -491,6 +516,95 @@ mod tests {
         let _ = result; // Don't assert specific behavior as it's system-dependent
     }
 
+
+    #[test]
+    fn test_get_database_config_with_command_line_args() {
+        let args = InitCommand {
+            shared: SharedArguments::default(),
+            repo_name: "test".to_string(),
+            external_host: Some("localhost".to_string()),
+            external_port: Some(5432),
+            external_database: Some("test_db".to_string()),
+            external_username: Some("test_user".to_string()),
+            external_password: Some("test_pass".to_string()),
+        };
+        let init = Init::new(&args);
+        let result = init.get_database_config();
+        
+        assert!(result.is_ok());
+        let config = result.unwrap();
+        assert_eq!(config.host, "localhost");
+        assert_eq!(config.port, 5432);
+        assert_eq!(config.database, "test_db");
+        assert_eq!(config.username, "test_user");
+        assert_eq!(config.password, Some("test_pass".to_string()));
+    }
+
+    #[test]
+    fn test_get_database_config_with_database_url() {
+        // Set DATABASE_URL environment variable
+        std::env::set_var("DATABASE_URL", "postgresql://envuser:envpass@envhost:5433/envdb");
+        
+        let args = InitCommand {
+            shared: SharedArguments::default(),
+            repo_name: "test".to_string(),
+            external_host: None, // No CLI args provided
+            external_port: None,
+            external_database: None,
+            external_username: None,
+            external_password: None,
+        };
+        let init = Init::new(&args);
+        let result = init.get_database_config();
+        
+        assert!(result.is_ok());
+        let config = result.unwrap();
+        assert_eq!(config.host, "envhost");
+        assert_eq!(config.port, 5433);
+        assert_eq!(config.database, "envdb");
+        assert_eq!(config.username, "envuser");
+        assert_eq!(config.password, Some("envpass".to_string()));
+        
+        // Clean up
+        std::env::remove_var("DATABASE_URL");
+    }
+
+    #[test]
+    fn test_get_database_config_with_global_config() {
+        // Make sure no DATABASE_URL is set
+        std::env::remove_var("DATABASE_URL");
+        
+        let args = InitCommand {
+            shared: SharedArguments::default(),
+            repo_name: "test".to_string(),
+            external_host: None, // No CLI args provided
+            external_port: None,
+            external_database: None,
+            external_username: None,
+            external_password: None,
+        };
+        let init = Init::new(&args);
+        let result = init.get_database_config();
+        
+        // This test will succeed if global config exists, fail if it doesn't
+        // In a real environment, global config may or may not exist
+        match result {
+            Ok(config) => {
+                // Global config was found and used successfully
+                assert!(!config.host.is_empty());
+                assert!(!config.username.is_empty());
+                println!("Global config found: {}@{}", config.username, config.host);
+            }
+            Err(error) => {
+                // No configuration available anywhere - should show helpful error
+                assert!(error.to_string().contains("No database configuration found"));
+                assert!(error.to_string().contains("--external-host"));
+                assert!(error.to_string().contains("DATABASE_URL"));
+                assert!(error.to_string().contains("buckets setup"));
+                println!("No global config found, got expected error: {}", error);
+            }
+        }
+    }
 
     #[test]
     fn test_config_file_content_format() {
