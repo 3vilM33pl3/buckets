@@ -93,9 +93,7 @@ impl BucketTrait for Bucket {
     /// Test-friendly version of write_bucket_info that accepts an explicit repository path
     #[cfg(test)]
     fn write_bucket_info_with_repo_path(&self, repo_path: &Path) -> Result<(), io::Error> {
-        let repo_root = repo_path.parent()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "Invalid repository path"))?;
-        let full_path = repo_root.join(&self.relative_bucket_path);
+        let full_path = repo_path.join(&self.relative_bucket_path);
         let mut file = File::create(full_path.join(".b").join("info"))?;
         let serialized = to_string(self)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
