@@ -26,6 +26,8 @@ pub trait BucketTrait {
     fn default(uuid: Uuid, name: &String, path: &PathBuf) -> Self;
     fn from_meta_data(current_path: &PathBuf) -> Result<Bucket, BucketError>;
     fn write_bucket_info(&self) -> Result<(), io::Error>;
+    #[cfg(test)]
+    fn write_bucket_info_with_repo_path(&self, repo_path: &Path) -> Result<(), io::Error>;
     fn is_valid_bucket(dir_path: &Path) -> bool;
     fn find_bucket(dir_path: &Path) -> Option<PathBuf>;
     fn get_full_bucket_path(&self) -> Result<PathBuf, BucketError>;
@@ -88,6 +90,17 @@ impl BucketTrait for Bucket {
         Ok(())
     }
 
+    /// Test-friendly version of write_bucket_info that accepts an explicit repository path
+    #[cfg(test)]
+    fn write_bucket_info_with_repo_path(&self, repo_path: &Path) -> Result<(), io::Error> {
+        let full_path = repo_path.join(&self.relative_bucket_path);
+        let mut file = File::create(full_path.join(".b").join("info"))?;
+        let serialized = to_string(self)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+        file.write_fmt(format_args!("{}", serialized))?;
+        Ok(())
+    }
+
     fn is_valid_bucket(dir_path: &Path) -> bool {
         let bucket_path = find_directory_in_parents(dir_path, ".b");
         match bucket_path {
@@ -123,21 +136,20 @@ impl BucketTrait for Bucket {
 
     fn list_files_with_metadata_in_bucket(&self) -> io::Result<Commit> {
         let mut files = Vec::new();
+        let bucket_path = self.full_path()
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
-        for entry in find_files_excluding_top_level_b(
-            self.full_path()
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
-                .as_path(),
-        ) {
-            let path = entry.as_path();
+        for entry in find_files_excluding_top_level_b(bucket_path.as_path()) {
+            let relative_path = entry.as_path();
+            let absolute_path = bucket_path.join(relative_path);
 
-            if path.is_file() {
-                match hash_file(path) {
+            if absolute_path.is_file() {
+                match hash_file(&absolute_path) {
                     Ok(hash) => {
                         //println!("BLAKE3 hash: {}", hash);
                         files.push(CommittedFile {
                             id: Default::default(),
-                            name: path.to_string_lossy().into_owned(),
+                            name: relative_path.to_string_lossy().into_owned(),
                             hash,
                             previous_hash: Hash::from_str(
                                 "0000000000000000000000000000000000000000000000000000000000000000",
@@ -196,13 +208,13 @@ mod tests {
     use uuid::Uuid;
 
     // Helper function to set up test environment
-    fn setup_test_environment() -> std::io::Result<PathBuf> {
+    fn setup_test_environment() -> std::io::Result<(PathBuf, PathBuf)> {
         let temp_dir = tempdir()?.keep();
-        create_dir_all(temp_dir.as_path().join(".buckets"))?;
+        let buckets_repo_path = temp_dir.as_path().join(".buckets");
+        create_dir_all(&buckets_repo_path)?;
         let bucket_path = temp_dir.as_path().join("test_bucket");
         create_dir_all(&bucket_path)?;
-        env::set_current_dir(&bucket_path)?;
-        Ok(bucket_path)
+        Ok((bucket_path, buckets_repo_path))
     }
 
     #[test]
@@ -259,13 +271,13 @@ mod tests {
         let bucket_meta_path = bucket_path.join(".b");
         create_dir_all(&bucket_meta_path)?;
         
-        // Set up environment for write_bucket_info
-        create_dir_all(temp_dir.path().join(".buckets"))?;
-        env::set_current_dir(temp_dir.path())?;
+        // Set up repository structure
+        let buckets_repo_path = temp_dir.path().join(".buckets");
+        create_dir_all(&buckets_repo_path)?;
 
         let bucket_default = Bucket::default(Uuid::new_v4(), &bucket_name, &PathBuf::from(&bucket_name));
         bucket_default
-            .write_bucket_info()
+            .write_bucket_info_with_repo_path(&buckets_repo_path)
             .expect("Failed to write bucket info in test");
 
         let bucket = match Bucket::from_meta_data(&bucket_path) {
@@ -341,9 +353,9 @@ mod tests {
 
         let bucket = Bucket::default(Uuid::new_v4(), &"test".to_string(), &PathBuf::from("bucket_readonly"));
 
-        // Set up environment for write_bucket_info
-        create_dir_all(temp_dir.path().join(".buckets"))?;
-        env::set_current_dir(temp_dir.path())?;
+        // Set up buckets directory structure
+        let buckets_dir = temp_dir.path().join(".buckets");
+        create_dir_all(&buckets_dir)?;
         
         // Make directory read-only on Unix systems
         #[cfg(unix)]
@@ -353,7 +365,7 @@ mod tests {
             perms.set_mode(0o444); // read-only
             std::fs::set_permissions(&bucket_meta_path, perms)?;
 
-            let result = bucket.write_bucket_info();
+            let result = bucket.write_bucket_info_with_repo_path(&buckets_dir);
 
             // Restore permissions for cleanup
             let mut perms = std::fs::metadata(&bucket_meta_path)?.permissions();
@@ -369,10 +381,12 @@ mod tests {
     #[test]
     #[serial]
     fn test_bucket_get_full_bucket_path() -> std::io::Result<()> {
-        let _bucket_path = setup_test_environment()?;
+        let (bucket_path, _buckets_repo_path) = setup_test_environment()?;
+        // Change to the temp directory so full_path() can find the .buckets repo
+        env::set_current_dir(bucket_path.parent().unwrap())?;
+        
         // Use relative path for bucket creation
         let bucket = Bucket::default(Uuid::new_v4(), &"test".to_string(), &PathBuf::from("test_bucket"));
-        // change the current directory to the bucket path
 
         match bucket.get_full_bucket_path() {
             Ok(_) => Ok(()),
@@ -386,7 +400,9 @@ mod tests {
     #[test]
     #[serial]
     fn test_bucket_list_files_with_metadata_in_bucket_empty() -> std::io::Result<()> {
-        let _bucket_path = setup_test_environment()?;
+        let (bucket_path, _buckets_repo_path) = setup_test_environment()?;
+        // Change to the temp directory so full_path() can find the .buckets repo
+        env::set_current_dir(bucket_path.parent().unwrap())?;
 
         // Use relative path for bucket creation
         let bucket = Bucket::default(Uuid::new_v4(), &"empty".to_string(), &PathBuf::from("test_bucket"));
@@ -405,7 +421,9 @@ mod tests {
     #[test]
     #[serial]
     fn test_bucket_list_files_with_metadata_in_bucket_with_files() -> std::io::Result<()> {
-        let bucket_path = setup_test_environment()?;
+        let (bucket_path, _buckets_repo_path) = setup_test_environment()?;
+        // Change to the temp directory so full_path() can find the .buckets repo
+        env::set_current_dir(bucket_path.parent().unwrap())?;
 
         // Create some test files
         std::fs::write(bucket_path.join("file1.txt"), "content1")?;
@@ -428,7 +446,9 @@ mod tests {
     #[test]
     #[serial]
     fn test_bucket_list_files_with_metadata_in_bucket_with_subdirectories() -> std::io::Result<()> {
-        let bucket_path = setup_test_environment()?;
+        let (bucket_path, _buckets_repo_path) = setup_test_environment()?;
+        // Change to the temp directory so full_path() can find the .buckets repo
+        env::set_current_dir(bucket_path.parent().unwrap())?;
 
         // Create test files in subdirectories
         let subdir = bucket_path.join("subdir");
@@ -465,14 +485,13 @@ mod tests {
         create_dir_all(&bucket_meta_path)?;
 
         // Create a valid bucket and write its info
-        // Need to set up environment before using write_bucket_info
-        create_dir_all(temp_dir.path().join(".buckets"))?;
-        env::set_current_dir(temp_dir.path())?;
+        let buckets_dir = temp_dir.path().join(".buckets");
+        create_dir_all(&buckets_dir)?;
         let original_bucket =
             Bucket::default(Uuid::new_v4(), &"valid_bucket".to_string(), &PathBuf::from("valid_bucket"));
         // Create the bucket directory structure first
         create_dir_all(bucket_path.join(".b"))?;
-        original_bucket.write_bucket_info()?;
+        original_bucket.write_bucket_info_with_repo_path(&buckets_dir)?;
 
         // Read it back using the standalone function
         let read_bucket = read_bucket_info(&bucket_path)?;
