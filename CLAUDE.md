@@ -10,44 +10,168 @@ Buckets is a CLI tool for game asset and expectation management. It controls ver
 
 ### Building and Testing
 - `cargo build` - Build the project
-- `cargo build --release` - Build optimized release version  
+- `cargo build --release` - Build optimized release version
 - `cargo test` - Run all tests
 - `cargo test --release` - Run tests in release mode
-- `cargo clippy` - Run linting checks
+- `cargo clippy` - Run linting checks (unwrap_used is denied)
 - `cargo fmt` - Format code
+
+### Running Single Tests
+```bash
+# Run a specific test file
+cargo test --test test_cli_init
+
+# Run a specific test function
+cargo test test_cli_init
+
+# Run with output visible (for debugging)
+cargo test test_cli_init -- --nocapture
+
+# Run ignored tests
+cargo test -- --ignored
+```
 
 ### Advanced Testing
 - `cargo llvm-cov nextest --all-features --workspace --lcov --output-path lcov.info` - Generate code coverage report (requires cargo-llvm-cov and cargo-nextest)
+- Tests use `#[serial]` from the `serial_test` crate for tests that need sequential execution
+- Some tests use `#[ignore]` and must be explicitly run with `-- --ignored`
 
 ## Architecture Overview
 
-### Command Structure
-- Each CLI subcommand has a dedicated module in `src/commands/`
-- Commands implement the `BucketCommand` trait with an `execute()` function
-- Commands are defined in `args.rs` using clap and dispatched in `main.rs`
+### Command Structure and Pattern
+All commands follow a consistent trait-based pattern:
+
+1. **Command Definition**: Each subcommand is defined as a struct in [args.rs](src/args.rs) (e.g., `InitCommand`, `CreateCommand`)
+2. **Command Implementation**: Implementation lives in `src/commands/<command>.rs`
+3. **BucketCommand Trait**: All commands implement the `BucketCommand` trait with:
+   - `type Args` - The command's argument type
+   - `fn new(args: &Self::Args) -> Self` - Constructor
+   - `fn execute(&self) -> Result<(), BucketError>` - Execution logic
+4. **Dispatch**: [main.rs](src/main.rs) dispatches commands via pattern matching on the `Command` enum
+
+Example command structure:
+```rust
+pub struct MyCommand {
+    args: MyCommandArgs,
+}
+
+impl BucketCommand for MyCommand {
+    type Args = MyCommandArgs;
+
+    fn new(args: &Self::Args) -> Self {
+        Self { args: args.clone() }
+    }
+
+    fn execute(&self) -> Result<(), BucketError> {
+        // Implementation
+        Ok(())
+    }
+}
+```
 
 ### Key Components
-- **args.rs**: CLI argument parsing using clap
-- **errors.rs**: Centralized error handling with `BucketError` enum
-- **utils/**: Reusable utility functions (directory validation, checks, etc.)
-- **data/**: Data structures for buckets and commits
-- **world.rs**: Global state management
+- **[args.rs](src/args.rs)**: CLI argument parsing using clap with `SharedArguments` (verbose, json flags) common to all commands
+- **[errors.rs](src/errors.rs)**: Centralized error handling with `BucketError` enum using thiserror
+- **[world.rs](src/world.rs)**: Global state management - tracks working directory, repo root, database path, active bucket, and verbose flag
+- **[commands/mod.rs](src/commands/mod.rs)**: Defines `BucketCommand` trait and optional `CommandDispatcher` for centralized execution
+- **utils/**: Reusable functions (path validation, security checks, compression, directory validation)
+- **data/**: Core data structures (`Bucket`, `Commit`) with trait-based interfaces
+
+### Configuration System
+Buckets has a two-tier configuration system:
+
+1. **Global Configuration** (`~/.buckets_config.toml`):
+   - Managed via `buckets setup` command
+   - Contains PostgreSQL connection strings and NTP server settings
+   - Inherited by new repositories
+
+2. **Repository Configuration** (`.buckets/config`):
+   - Created during `buckets init`
+   - Inherits from global config
+   - Can override global settings
 
 ### Database & Storage
-- Uses DuckDB for data persistence (see `src/sql/schema.sql`)
-- File hashing with BLAKE3
-- Compression support with zstd
+- **PostgreSQL** for data persistence (previously DuckDB)
+- Schema management in `src/postgres_db/`
+- File storage: Content-addressable in `.buckets/storage/`
+- File hashing: BLAKE3 for content integrity
+- Compression: zstd for efficient storage
 - UUID-based object identification
 
 ### Thread-Local State
-- `CURRENT_DIR`: Current working directory
+Defined in [main.rs](src/main.rs):
+- `CURRENT_DIR`: Current working directory (used throughout the codebase)
 - `EXIT`: Program exit code tracking
+- Access via `CURRENT_DIR.with(|dir| dir.clone())`
 
 ### Error Handling
-All errors use the centralized `BucketError` enum with `From<io::Error>` for seamless propagation with `?` operator.
+All errors use the centralized `BucketError` enum with:
+- `From<io::Error>` implementation for seamless propagation with `?` operator
+- `From<tokio_postgres::Error>` for database errors
+- Custom error variants for domain-specific errors
+
+### Logging
+- Uses `env_logger` with configurable verbosity
+- Default: warnings and errors only
+- `-v` flag enables debug-level logging
+- Initialize via `init_logging(verbose)` in [main.rs](src/main.rs:47)
 
 ## Testing Structure
-- Tests are in `tests/` directory with one file per command
-- Uses `serial_test` for tests that need sequential execution
-- Common test utilities in `tests/common.rs`
-- Uses tempfile for isolated test environments
+- Integration tests in `tests/` directory
+- One test file per command (e.g., `test_cli_init.rs`, `test_cli_commit.rs`)
+- Common test utilities in [tests/common.rs](tests/common.rs)
+- Uses `tempfile` crate for isolated test environments
+- Uses `serial_test` crate with `#[serial]` for tests requiring sequential execution
+- Uses `assert_cmd` for CLI testing
+
+Test naming convention: `test_cli_<command>`
+
+## Project Structure
+```
+buckets/
+├── src/
+│   ├── args.rs              # CLI argument definitions
+│   ├── main.rs              # Entry point, command dispatch
+│   ├── errors.rs            # Error types
+│   ├── world.rs             # Global state
+│   ├── commands/            # Command implementations
+│   │   ├── mod.rs          # BucketCommand trait
+│   │   ├── init.rs
+│   │   ├── create.rs
+│   │   └── ...
+│   ├── data/                # Core data structures
+│   │   ├── bucket.rs       # Bucket type
+│   │   └── commit.rs       # Commit type
+│   ├── utils/               # Utility functions
+│   │   ├── checks.rs       # Validation functions
+│   │   ├── security.rs     # Path security
+│   │   ├── compression.rs  # File compression
+│   │   └── ...
+│   └── postgres_db/         # Database layer
+├── tests/                   # Integration tests
+│   ├── common.rs           # Test utilities
+│   └── test_cli_*.rs       # Per-command tests
+└── debian/                  # Debian packaging
+```
+
+## Key Implementation Details
+
+### Repository Structure
+A buckets repository has this structure:
+```
+repo_name/
+├── .buckets/
+│   ├── config              # Repository configuration (TOML)
+│   ├── buckets.db          # Database file
+│   └── storage/            # Compressed file storage
+└── bucket_name/            # Individual buckets
+    └── .bucket_meta        # Bucket metadata
+```
+
+### Static Arguments
+The `ARGS` static in [main.rs](src/main.rs:23) is initialized lazily using `once_cell::Lazy` to parse CLI arguments once and make them globally available.
+
+### Debian Packaging
+- Build scripts: `build-deb.sh` (clean build) and `build-deb-fast.sh` (incremental)
+- Package files in `debian/` directory
+- Makefile at `Makefile.deb` for package building
