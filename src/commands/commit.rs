@@ -2,9 +2,10 @@ use crate::args::CommitCommand;
 use crate::commands::BucketCommand;
 use crate::data::commit::{Commit as CommitData, CommitStatus, CommittedFile};
 use crate::errors::BucketError;
-use crate::postgres_db::{get_database};
+use crate::postgres_db::{get_database, DatabaseManager};
 use crate::utils::utils::{find_files_excluding_top_level_b, hash_file};
 use crate::world::World;
+use async_trait::async_trait;
 use blake3::Hash;
 use log::{debug, error};
 use std::io;
@@ -13,6 +14,107 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use tokio_postgres::types::ToSql;
 use uuid::Uuid;
+
+const ZERO_HASH_STR: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+
+#[derive(Clone, Debug)]
+struct LatestCommitRow {
+    id: Uuid,
+    bucket: String,
+    timestamp: String,
+}
+
+#[derive(Clone, Debug)]
+struct CommitFileRow {
+    id: Uuid,
+    file_path: String,
+    hash: String,
+}
+
+#[async_trait]
+trait CommitStore: Send + Sync {
+    async fn latest_commit(&self, bucket_id: Uuid) -> Result<Option<LatestCommitRow>, BucketError>;
+
+    async fn files_for_commit(&self, commit_id: Uuid) -> Result<Vec<CommitFileRow>, BucketError>;
+}
+
+#[async_trait]
+impl CommitStore for DatabaseManager {
+    async fn latest_commit(&self, bucket_id: Uuid) -> Result<Option<LatestCommitRow>, BucketError> {
+        let bucket_id_str = bucket_id.to_string();
+        let params: Vec<&(dyn ToSql + Sync)> = vec![&bucket_id_str];
+
+        let rows = DatabaseManager::query(
+            self,
+            "SELECT c.id::text, c.created_at, b.name
+             FROM commits c
+             JOIN buckets b ON c.bucket_id = b.id
+             WHERE c.bucket_id = $1
+             ORDER BY c.created_at DESC
+             LIMIT 1",
+            &params,
+        )
+        .await?;
+
+        if let Some(row) = rows.first() {
+            let id_str: String = row.get(0);
+            let commit_id = Uuid::parse_str(&id_str).map_err(|e| {
+                BucketError::from(Error::new(
+                    ErrorKind::InvalidData,
+                    format!("Invalid UUID: {}", e),
+                ))
+            })?;
+
+            let created_at: std::time::SystemTime = row.get(1);
+            let bucket_name: String = row.get(2);
+
+            Ok(Some(LatestCommitRow {
+                id: commit_id,
+                bucket: bucket_name,
+                timestamp: chrono::DateTime::<chrono::Utc>::from(created_at).to_rfc3339(),
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn files_for_commit(&self, commit_id: Uuid) -> Result<Vec<CommitFileRow>, BucketError> {
+        let commit_id_str = commit_id.to_string();
+        let params: Vec<&(dyn ToSql + Sync)> = vec![&commit_id_str];
+
+        let rows = DatabaseManager::query(
+            self,
+            "SELECT f.id::text, f.file_path, f.hash
+             FROM files f
+             WHERE f.commit_id = $1
+             ORDER BY f.file_path ASC",
+            &params,
+        )
+        .await?;
+
+        let mut files = Vec::with_capacity(rows.len());
+        for row in rows {
+            let id_str: String = row.get(0);
+            let file_id = Uuid::parse_str(&id_str).map_err(|e| {
+                BucketError::from(Error::new(
+                    ErrorKind::InvalidData,
+                    format!("Invalid UUID: {}", e),
+                ))
+            })?;
+
+            let file_path: String = row.get(1);
+            let hash: String = row.get(2);
+
+            files.push(CommitFileRow {
+                id: file_id,
+                file_path,
+                hash,
+            });
+        }
+
+        Ok(files)
+    }
+}
 
 /// Commit changes to a bucket
 pub struct Commit {
@@ -45,8 +147,7 @@ impl BucketCommand for Commit {
 
         // create a list of each file in the bucket directory, recursively
         // and create a blake3 hash for each file and add to current_commit
-        let current_commit =
-            self.list_files_with_metadata_in_bucket(world.work_dir.clone())?;
+        let current_commit = self.list_files_with_metadata_in_bucket(world.work_dir.clone())?;
         if current_commit.files.is_empty() {
             return Err(
                 Error::new(ErrorKind::NotFound, "No commitable files found in bucket.").into(),
@@ -56,8 +157,9 @@ impl BucketCommand for Commit {
         println!("Current commit: ########################################################## ");
 
         // Create async runtime for database operations
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| BucketError::from(format!("Failed to create async runtime: {}", e).as_str()))?;
+        let rt = tokio::runtime::Runtime::new().map_err(|e| {
+            BucketError::from(format!("Failed to create async runtime: {}", e).as_str())
+        })?;
 
         // Load the previous commit, if it exists
         match rt.block_on(Commit::load_last_commit_async(bucket.id)) {
@@ -114,19 +216,17 @@ impl Commit {
         message: &String,
     ) -> Result<(), BucketError> {
         let db = get_database().await?;
-        
+
         // Insert the commit into the database
-        let commit_id = self.insert_commit_into_db_async(&*db, bucket_id, message).await?;
+        let commit_id = self
+            .insert_commit_into_db_async(&*db, bucket_id, message)
+            .await?;
 
         // Process each file in the commit
         for file in files {
             // Insert the file into the database
-            self.insert_file_into_db_async(
-                &*db,
-                &commit_id,
-                &file.name,
-                &file.hash.to_string(),
-            ).await?;
+            self.insert_file_into_db_async(&*db, &commit_id, &file.name, &file.hash.to_string())
+                .await?;
 
             // Compress and store the file (no database operation)
             file.compress_and_store(&bucket_path).map_err(|e| {
@@ -145,7 +245,7 @@ impl Commit {
         hash: &str,
     ) -> Result<(), BucketError> {
         let params: Vec<&(dyn ToSql + Sync)> = vec![&commit_id, &file_path, &hash];
-        
+
         db.execute(
             "INSERT INTO files (id, commit_id, file_path, hash) VALUES (uuid_generate_v4(), $1, $2, $3)",
             &params,
@@ -166,10 +266,10 @@ impl Commit {
         message: &String,
     ) -> Result<String, BucketError> {
         debug!("CommitCommand: inserting commit into PostgreSQL database");
-        
+
         let bucket_id_str = bucket_id.to_string();
         let params: Vec<&(dyn ToSql + Sync)> = vec![&bucket_id_str, message];
-        
+
         let rows = db.query(
             "INSERT INTO commits (id, bucket_id, message) VALUES (uuid_generate_v4(), $1, $2) RETURNING id",
             &params,
@@ -238,74 +338,65 @@ impl Commit {
         })
     }
 
-    pub async fn load_last_commit_async(bucket_id: Uuid) -> Result<Option<CommitData>, BucketError> {
-        let db = get_database().await?;
+    async fn load_last_commit_with_store<S: CommitStore + ?Sized>(
+        store: &S,
+        bucket_id: Uuid,
+    ) -> Result<Option<CommitData>, BucketError> {
+        let Some(commit_row) = store.latest_commit(bucket_id).await? else {
+            return Ok(None);
+        };
 
-        let bucket_id_str = bucket_id.to_string();
-        let params: Vec<&(dyn ToSql + Sync)> = vec![&bucket_id_str];
-        
-        let rows = db.query(
-            "SELECT f.id, f.file_path, f.hash
-             FROM files f
-             JOIN commits c ON f.commit_id = c.id
-             WHERE c.bucket_id = $1
-             ORDER BY c.created_at DESC
-             LIMIT 1",
-            &params,
-        ).await?;
+        let file_rows = store.files_for_commit(commit_row.id).await?;
+        let zero_hash = Hash::from_str(ZERO_HASH_STR).map_err(|e| {
+            BucketError::from(Error::new(
+                ErrorKind::InvalidData,
+                format!("Invalid hash format: {}", e),
+            ))
+        })?;
 
-        let mut files = Vec::new();
-        for row in &rows {
-            let id_str: String = row.get(0);
-            let hex_string: String = row.get(2);
+        let mut files = Vec::with_capacity(file_rows.len());
+        for file_row in file_rows {
+            let hash = Hash::from_hex(&file_row.hash).map_err(|e| {
+                BucketError::from(Error::new(
+                    ErrorKind::InvalidData,
+                    format!("Invalid hash: {}", e),
+                ))
+            })?;
 
             files.push(CommittedFile {
-                id: Uuid::parse_str(&id_str).map_err(|e| {
-                    BucketError::from(Error::new(
-                        ErrorKind::InvalidData,
-                        format!("Invalid UUID: {}", e),
-                    ))
-                })?,
-                name: row.get(1),
-                hash: Hash::from_hex(&hex_string).map_err(|e| {
-                    BucketError::from(Error::new(
-                        ErrorKind::InvalidData,
-                        format!("Invalid hash: {}", e),
-                    ))
-                })?,
-                previous_hash: Hash::from_str(
-                    "0000000000000000000000000000000000000000000000000000000000000000",
-                )
-                .map_err(|e| {
-                    BucketError::from(Error::new(
-                        ErrorKind::InvalidData,
-                        format!("Invalid hash format: {}", e),
-                    ))
-                })?, // TODO: Implement previous hash
+                id: file_row.id,
+                name: file_row.file_path,
+                hash,
+                previous_hash: zero_hash,
                 status: CommitStatus::Committed,
             });
         }
 
-        if files.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(CommitData {
-                bucket: bucket_id.to_string(),
-                files,
-                timestamp: "".to_string(),
-                previous: None,
-                next: None,
-            }))
-        }
+        Ok(Some(CommitData {
+            bucket: commit_row.bucket,
+            files,
+            timestamp: commit_row.timestamp,
+            previous: None,
+            next: None,
+        }))
+    }
+
+    pub async fn load_last_commit_async(
+        bucket_id: Uuid,
+    ) -> Result<Option<CommitData>, BucketError> {
+        let db = get_database().await?;
+        Self::load_last_commit_with_store(&*db, bucket_id).await
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::commands::commit::Commit;
+    use super::{Commit, CommitFileRow, CommitStore, LatestCommitRow};
     use crate::commands::BucketCommand;
     use crate::data::bucket::read_bucket_info;
     use crate::data::commit::{CommitStatus, CommittedFile};
+    use crate::errors::BucketError;
+    use async_trait::async_trait;
     use blake3::Hash;
     use log::error;
     use serial_test::serial;
@@ -322,16 +413,23 @@ mod tests {
         // Need to setup a proper test environment
         let temp_dir = tempdir().expect("invalid temp dir").keep();
         let mut cmd1 = assert_cmd::Command::cargo_bin("buckets").expect("invalid command");
-        let init_output = cmd1.current_dir(temp_dir.as_path())
+        let init_output = cmd1
+            .current_dir(temp_dir.as_path())
             .arg("init")
             .arg("test_repo")
             .output();
-            
+
         // Check if init failed due to network issues
         if let Ok(output) = init_output {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            if stderr.contains("rate limit") || stderr.contains("Failed to install PostgreSQL") || !output.status.success() {
-                eprintln!("Skipping test due to init failure (network issues): {}", stderr);
+            if stderr.contains("rate limit")
+                || stderr.contains("Failed to install PostgreSQL")
+                || !output.status.success()
+            {
+                eprintln!(
+                    "Skipping test due to init failure (network issues): {}",
+                    stderr
+                );
                 return;
             }
         } else {
@@ -388,8 +486,13 @@ mod tests {
         });
         // Create async runtime for testing
         let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
-        let result = rt.block_on(commit_cmd
-            .process_files_async(bucket.id, &bucket_dir, &[committed_file], &commit_message))
+        let result = rt
+            .block_on(commit_cmd.process_files_async(
+                bucket.id,
+                &bucket_dir,
+                &[committed_file],
+                &commit_message,
+            ))
             .map_err(|e| {
                 error!("Error processing files: {}", e);
                 e
@@ -410,6 +513,33 @@ mod tests {
             message: message.to_string(),
         };
         Commit::new(&args)
+    }
+
+    #[derive(Clone, Default)]
+    struct MockCommitStore {
+        latest: Option<LatestCommitRow>,
+        files: Vec<CommitFileRow>,
+        expected_commit_id: Option<Uuid>,
+    }
+
+    #[async_trait]
+    impl CommitStore for MockCommitStore {
+        async fn latest_commit(
+            &self,
+            _bucket_id: Uuid,
+        ) -> Result<Option<LatestCommitRow>, BucketError> {
+            Ok(self.latest.clone())
+        }
+
+        async fn files_for_commit(
+            &self,
+            commit_id: Uuid,
+        ) -> Result<Vec<CommitFileRow>, BucketError> {
+            if let Some(expected) = self.expected_commit_id {
+                assert_eq!(expected, commit_id);
+            }
+            Ok(self.files.clone())
+        }
     }
 
     // Helper function to create a test bucket directory structure
@@ -839,6 +969,54 @@ mod tests {
         // Try to parse timestamp to ensure it's valid
         let parsed_timestamp = chrono::DateTime::parse_from_rfc3339(&commit_data.timestamp);
         assert!(parsed_timestamp.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_load_last_commit_async_returns_all_files() {
+        let bucket_id = Uuid::new_v4();
+        let commit_id = Uuid::new_v4();
+        let timestamp = chrono::Utc::now().to_rfc3339();
+
+        let file_a_hash = blake3::hash(b"file_a").to_hex().to_string();
+        let file_b_hash = blake3::hash(b"file_b").to_hex().to_string();
+
+        let mock_store = MockCommitStore {
+            latest: Some(LatestCommitRow {
+                id: commit_id,
+                bucket: "test_bucket".to_string(),
+                timestamp: timestamp.clone(),
+            }),
+            files: vec![
+                CommitFileRow {
+                    id: Uuid::new_v4(),
+                    file_path: "file_a.txt".to_string(),
+                    hash: file_a_hash,
+                },
+                CommitFileRow {
+                    id: Uuid::new_v4(),
+                    file_path: "dir/file_b.txt".to_string(),
+                    hash: file_b_hash,
+                },
+            ],
+            expected_commit_id: Some(commit_id),
+        };
+
+        let commit_data = Commit::load_last_commit_with_store(&mock_store, bucket_id)
+            .await
+            .expect("load commit data")
+            .expect("expected commit data");
+
+        assert_eq!(commit_data.bucket, "test_bucket");
+        assert_eq!(commit_data.timestamp, timestamp);
+        assert_eq!(commit_data.files.len(), 2);
+
+        let mut file_names: Vec<&str> = commit_data.files.iter().map(|f| f.name.as_str()).collect();
+        file_names.sort();
+        assert_eq!(file_names, vec!["dir/file_b.txt", "file_a.txt"]);
+
+        for file in &commit_data.files {
+            assert_eq!(file.status, CommitStatus::Committed);
+        }
     }
 
     #[test]

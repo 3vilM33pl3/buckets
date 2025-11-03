@@ -29,6 +29,7 @@ chrono = "0.4.41"
 arrow = "55.1.0"
 dirs = "5.0"
 ntp = "0.5.0"
+async-trait = "0.1.83"
 
 [dev-dependencies]
 serial_test = "3.2"
