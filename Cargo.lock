@@ -433,6 +433,7 @@ version = "0.2.3"
 dependencies = [
  "arrow",
  "assert_cmd",
+ "async-trait",
  "blake3",
  "chrono",
  "clap",
