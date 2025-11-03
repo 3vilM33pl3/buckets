@@ -367,7 +367,7 @@ impl Commit {
                 id: file_row.id,
                 name: file_row.file_path,
                 hash,
-                previous_hash: zero_hash.clone(),
+                previous_hash: zero_hash,
                 status: CommitStatus::Committed,
             });
         }
