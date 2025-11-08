@@ -5,21 +5,22 @@ use crate::errors::BucketError;
 ///
 /// # Example
 /// ```rust
-/// use crate::commands::Command;
+/// use crate::commands::BucketCommand;
 /// use crate::args::MyCommandArgs;
 /// use crate::errors::BucketError;
 ///
+/// #[derive(Clone)]
 /// pub struct MyCommand {
 ///     args: MyCommandArgs,
 /// }
 ///
-/// impl Command for MyCommand {
+/// impl BucketCommand for MyCommand {
 ///     type Args = MyCommandArgs;
-///     
+///
 ///     fn new(args: &Self::Args) -> Self {
-///         Self { args }
+///         Self { args: args.clone() }
 ///     }
-///     
+///
 ///     fn execute(&self) -> Result<(), BucketError> {
 ///         println!("Executing with: {}", self.args.some_field);
 ///         Ok(())
@@ -37,7 +38,7 @@ pub trait BucketCommand {
     fn execute(&self) -> Result<(), BucketError>;
 }
 
-/// Helper macro to implement the Command trait for a struct.
+/// Helper macro to implement the [`BucketCommand`] trait for a struct.
 /// This reduces boilerplate code when creating new commands.
 ///
 /// # Usage
@@ -45,6 +46,7 @@ pub trait BucketCommand {
 /// use crate::impl_command;
 /// use crate::args::MyCommandArgs;
 ///
+/// #[derive(Clone)]
 /// pub struct MyCommand {
 ///     args: MyCommandArgs,
 /// }
@@ -59,11 +61,14 @@ pub trait BucketCommand {
 #[macro_export]
 macro_rules! impl_command {
     ($command_struct:ident, $args_type:ty, $execute_body:block) => {
-        impl crate::commands::Command for $command_struct {
+        impl crate::commands::BucketCommand for $command_struct
+        where
+            $args_type: Clone,
+        {
             type Args = $args_type;
 
-            fn new(args: Self::Args) -> Self {
-                Self { args }
+            fn new(args: &Self::Args) -> Self {
+                Self { args: args.clone() }
             }
 
             fn execute(&self) -> Result<(), crate::errors::BucketError> {
@@ -134,3 +139,33 @@ pub(crate) mod stats;
 pub(crate) mod status;
 pub(crate) mod setup;
 pub(crate) mod doctor;
+
+#[cfg(test)]
+mod macro_tests {
+    use super::BucketCommand;
+
+    #[derive(Clone, Debug, PartialEq)]
+    struct TestArgs {
+        value: String,
+    }
+
+    #[derive(Clone, Debug, PartialEq)]
+    struct TestCommand {
+        args: TestArgs,
+    }
+
+    crate::impl_command!(TestCommand, TestArgs, {
+        Ok(())
+    });
+
+    #[test]
+    fn impl_command_produces_bucket_command_impl() {
+        let args = TestArgs {
+            value: "hello".to_string(),
+        };
+
+        let command = TestCommand::new(&args);
+        assert_eq!(command.args, args);
+        command.execute().expect("macro-generated command executes");
+    }
+}
