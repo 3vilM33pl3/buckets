@@ -507,7 +507,7 @@ mod tests {
     }
 
     // Helper function to create a test commit command
-    fn create_test_commit_command(message: &str) -> Commit {
+    pub(super) fn create_test_commit_command(message: &str) -> Commit {
         let args = crate::args::CommitCommand {
             shared: crate::args::SharedArguments::default(),
             message: message.to_string(),
@@ -543,7 +543,7 @@ mod tests {
     }
 
     // Helper function to create a test bucket directory structure
-    fn create_test_bucket_structure(
+    pub(super) fn create_test_bucket_structure(
     ) -> Result<(tempfile::TempDir, std::path::PathBuf), Box<dyn std::error::Error>> {
         let temp_dir = tempdir()?;
         let bucket_path = temp_dir.path().join("test_bucket");
@@ -1031,5 +1031,48 @@ mod tests {
         // In a proper test environment, you would set up a test database
         // and verify that it returns None for a new bucket
         assert!(result.is_err() || result.unwrap().is_none());
+    }
+}
+
+#[cfg(test)]
+mod execute_tests {
+    use super::tests::{create_test_bucket_structure, create_test_commit_command};
+    use crate::data::commit::{CommitStatus, CommittedFile};
+
+    #[test]
+    fn test_commit_execute_skips_when_no_changes_detected() {
+        let (_temp_dir, bucket_path) =
+            create_test_bucket_structure().expect("Failed to create test bucket structure");
+
+        let file_path = bucket_path.join("identical.txt");
+        std::fs::write(&file_path, "unchanged content").expect("Failed to write test file");
+
+        let commit = create_test_commit_command("test message");
+        let current_commit = commit
+            .list_files_with_metadata_in_bucket(bucket_path)
+            .expect("list current commit");
+
+        let previous_files = current_commit
+            .files
+            .iter()
+            .map(|file| CommittedFile {
+                id: file.id,
+                name: file.name.clone(),
+                hash: file.hash.clone(),
+                previous_hash: file.previous_hash.clone(),
+                status: CommitStatus::Committed,
+            })
+            .collect();
+
+        let previous_commit = crate::data::commit::Commit {
+            bucket: current_commit.bucket.clone(),
+            files: previous_files,
+            timestamp: current_commit.timestamp.clone(),
+            previous: None,
+            next: None,
+        };
+
+        let changes = current_commit.compare(&previous_commit);
+        assert!(changes.is_none(), "Expected no changes but found: {:?}", changes);
     }
 }

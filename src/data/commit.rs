@@ -1,10 +1,10 @@
 use blake3::Hash;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::collections::HashMap;
 use std::cmp::PartialEq;
 use std::fmt::{Display, Formatter};
 use std::io;
 use std::path::PathBuf;
-use std::str::FromStr;
 use uuid::Uuid;
 
 use crate::utils::compression::{compress_file, decompress_file, DEFAULT_COMPRESSION_LEVEL};
@@ -88,85 +88,56 @@ impl PartialEq for CommitStatus {
 impl Commit {
     #[allow(dead_code)]
     pub fn compare(&self, other_commit: &Commit) -> Option<Vec<CommittedFile>> {
-        let Commit {
-            bucket: _,
-            files: _,
-            timestamp: _,
-            previous: _,
-            next: _,
-        } = other_commit;
-        {
-            let mut status_all_files = Vec::new();
+        let zero_hash = Hash::from([0u8; 32]);
+        let other_files: HashMap<_, _> = other_commit
+            .files
+            .iter()
+            .map(|file| (file.name.as_str(), file))
+            .collect();
 
-            // First check if existing files are the same
-            for file in self.files.iter() {
-                for other_file in other_commit.files.iter() {
-                    if file.name == other_file.name && file.hash != other_file.hash {
-                        status_all_files.push(CommittedFile {
+        let mut differences = Vec::new();
+
+        for file in &self.files {
+            match other_files.get(file.name.as_str()) {
+                Some(previous) => {
+                    if file.hash != previous.hash {
+                        differences.push(CommittedFile {
                             id: file.id,
                             name: file.name.clone(),
                             hash: file.hash.clone(),
-                            previous_hash: other_file.hash.clone(),
+                            previous_hash: previous.hash.clone(),
                             status: CommitStatus::Modified,
                         });
-                    } else if file.name == other_file.name && file.hash == other_file.hash {
-                        status_all_files.push(CommittedFile {
-                            id: file.id,
-                            name: file.name.clone(),
-                            hash: other_file.hash.clone(),
-                            previous_hash: file.hash.clone(),
-                            status: CommitStatus::Committed,
-                        });
                     }
                 }
-            }
-
-            // Add files which haven't changed
-            for file in self.files.iter() {
-                let mut found = false;
-                for other_file in other_commit.files.iter() {
-                    if file.name == other_file.name {
-                        found = true;
-                    }
-                }
-                if !found {
-                    status_all_files.push(CommittedFile {
+                None => {
+                    differences.push(CommittedFile {
                         id: file.id,
                         name: file.name.clone(),
                         hash: file.hash.clone(),
-                        previous_hash: Hash::from_str(
-                            "0000000000000000000000000000000000000000000000000000000000000000",
-                        )
-                        .unwrap_or_else(|_| Hash::from([0u8; 32])),
+                        previous_hash: zero_hash.clone(),
                         status: CommitStatus::New,
                     });
                 }
             }
+        }
 
-            // Check if any files were deleted
-            if status_all_files.len() < other_commit.files.len() {
-                for other_file in other_commit.files.iter() {
-                    let mut found = false;
-                    for file in self.files.iter() {
-                        if file.name == other_file.name {
-                            found = true;
-                        }
-                    }
-                    if !found {
-                        status_all_files.push(CommittedFile {
-                            id: other_file.id,
-                            name: other_file.name.clone(),
-                            hash: other_file.hash.clone(),
-                            previous_hash: Hash::from_str(
-                                "0000000000000000000000000000000000000000000000000000000000000000",
-                            )
-                            .unwrap_or_else(|_| Hash::from([0u8; 32])),
-                            status: CommitStatus::Deleted,
-                        });
-                    }
-                }
+        for other_file in &other_commit.files {
+            if !self.files.iter().any(|file| file.name == other_file.name) {
+                differences.push(CommittedFile {
+                    id: other_file.id,
+                    name: other_file.name.clone(),
+                    hash: other_file.hash.clone(),
+                    previous_hash: zero_hash.clone(),
+                    status: CommitStatus::Deleted,
+                });
             }
-            Some(status_all_files)
+        }
+
+        if differences.is_empty() {
+            None
+        } else {
+            Some(differences)
         }
     }
 }
@@ -210,41 +181,12 @@ impl CommittedFile {
 }
 
 #[cfg(test)]
-mod tests {
+mod compare_tests {
     use super::*;
-    use serial_test::serial;
-    use std::fs;
-    use tempfile::tempdir;
     use uuid::Uuid;
 
     #[test]
-    fn test_commit_status_display() {
-        assert_eq!(format!("{}", CommitStatus::New), "new");
-        assert_eq!(format!("{}", CommitStatus::Modified), "modified");
-        assert_eq!(format!("{}", CommitStatus::Deleted), "deleted");
-        assert_eq!(format!("{}", CommitStatus::Committed), "committed");
-        assert_eq!(format!("{}", CommitStatus::Unknown), "unknown");
-    }
-
-    #[test]
-    fn test_committed_file_new() {
-        let name = "test.txt".to_string();
-        let hash = Hash::from([1u8; 32]);
-        let previous_hash = Hash::from([0u8; 32]);
-        let status = CommitStatus::New;
-
-        let file = CommittedFile::new(name.clone(), hash, previous_hash, status);
-
-        assert_eq!(file.name, name);
-        assert_eq!(file.hash, hash);
-        assert_eq!(file.previous_hash, previous_hash);
-        assert_eq!(file.status, CommitStatus::New);
-        // UUID should be generated
-        assert_ne!(file.id, Uuid::nil());
-    }
-
-    #[test]
-    fn test_commit_compare_identical_files() {
+    fn test_commit_compare_identical_files_returns_none() {
         let file1 = CommittedFile {
             id: Uuid::new_v4(),
             name: "test.txt".to_string(),
@@ -278,10 +220,7 @@ mod tests {
         };
 
         let changes = commit1.compare(&commit2);
-        assert!(changes.is_some());
-        let changes = changes.unwrap();
-        assert_eq!(changes.len(), 1);
-        assert_eq!(changes[0].status, CommitStatus::Committed);
+        assert!(changes.is_none());
     }
 
     #[test]
@@ -389,6 +328,103 @@ mod tests {
         let changes = changes.unwrap();
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].status, CommitStatus::Deleted);
+    }
+
+    #[test]
+    fn test_commit_compare_filters_unchanged_files() {
+        let shared_id = Uuid::new_v4();
+        let unchanged_hash = Hash::from([1u8; 32]);
+
+        let current_files = vec![
+            CommittedFile {
+                id: shared_id,
+                name: "unchanged.txt".to_string(),
+                hash: unchanged_hash,
+                previous_hash: Hash::from([0u8; 32]),
+                status: CommitStatus::New,
+            },
+            CommittedFile {
+                id: Uuid::new_v4(),
+                name: "modified.txt".to_string(),
+                hash: Hash::from([3u8; 32]),
+                previous_hash: Hash::from([0u8; 32]),
+                status: CommitStatus::New,
+            },
+        ];
+
+        let previous_files = vec![
+            CommittedFile {
+                id: shared_id,
+                name: "unchanged.txt".to_string(),
+                hash: unchanged_hash,
+                previous_hash: Hash::from([0u8; 32]),
+                status: CommitStatus::Committed,
+            },
+            CommittedFile {
+                id: Uuid::new_v4(),
+                name: "modified.txt".to_string(),
+                hash: Hash::from([4u8; 32]),
+                previous_hash: Hash::from([0u8; 32]),
+                status: CommitStatus::Committed,
+            },
+        ];
+
+        let current = Commit {
+            bucket: "test_bucket".to_string(),
+            timestamp: "2023-01-03T00:00:00Z".to_string(),
+            files: current_files,
+            previous: None,
+            next: None,
+        };
+
+        let previous = Commit {
+            bucket: "test_bucket".to_string(),
+            timestamp: "2023-01-02T00:00:00Z".to_string(),
+            files: previous_files,
+            previous: None,
+            next: None,
+        };
+
+        let changes = current.compare(&previous).expect("changes");
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].name, "modified.txt");
+        assert_eq!(changes[0].status, CommitStatus::Modified);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serial_test::serial;
+    use std::fs;
+    use std::str::FromStr;
+    use tempfile::tempdir;
+    use uuid::Uuid;
+
+    #[test]
+    fn test_commit_status_display() {
+        assert_eq!(format!("{}", CommitStatus::New), "new");
+        assert_eq!(format!("{}", CommitStatus::Modified), "modified");
+        assert_eq!(format!("{}", CommitStatus::Deleted), "deleted");
+        assert_eq!(format!("{}", CommitStatus::Committed), "committed");
+        assert_eq!(format!("{}", CommitStatus::Unknown), "unknown");
+    }
+
+    #[test]
+    fn test_committed_file_new() {
+        let name = "test.txt".to_string();
+        let hash = Hash::from([1u8; 32]);
+        let previous_hash = Hash::from([0u8; 32]);
+        let status = CommitStatus::New;
+
+        let file = CommittedFile::new(name.clone(), hash, previous_hash, status);
+
+        assert_eq!(file.name, name);
+        assert_eq!(file.hash, hash);
+        assert_eq!(file.previous_hash, previous_hash);
+        assert_eq!(file.status, CommitStatus::New);
+        // UUID should be generated
+        assert_ne!(file.id, Uuid::nil());
     }
 
     #[test]
