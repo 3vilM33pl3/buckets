@@ -209,12 +209,9 @@ impl Status {
 
         let mut buckets = Vec::new();
         for row in &rows {
-            let uuid_str: String = row.get(0);
+            let uuid: uuid::Uuid = row.get(0);
             let name: String = row.get(1);
             let path_str: String = row.get(2);
-
-            let uuid = uuid::Uuid::parse_str(&uuid_str)
-                .map_err(|e| BucketError::InvalidData(e.to_string()))?;
 
             buckets.push(Bucket {
                 id: uuid,
