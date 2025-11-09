@@ -2,7 +2,8 @@ use crate::args::SchemaCommand;
 use crate::commands::BucketCommand;
 use crate::errors::BucketError;
 
-/// Schema command placeholder
+const SCHEMA_SQL: &str = include_str!("../sql/schema.sql");
+
 pub struct Schema {
     #[allow(dead_code)]
     args: SchemaCommand,
@@ -16,7 +17,7 @@ impl BucketCommand for Schema {
     }
 
     fn execute(&self) -> Result<(), BucketError> {
-        println!("schema command");
+        println!("{}", SCHEMA_SQL.trim_end());
         Ok(())
     }
 }
