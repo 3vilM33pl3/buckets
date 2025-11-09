@@ -32,7 +32,7 @@ impl BucketCommand for Init {
         // Create the repository
         let current_dir = CURRENT_DIR.with(|dir| dir.clone());
         debug!("Current directory: {:?}", current_dir);
-        
+
         self.create_repo(&self.args.repo_name, &current_dir)?;
 
         println!("Bucket repository initialized successfully.");
@@ -47,9 +47,11 @@ impl Init {
 
         fs::create_dir_all(&repo_buckets_path)?;
         self.create_config_file(&repo_buckets_path)?;
+        let db_type_file = repo_buckets_path.join("database_type");
+        fs::write(&db_type_file, "PostgreSQL")?;
 
         // Initialize PostgreSQL database
-        self.initialize_postgresql(&repo_buckets_path)?;
+        self.initialize_postgresql(&repo_path)?;
 
         Ok(())
     }
@@ -119,7 +121,6 @@ impl Init {
         Ok(())
     }
 
-
     fn checks(&self, repo_name: &str) -> Result<(), BucketError> {
         let repo_path = CURRENT_DIR.with(|dir| dir.join(repo_name));
 
@@ -141,7 +142,7 @@ impl Init {
         }
         Ok(())
     }
-    
+
     /// Initialize PostgreSQL database for the repository
     fn initialize_postgresql(&self, repo_path: &Path) -> Result<(), BucketError> {
         // Try to build database configuration in priority order:
@@ -149,17 +150,16 @@ impl Init {
         // 2. DATABASE_URL environment variable
         // 3. Global configuration
         let config = self.get_database_config()?;
-        
+
         // Save the database configuration
         save_database_config(repo_path, &config)?;
-        
+
         // Create a tokio runtime for async database operations
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| BucketError::from(format!("Failed to create async runtime: {}", e).as_str()))?;
-            
-        rt.block_on(async {
-            initialize_database_with_config_async(config).await
-        })
+        let rt = tokio::runtime::Runtime::new().map_err(|e| {
+            BucketError::from(format!("Failed to create async runtime: {}", e).as_str())
+        })?;
+
+        rt.block_on(async { initialize_database_with_config_async(config).await })
     }
 
     /// Get database configuration from various sources in priority order
@@ -169,7 +169,11 @@ impl Init {
             return Ok(DatabaseConfig {
                 host: self.args.external_host.clone().unwrap(),
                 port: self.args.external_port.unwrap_or(5432),
-                database: self.args.external_database.clone().unwrap_or_else(|| "buckets".to_string()),
+                database: self
+                    .args
+                    .external_database
+                    .clone()
+                    .unwrap_or_else(|| "buckets".to_string()),
                 username: self.args.external_username.clone().unwrap(),
                 password: self.args.external_password.clone(),
             });
@@ -192,7 +196,7 @@ impl Init {
             "No database configuration found. Please provide one of:\n\
             1. Command line options: --external-host and --external-username\n\
             2. DATABASE_URL environment variable\n\
-            3. Global configuration via 'buckets setup' command"
+            3. Global configuration via 'buckets setup' command",
         ))
     }
 }
@@ -352,13 +356,13 @@ mod tests {
         let test_repo_name = "temp_test_existing_bucket_repo";
         let existing_repo = temp_dir.path().join(test_repo_name);
         let buckets_dir = existing_repo.join(".buckets");
-        
+
         // Save the original current directory to restore it later
         let original_dir = std::env::current_dir().unwrap_or_else(|_| {
             // If we can't get the current directory, use the temp directory
             temp_dir.path().to_path_buf()
         });
-        
+
         // Set current directory to temp directory for the test
         std::env::set_current_dir(temp_dir.path()).expect("Failed to change to temp directory");
 
@@ -372,7 +376,7 @@ mod tests {
         // Create PostgreSQL directory structure to make it look like a valid repo
         let postgres_dir = buckets_dir.join("postgres");
         fs::create_dir_all(&postgres_dir).expect("Failed to create postgres directory");
-        
+
         // Create a database_type file to indicate PostgreSQL
         let db_type_file = buckets_dir.join("database_type");
         fs::write(&db_type_file, "PostgreSQL").expect("Failed to create database_type file");
@@ -382,7 +386,7 @@ mod tests {
 
         // Restore original directory before cleanup
         std::env::set_current_dir(&original_dir).ok(); // Ignore errors if original_dir is invalid
-        
+
         // Clean up the test directory
         fs::remove_dir_all(&existing_repo).expect("Failed to remove test directory");
 
@@ -406,7 +410,9 @@ mod tests {
         // Handle network issues gracefully
         if result.is_err() {
             let error = result.unwrap_err();
-            if error.to_string().contains("rate limit") || error.to_string().contains("Failed to install PostgreSQL") {
+            if error.to_string().contains("rate limit")
+                || error.to_string().contains("Failed to install PostgreSQL")
+            {
                 eprintln!("Skipping test due to network issues: {}", error);
                 return;
             } else {
@@ -450,14 +456,16 @@ mod tests {
         // Handle network issues gracefully
         if result.is_err() {
             let error = result.unwrap_err();
-            if error.to_string().contains("rate limit") || error.to_string().contains("Failed to install PostgreSQL") {
+            if error.to_string().contains("rate limit")
+                || error.to_string().contains("Failed to install PostgreSQL")
+            {
                 eprintln!("Skipping test due to network issues: {}", error);
                 return;
             } else {
                 panic!("Unexpected error: {}", error);
             }
         }
-        
+
         let repo_path = temp_dir.path().join("test_repo");
         let buckets_path = repo_path.join(".buckets");
 
@@ -516,7 +524,6 @@ mod tests {
         let _ = result; // Don't assert specific behavior as it's system-dependent
     }
 
-
     #[test]
     fn test_get_database_config_with_command_line_args() {
         let args = InitCommand {
@@ -530,7 +537,7 @@ mod tests {
         };
         let init = Init::new(&args);
         let result = init.get_database_config();
-        
+
         assert!(result.is_ok());
         let config = result.unwrap();
         assert_eq!(config.host, "localhost");
@@ -543,8 +550,11 @@ mod tests {
     #[test]
     fn test_get_database_config_with_database_url() {
         // Set DATABASE_URL environment variable
-        std::env::set_var("DATABASE_URL", "postgresql://envuser:envpass@envhost:5433/envdb");
-        
+        std::env::set_var(
+            "DATABASE_URL",
+            "postgresql://envuser:envpass@envhost:5433/envdb",
+        );
+
         let args = InitCommand {
             shared: SharedArguments::default(),
             repo_name: "test".to_string(),
@@ -556,7 +566,7 @@ mod tests {
         };
         let init = Init::new(&args);
         let result = init.get_database_config();
-        
+
         assert!(result.is_ok());
         let config = result.unwrap();
         assert_eq!(config.host, "envhost");
@@ -564,7 +574,7 @@ mod tests {
         assert_eq!(config.database, "envdb");
         assert_eq!(config.username, "envuser");
         assert_eq!(config.password, Some("envpass".to_string()));
-        
+
         // Clean up
         std::env::remove_var("DATABASE_URL");
     }
@@ -573,7 +583,7 @@ mod tests {
     fn test_get_database_config_with_global_config() {
         // Make sure no DATABASE_URL is set
         std::env::remove_var("DATABASE_URL");
-        
+
         let args = InitCommand {
             shared: SharedArguments::default(),
             repo_name: "test".to_string(),
@@ -585,7 +595,7 @@ mod tests {
         };
         let init = Init::new(&args);
         let result = init.get_database_config();
-        
+
         // This test will succeed if global config exists, fail if it doesn't
         // In a real environment, global config may or may not exist
         match result {
@@ -597,7 +607,9 @@ mod tests {
             }
             Err(error) => {
                 // No configuration available anywhere - should show helpful error
-                assert!(error.to_string().contains("No database configuration found"));
+                assert!(error
+                    .to_string()
+                    .contains("No database configuration found"));
                 assert!(error.to_string().contains("--external-host"));
                 assert!(error.to_string().contains("DATABASE_URL"));
                 assert!(error.to_string().contains("buckets setup"));

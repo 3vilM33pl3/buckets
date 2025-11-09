@@ -6,7 +6,6 @@ use crate::postgres_db::get_database;
 use crate::utils::checks;
 use crate::utils::checks::{find_directory_in_parents, is_valid_bucket};
 use crate::CURRENT_DIR;
-use chrono::Utc;
 use tokio_postgres::types::ToSql;
 use uuid::Uuid;
 
@@ -54,28 +53,25 @@ impl BucketCommand for Create {
 
         let bucket_id = rt.block_on(async {
             let db = get_database().await?;
-            let timestamp = Utc::now().to_rfc3339();
 
             let path_str =
                 relative_path
                     .to_str()
                     .ok_or_else(|| BucketError::from("Invalid path string"))?;
 
-            let params: Vec<&(dyn ToSql + Sync)> = vec![bucket_name, &path_str, &timestamp];
+            let params: Vec<&(dyn ToSql + Sync)> = vec![bucket_name, &path_str];
 
             // Insert and get the new bucket ID in one query
             let rows = db.query(
-                "INSERT INTO buckets (id, name, path, created_at) VALUES (uuid_generate_v4(), $1, $2, $3) RETURNING id",
+                "INSERT INTO buckets (id, name, path) VALUES (uuid_generate_v4(), $1, $2) RETURNING id",
                 &params,
             ).await.map_err(|e| {
                 BucketError::from(format!("Error inserting into database: {}", e).as_str())
             })?;
 
             if let Some(row) = rows.first() {
-                let id_str: String = row.get(0);
-                Uuid::parse_str(&id_str).map_err(|e| {
-                    BucketError::from(format!("Error parsing UUID: {}", e).as_str())
-                })
+                let id: Uuid = row.get(0);
+                Ok(id)
             } else {
                 Err(BucketError::from("Failed to get bucket ID from insert"))
             }

@@ -20,7 +20,7 @@ pub fn get_database_config(repo_path: &Path) -> Result<DatabaseConfig, BucketErr
 }
 
 /// Get the database configuration (no fallback - external database required)
-#[allow(dead_code)] // Used for PostgreSQL migration  
+#[allow(dead_code)] // Used for PostgreSQL migration
 pub fn get_database_config_no_fallback(repo_path: &Path) -> Result<DatabaseConfig, BucketError> {
     get_database_config(repo_path)
 }
@@ -83,7 +83,9 @@ fn parse_database_config(content: &str) -> Result<DatabaseConfig, BucketError> {
 
 /// Save database configuration to file
 pub fn save_database_config(repo_path: &Path, config: &DatabaseConfig) -> Result<(), BucketError> {
-    let config_file = repo_path.join("config.toml");
+    let buckets_dir = repo_path.join(".buckets");
+    std::fs::create_dir_all(&buckets_dir).map_err(|e| BucketError::from(e))?;
+    let config_file = buckets_dir.join("db_config.toml");
 
     let mut content = String::from("type = \"external\"\n");
     content.push_str(&format!("host = \"{}\"\n", config.host));
@@ -118,9 +120,7 @@ pub async fn initialize_database_with_config_async(
         return Err(BucketError::from("Database host cannot be empty"));
     }
     if config.username.is_empty() {
-        return Err(BucketError::from(
-            "Database username cannot be empty",
-        ));
+        return Err(BucketError::from("Database username cannot be empty"));
     }
 
     // Initialize the database

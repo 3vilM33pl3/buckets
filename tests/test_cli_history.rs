@@ -22,6 +22,11 @@ mod acceptance_tests {
             return;
         };
         let bucket_dir = fixture.bucket_dir.clone();
+        let bucket_name = bucket_dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "bucket".to_string());
 
         create_test_file(&bucket_dir, "test_file.txt", "test content");
 
@@ -39,7 +44,7 @@ mod acceptance_tests {
             .assert()
             .success()
             .stdout(predicate::str::contains("test commit message"))
-            .stdout(predicate::str::contains("test_bucket"));
+            .stdout(predicate::str::contains(bucket_name));
     }
 
     #[test]
