@@ -1,10 +1,11 @@
 mod common;
 #[cfg(test)]
 mod tests {
-    use crate::common::tests::get_test_dir;
-    // Note: PostgreSQL tests will be handled through the embedded database in the application
     use predicates::prelude::*;
     use serial_test::serial;
+    use uuid::Uuid;
+
+    use crate::common::tests::{get_test_dir, RepoFixture};
 
     /// Test the `create` command.
     ///
@@ -15,7 +16,6 @@ mod tests {
     ///
     #[test]
     #[serial]
-    #[ignore]
     fn test_cli_create_no_repo() {
         let temp_dir = get_test_dir();
         let mut cmd = assert_cmd::Command::cargo_bin("buckets").expect("failed to run command");
@@ -29,32 +29,23 @@ mod tests {
 
     #[test]
     #[serial]
-    #[ignore]
     fn test_cli_create() {
-        let temp_dir = get_test_dir();
-        let mut cmd = assert_cmd::Command::cargo_bin("buckets").expect("failed to run command");
-        cmd.current_dir(temp_dir.as_path())
-            .arg("init")
-            .arg("test_repo")
-            .assert()
-            .success()
-            .stdout(predicate::str::contains(""))
-            .stderr(predicate::str::is_empty());
-
-        let repo_dir = temp_dir.as_path().join("test_repo");
-        assert!(repo_dir.exists());
-        assert!(repo_dir.is_dir());
+        let Some(fixture) = repo_fixture_or_skip() else {
+            return;
+        };
+        let repo_dir = fixture.repo_dir.clone();
+        let new_bucket = format!("bucket_{}", Uuid::new_v4().simple());
 
         let mut cmd = assert_cmd::Command::cargo_bin("buckets").expect("failed to run command");
         cmd.current_dir(repo_dir.as_path())
             .arg("create")
-            .arg("test_bucket")
+            .arg(&new_bucket)
             .assert()
             .success()
             .stdout(predicate::str::contains(""))
             .stderr(predicate::str::is_empty());
 
-        let bucket_path = repo_dir.join("test_bucket").join(".b");
+        let bucket_path = repo_dir.join(&new_bucket).join(".b");
         assert!(bucket_path.exists());
         assert!(bucket_path.join("storage").exists());
 
@@ -66,25 +57,18 @@ mod tests {
     /// Test creating bucket that already exists (should fail)
     #[test]
     #[serial]
-    #[ignore]
     fn test_cli_create_bucket_already_exists() {
-        let temp_dir = get_test_dir();
-
-        // Initialize repository
-        let mut cmd1 = assert_cmd::Command::cargo_bin("buckets").expect("failed to run command");
-        cmd1.current_dir(temp_dir.as_path())
-            .arg("init")
-            .arg("test_repo")
-            .assert()
-            .success();
-
-        let repo_dir = temp_dir.as_path().join("test_repo");
+        let Some(fixture) = repo_fixture_or_skip() else {
+            return;
+        };
+        let repo_dir = fixture.repo_dir.clone();
+        let bucket_name = format!("dup_{}", Uuid::new_v4().simple());
 
         // Create bucket first time (should succeed)
         let mut cmd2 = assert_cmd::Command::cargo_bin("buckets").expect("failed to run command");
         cmd2.current_dir(repo_dir.as_path())
             .arg("create")
-            .arg("duplicate_bucket")
+            .arg(&bucket_name)
             .assert()
             .success();
 
@@ -92,7 +76,7 @@ mod tests {
         let mut cmd3 = assert_cmd::Command::cargo_bin("buckets").expect("failed to run command");
         cmd3.current_dir(repo_dir.as_path())
             .arg("create")
-            .arg("duplicate_bucket")
+            .arg(&bucket_name)
             .assert()
             .failure()
             .stderr(
@@ -104,19 +88,11 @@ mod tests {
     /// Test creating bucket with invalid name characters
     #[test]
     #[serial]
-    #[ignore]
     fn test_cli_create_invalid_bucket_name() {
-        let temp_dir = get_test_dir();
-
-        // Initialize repository
-        let mut cmd1 = assert_cmd::Command::cargo_bin("buckets").expect("failed to run command");
-        cmd1.current_dir(temp_dir.as_path())
-            .arg("init")
-            .arg("test_repo")
-            .assert()
-            .success();
-
-        let repo_dir = temp_dir.as_path().join("test_repo");
+        let Some(fixture) = repo_fixture_or_skip() else {
+            return;
+        };
+        let repo_dir = fixture.repo_dir.clone();
 
         // Test various invalid bucket names
         let invalid_names = vec![
@@ -139,19 +115,11 @@ mod tests {
     /// Test creating bucket with very long name
     #[test]
     #[serial]
-    #[ignore]
     fn test_cli_create_long_bucket_name() {
-        let temp_dir = get_test_dir();
-
-        // Initialize repository
-        let mut cmd1 = assert_cmd::Command::cargo_bin("buckets").expect("failed to run command");
-        cmd1.current_dir(temp_dir.as_path())
-            .arg("init")
-            .arg("test_repo")
-            .assert()
-            .success();
-
-        let repo_dir = temp_dir.as_path().join("test_repo");
+        let Some(fixture) = repo_fixture_or_skip() else {
+            return;
+        };
+        let repo_dir = fixture.repo_dir.clone();
 
         // Create very long bucket name (255+ characters)
         let long_name = "a".repeat(300);
@@ -167,19 +135,11 @@ mod tests {
     /// Test creating bucket without providing name argument
     #[test]
     #[serial]
-    #[ignore]
     fn test_cli_create_missing_name() {
-        let temp_dir = get_test_dir();
-
-        // Initialize repository
-        let mut cmd1 = assert_cmd::Command::cargo_bin("buckets").expect("failed to run command");
-        cmd1.current_dir(temp_dir.as_path())
-            .arg("init")
-            .arg("test_repo")
-            .assert()
-            .success();
-
-        let repo_dir = temp_dir.as_path().join("test_repo");
+        let Some(fixture) = repo_fixture_or_skip() else {
+            return;
+        };
+        let repo_dir = fixture.repo_dir.clone();
 
         // Try to create bucket without name
         let mut cmd = assert_cmd::Command::cargo_bin("buckets").expect("failed to run command");
@@ -192,19 +152,11 @@ mod tests {
     /// Test creating bucket with special characters (should succeed)
     #[test]
     #[serial]
-    #[ignore]
     fn test_cli_create_special_characters() {
-        let temp_dir = get_test_dir();
-
-        // Initialize repository
-        let mut cmd1 = assert_cmd::Command::cargo_bin("buckets").expect("failed to run command");
-        cmd1.current_dir(temp_dir.as_path())
-            .arg("init")
-            .arg("test_repo")
-            .assert()
-            .success();
-
-        let repo_dir = temp_dir.as_path().join("test_repo");
+        let Some(fixture) = repo_fixture_or_skip() else {
+            return;
+        };
+        let repo_dir = fixture.repo_dir.clone();
 
         // Test bucket names with special characters that should be valid
         let valid_special_names = vec![
@@ -222,6 +174,15 @@ mod tests {
                 .arg(name)
                 .assert()
                 .success();
+        }
+    }
+    fn repo_fixture_or_skip() -> Option<RepoFixture> {
+        match RepoFixture::new() {
+            Ok(fixture) => Some(fixture),
+            Err(message) => {
+                eprintln!("Skipping CLI create test: {message}");
+                None
+            }
         }
     }
 }

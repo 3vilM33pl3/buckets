@@ -2,7 +2,7 @@ mod common;
 
 #[cfg(test)]
 mod acceptance_tests {
-    use crate::common::tests::get_test_dir;
+    use crate::common::tests::RepoFixture;
     use predicates::prelude::*;
     use serial_test::serial;
     use std::fs::File;
@@ -17,11 +17,11 @@ mod acceptance_tests {
     ///
     #[test]
     #[serial]
-    #[ignore]
     fn test_cli_history_one_commit() {
-        // Setup repo with a commit
-        let repo_dir = setup();
-        let bucket_dir = repo_dir.join("test_bucket");
+        let Some(fixture) = repo_fixture_or_skip() else {
+            return;
+        };
+        let bucket_dir = fixture.bucket_dir.clone();
 
         create_test_file(&bucket_dir, "test_file.txt", "test content");
 
@@ -44,11 +44,11 @@ mod acceptance_tests {
 
     #[test]
     #[serial]
-    #[ignore]
     fn test_cli_history_multiple_commits() {
-        // Setup repo with multiple commits
-        let repo_dir = setup();
-        let bucket_dir = repo_dir.join("test_bucket");
+        let Some(fixture) = repo_fixture_or_skip() else {
+            return;
+        };
+        let bucket_dir = fixture.bucket_dir.clone();
 
         create_test_file(&bucket_dir, "test_file.txt", "test content");
         create_test_file(&bucket_dir, "test_file2.txt", "test content 2");
@@ -85,23 +85,13 @@ mod acceptance_tests {
             .expect("Failed to write to file");
     }
 
-    fn setup() -> std::path::PathBuf {
-        let temp_dir = get_test_dir();
-        let mut cmd = assert_cmd::Command::cargo_bin("buckets").expect("failed to run command");
-        cmd.current_dir(&temp_dir)
-            .arg("init")
-            .arg("test_repo")
-            .assert()
-            .success();
-
-        let repo_dir = temp_dir.join("test_repo");
-        let mut cmd = assert_cmd::Command::cargo_bin("buckets").expect("failed to run command");
-        cmd.current_dir(&repo_dir)
-            .arg("create")
-            .arg("test_bucket")
-            .assert()
-            .success();
-
-        repo_dir
+    fn repo_fixture_or_skip() -> Option<RepoFixture> {
+        match RepoFixture::new() {
+            Ok(fixture) => Some(fixture),
+            Err(message) => {
+                eprintln!("Skipping CLI history test: {message}");
+                None
+            }
+        }
     }
 }

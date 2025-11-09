@@ -15,7 +15,6 @@ mod tests {
     ///
     #[test]
     #[serial]
-    #[ignore]
     fn test_cli_schema() {
         let mut cmd = Command::cargo_bin("buckets").expect("failed to run command");
 

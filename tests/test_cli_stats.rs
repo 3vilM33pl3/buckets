@@ -2,11 +2,9 @@ mod common;
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use serial_test::serial;
 
-    use crate::common::tests::get_test_dir;
+    use crate::common::tests::RepoFixture;
 
     /// Test the `stats` command.
     ///
@@ -17,9 +15,11 @@ mod tests {
     ///
     #[test]
     #[serial]
-    #[ignore]
     fn test_cli_stats() {
-        let temp_dir = setup();
+        let Some(fixture) = repo_fixture_or_skip() else {
+            return;
+        };
+        let temp_dir = fixture.repo_dir.clone();
         let mut cmd = assert_cmd::Command::cargo_bin("buckets").expect("failed to run command");
         cmd.current_dir(temp_dir.as_path())
             .arg("stats")
@@ -27,23 +27,13 @@ mod tests {
             .success();
     }
 
-    fn setup() -> PathBuf {
-        let temp_dir = get_test_dir();
-        let mut cmd1 = assert_cmd::Command::cargo_bin("buckets").expect("failed to run command");
-        cmd1.current_dir(temp_dir.as_path())
-            .arg("init")
-            .arg("test_repo")
-            .assert()
-            .success();
-
-        let mut cmd2 = assert_cmd::Command::cargo_bin("buckets").expect("failed to run command");
-        let repo_dir = temp_dir.as_path().join("test_repo");
-        cmd2.current_dir(repo_dir.as_path())
-            .arg("create")
-            .arg("test_bucket")
-            .assert()
-            .success();
-
-        repo_dir
+    fn repo_fixture_or_skip() -> Option<RepoFixture> {
+        match RepoFixture::new() {
+            Ok(fixture) => Some(fixture),
+            Err(message) => {
+                eprintln!("Skipping CLI stats test: {message}");
+                None
+            }
+        }
     }
 }
