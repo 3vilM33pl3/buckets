@@ -2,12 +2,12 @@ use crate::args::StatsCommand;
 use crate::commands::BucketCommand;
 use crate::data::bucket::Bucket;
 use crate::errors::BucketError;
-use crate::utils::checks;
 use crate::postgres_db::get_database;
-use tokio_postgres::types::ToSql;
+use crate::utils::checks;
 use crate::CURRENT_DIR;
 use log::{debug, info};
 use serde::{Deserialize, Serialize};
+use tokio_postgres::types::ToSql;
 
 #[derive(Serialize, Deserialize)]
 pub struct StatsOutput {
@@ -48,24 +48,29 @@ impl BucketCommand for Stats {
         }
 
         info!("Gathering repository statistics");
-        
+
         // Create async runtime for database operations
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| BucketError::from(format!("Failed to create async runtime: {}", e).as_str()))?;
-        
+        let rt = tokio::runtime::Runtime::new().map_err(|e| {
+            BucketError::from(format!("Failed to create async runtime: {}", e).as_str())
+        })?;
+
         let buckets = rt.block_on(self.query_buckets_async())?;
         debug!("Found {} buckets", buckets.len());
-        
+
         let total_commits = rt.block_on(self.count_total_commits_async())?;
         debug!("Found {} total commits", total_commits);
-        
+
         let total_files = rt.block_on(self.count_total_files_async())?;
         debug!("Found {} total files", total_files);
-        
+
         let mut bucket_stats = Vec::new();
         for bucket in &buckets {
-            let commit_count = rt.block_on(self.count_bucket_commits_async(&bucket.id)).unwrap_or(0);
-            let file_count = rt.block_on(self.count_bucket_files_async(&bucket.id)).unwrap_or(0);
+            let commit_count = rt
+                .block_on(self.count_bucket_commits_async(&bucket.id))
+                .unwrap_or(0);
+            let file_count = rt
+                .block_on(self.count_bucket_files_async(&bucket.id))
+                .unwrap_or(0);
             bucket_stats.push(BucketStats {
                 name: bucket.name.clone(),
                 id: bucket.id.to_string(),
@@ -73,7 +78,7 @@ impl BucketCommand for Stats {
                 file_count,
             });
         }
-        
+
         if self.args.shared.json {
             let output = StatsOutput {
                 bucket_count: buckets.len(),
@@ -91,7 +96,7 @@ impl BucketCommand for Stats {
             println!("  Total Commits: {}", total_commits);
             println!("  Total Files: {}", total_files);
             println!();
-            
+
             if !bucket_stats.is_empty() {
                 println!("Bucket Statistics:");
                 for stats in &bucket_stats {
@@ -102,7 +107,7 @@ impl BucketCommand for Stats {
                 }
             }
         }
-        
+
         Ok(())
     }
 }
@@ -110,18 +115,15 @@ impl BucketCommand for Stats {
 impl Stats {
     async fn query_buckets_async(&self) -> Result<Vec<Bucket>, BucketError> {
         let db = get_database().await?;
-        
+
         let rows = db.query("SELECT id, name, path FROM buckets", &[]).await?;
-        
+
         let mut buckets = Vec::new();
         for row in &rows {
-            let uuid_str: String = row.get(0);
+            let uuid: uuid::Uuid = row.get(0);
             let name: String = row.get(1);
             let path_str: String = row.get(2);
-            
-            let uuid = uuid::Uuid::parse_str(&uuid_str)
-                .map_err(|e| BucketError::InvalidData(e.to_string()))?;
-            
+
             buckets.push(Bucket {
                 id: uuid,
                 name,
@@ -131,40 +133,45 @@ impl Stats {
 
         Ok(buckets)
     }
-    
+
     async fn count_total_commits_async(&self) -> Result<usize, BucketError> {
         let db = get_database().await?;
-        
+
         let rows = db.query("SELECT COUNT(*) FROM commits", &[]).await?;
         let count: i64 = rows[0].get(0);
         Ok(count as usize)
     }
-    
+
     async fn count_total_files_async(&self) -> Result<usize, BucketError> {
         let db = get_database().await?;
-        
-        let rows = db.query("SELECT COUNT(DISTINCT file_path) FROM files", &[]).await?;
+
+        let rows = db
+            .query("SELECT COUNT(DISTINCT file_path) FROM files", &[])
+            .await?;
         let count: i64 = rows[0].get(0);
         Ok(count as usize)
     }
-    
-    async fn count_bucket_commits_async(&self, bucket_id: &uuid::Uuid) -> Result<usize, BucketError> {
+
+    async fn count_bucket_commits_async(
+        &self,
+        bucket_id: &uuid::Uuid,
+    ) -> Result<usize, BucketError> {
         let db = get_database().await?;
-        
-        let bucket_id_str = bucket_id.to_string();
-        let params: Vec<&(dyn ToSql + Sync)> = vec![&bucket_id_str];
-        
-        let rows = db.query("SELECT COUNT(*) FROM commits WHERE bucket_id = $1", &params).await?;
+
+        let params: Vec<&(dyn ToSql + Sync)> = vec![bucket_id];
+
+        let rows = db
+            .query("SELECT COUNT(*) FROM commits WHERE bucket_id = $1", &params)
+            .await?;
         let count: i64 = rows[0].get(0);
         Ok(count as usize)
     }
-    
+
     async fn count_bucket_files_async(&self, bucket_id: &uuid::Uuid) -> Result<usize, BucketError> {
         let db = get_database().await?;
-        
-        let bucket_id_str = bucket_id.to_string();
-        let params: Vec<&(dyn ToSql + Sync)> = vec![&bucket_id_str];
-        
+
+        let params: Vec<&(dyn ToSql + Sync)> = vec![bucket_id];
+
         let rows = db.query(
             "SELECT COUNT(DISTINCT f.file_path) FROM files f JOIN commits c ON f.commit_id = c.id WHERE c.bucket_id = $1", 
             &params
