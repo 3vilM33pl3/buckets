@@ -11,6 +11,7 @@ use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use std::path::PathBuf;
 use tokio_postgres::types::ToSql;
+use uuid::Uuid;
 
 /// Revert a file from a specific commit or the most recent commit
 pub struct Revert {
@@ -41,36 +42,50 @@ impl BucketCommand for Revert {
         let file_path = self.args.file.clone();
 
         // Create async runtime for database operations
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| BucketError::from(format!("Failed to create async runtime: {}", e).as_str()))?;
+        let rt = tokio::runtime::Runtime::new().map_err(|e| {
+            BucketError::from(format!("Failed to create async runtime: {}", e).as_str())
+        })?;
 
         // Get the file's hash from the specified commit or the last commit
         let hash = rt.block_on(async {
             let db = get_database().await?;
-            
+
             let relative_path = PathBuf::from(&file_path)
                 .strip_prefix(&bucket_path)
                 .unwrap_or(&PathBuf::from(&file_path))
                 .to_string_lossy()
                 .to_string();
 
-            let bucket_id_str = bucket.id.to_string();
-            
-            let (query, params): (String, Vec<&(dyn ToSql + Sync)>) = match &self.args.commit_id {
-                Some(commit_id) => {
-                    // Query for specific commit ID
-                    let query = "SELECT f.hash 
+            let bucket_id = bucket.id;
+            let parsed_commit_id = self
+                .args
+                .commit_id
+                .as_ref()
+                .map(|id| {
+                    Uuid::parse_str(id).map_err(|e| {
+                        BucketError::from(format!("Invalid commit id '{}': {}", id, e).as_str())
+                    })
+                })
+                .transpose()?;
+
+            let (query, params): (String, Vec<&(dyn ToSql + Sync)>) =
+                match parsed_commit_id.as_ref() {
+                    Some(commit_uuid) => {
+                        // Query for specific commit ID
+                        let query = "SELECT f.hash 
                         FROM files f
                         JOIN commits c ON f.commit_id = c.id
                         WHERE f.file_path = $1
                         AND c.id = $2
-                        AND c.bucket_id = $3".to_string();
-                    let params: Vec<&(dyn ToSql + Sync)> = vec![&relative_path, commit_id, &bucket_id_str];
-                    (query, params)
-                },
-                None => {
-                    // Query for latest commit (existing behavior)
-                    let query = "SELECT f.hash 
+                        AND c.bucket_id = $3"
+                            .to_string();
+                        let params: Vec<&(dyn ToSql + Sync)> =
+                            vec![&relative_path, commit_uuid, &bucket_id];
+                        (query, params)
+                    }
+                    None => {
+                        // Query for latest commit (existing behavior)
+                        let query = "SELECT f.hash 
                         FROM files f
                         JOIN commits c ON f.commit_id = c.id
                         WHERE f.file_path = $1
@@ -78,11 +93,12 @@ impl BucketCommand for Revert {
                             SELECT MAX(created_at) 
                             FROM commits 
                             WHERE bucket_id = $2
-                        )".to_string();
-                    let params: Vec<&(dyn ToSql + Sync)> = vec![&relative_path, &bucket_id_str];
-                    (query, params)
-                }
-            };
+                        )"
+                        .to_string();
+                        let params: Vec<&(dyn ToSql + Sync)> = vec![&relative_path, &bucket_id];
+                        (query, params)
+                    }
+                };
 
             let rows = db.query(&query, &params).await?;
 
@@ -90,13 +106,14 @@ impl BucketCommand for Revert {
                 Some(row) => {
                     let hash: String = row.get(0);
                     Ok(hash)
-                },
-                None => match &self.args.commit_id {
-                    Some(commit_id) => Err(BucketError::from(format!(
-                        "File '{}' not found in commit '{}'", file_path, commit_id
-                    ).as_str())),
-                    None => Err(BucketError::FileNotFound(file_path.clone())),
                 }
+                None => match &self.args.commit_id {
+                    Some(commit_id) => Err(BucketError::from(
+                        format!("File '{}' not found in commit '{}'", file_path, commit_id)
+                            .as_str(),
+                    )),
+                    None => Err(BucketError::FileNotFound(file_path.clone())),
+                },
             }
         })?;
 
@@ -160,6 +177,9 @@ impl Revert {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_support::docker::{
+        create_bucket_for_tests, ensure_database_initialized, TestDatabase,
+    };
     use crate::utils::compression::{compress_file, DEFAULT_COMPRESSION_LEVEL};
     use serial_test::serial;
 
@@ -168,36 +188,38 @@ mod tests {
     use std::{env, fs};
     use tempfile::tempdir;
 
-    fn should_skip_database_tests() -> bool {
-        // Check for environment variables that indicate we should skip database tests
-        std::env::var("BUCKETS_SKIP_DB_TESTS").is_ok() || 
-        std::env::var("NO_NETWORK").is_ok()
-    }
-
     #[test]
     #[serial]
     fn test_revert_command() {
-        // Skip test if we can't initialize database (e.g., network issues)
-        if std::env::var("CI").is_ok() || should_skip_database_tests() {
-            eprintln!("Skipping database-dependent test due to network/environment issues");
+        let Some(db) = TestDatabase::new() else {
+            eprintln!("Skipping revert::tests::test_revert_command: Docker/Postgres unavailable");
             return;
-        }
+        };
+        ensure_database_initialized(db.connection_string());
         // Setup test environment
         let temp_dir = tempdir().expect("invalid temp dir").keep();
         log::debug!("temp_dir: {:?}", temp_dir);
-        
+
         // First try to initialize - if it fails due to network issues, skip the test
         let mut cmd1 = assert_cmd::Command::cargo_bin("buckets").expect("invalid command");
-        let init_output = cmd1.current_dir(temp_dir.as_path())
+        let init_output = cmd1
+            .env("DATABASE_URL", db.connection_string())
+            .current_dir(temp_dir.as_path())
             .arg("init")
             .arg("test_repo")
             .output();
-            
+
         // Check if init failed due to network issues
         if let Ok(output) = init_output {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            if stderr.contains("rate limit") || stderr.contains("Failed to install PostgreSQL") || !output.status.success() {
-                eprintln!("Skipping test due to init failure (network issues): {}", stderr);
+            if stderr.contains("rate limit")
+                || stderr.contains("Failed to install PostgreSQL")
+                || !output.status.success()
+            {
+                eprintln!(
+                    "Skipping test due to init failure (network issues): {}",
+                    stderr
+                );
                 return;
             }
         } else {
@@ -205,22 +227,19 @@ mod tests {
             return;
         }
 
-        let mut cmd2 = assert_cmd::Command::cargo_bin("buckets").expect("invalid command");
         let repo_dir = temp_dir.as_path().join("test_repo");
-        cmd2.current_dir(repo_dir.as_path())
-            .arg("create")
-            .arg("test_bucket")
-            .assert()
-            .success();
-
-        let bucket_dir = repo_dir.join("test_bucket");
+        let db_type_file = repo_dir.join(".buckets").join("database_type");
+        fs::write(&db_type_file, "PostgreSQL").expect("Failed to write database_type file");
+        let bucket_dir = create_bucket_for_tests(&repo_dir, "test_bucket", db.connection_string())
+            .expect("Failed to create test bucket");
         let file_path = bucket_dir.join("test_file.txt");
         let mut file = File::create(&file_path).expect("invalid file");
         let original_content = b"original content";
         file.write_all(original_content).expect("invalid write");
 
         let mut cmd3 = assert_cmd::Command::cargo_bin("buckets").expect("invalid command");
-        cmd3.current_dir(bucket_dir.as_path())
+        cmd3.env("DATABASE_URL", db.connection_string())
+            .current_dir(bucket_dir.as_path())
             .arg("commit")
             .arg("test message")
             .assert()
@@ -232,6 +251,7 @@ mod tests {
         file.write_all(modified_content).unwrap();
 
         // Change to bucket directory
+        let original_dir = env::current_dir().ok();
         env::set_current_dir(&bucket_dir).expect("invalid directory");
 
         // Revert the file (use relative path)
@@ -246,6 +266,10 @@ mod tests {
         // Verify the file was reverted using binary comparison
         let reverted_content = fs::read(&file_path).expect("invalid read");
         assert_eq!(reverted_content, original_content);
+
+        if let Some(dir) = original_dir {
+            let _ = env::set_current_dir(dir);
+        }
     }
 
     #[test]

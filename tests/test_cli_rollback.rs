@@ -2,12 +2,11 @@ mod common;
 
 #[cfg(test)]
 mod tests {
-    use crate::common::tests::get_test_dir;
+    use crate::common::tests::RepoFixture;
     use predicates::prelude::predicate;
     use serial_test::serial;
     use std::fs::File;
     use std::io::Write;
-    use std::path::PathBuf;
 
     /// Test the `rollback` command.
     ///
@@ -18,13 +17,14 @@ mod tests {
     ///
     #[test]
     #[serial]
-    #[ignore]
     fn test_cli_rollback() {
-        let repo_dir = setup();
-        let bucket_dir = repo_dir.join("test_bucket");
+        let Some(fixture) = repo_fixture_or_skip() else {
+            return;
+        };
+        let bucket_dir = fixture.bucket_dir.clone();
 
         let file_path = bucket_dir.join("test_file.txt");
-        
+
         // Create and write initial content
         {
             let mut file_1 = File::create(&file_path).expect("Failed to create file");
@@ -42,7 +42,8 @@ mod tests {
 
         // Modify the file after the commit
         {
-            let mut file_1 = File::create(&file_path).expect("Failed to create file for modification");
+            let mut file_1 =
+                File::create(&file_path).expect("Failed to create file for modification");
             file_1
                 .write_all(b"change file 1")
                 .expect("Failed to write to file");
@@ -69,23 +70,13 @@ mod tests {
             .success();
     }
 
-    fn setup() -> PathBuf {
-        let temp_dir = get_test_dir();
-        let mut cmd1 = assert_cmd::Command::cargo_bin("buckets").expect("failed to run command");
-        cmd1.current_dir(temp_dir.as_path())
-            .arg("init")
-            .arg("test_repo")
-            .assert()
-            .success();
-
-        let mut cmd2 = assert_cmd::Command::cargo_bin("buckets").expect("failed to run command");
-        let repo_dir = temp_dir.as_path().join("test_repo");
-        cmd2.current_dir(repo_dir.as_path())
-            .arg("create")
-            .arg("test_bucket")
-            .assert()
-            .success();
-
-        repo_dir
+    fn repo_fixture_or_skip() -> Option<RepoFixture> {
+        match RepoFixture::new() {
+            Ok(fixture) => Some(fixture),
+            Err(message) => {
+                eprintln!("Skipping CLI rollback test: {message}");
+                None
+            }
+        }
     }
 }

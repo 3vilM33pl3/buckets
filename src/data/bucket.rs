@@ -1,9 +1,7 @@
 use crate::data::commit::{Commit, CommitStatus, CommittedFile};
 use crate::errors::BucketError;
 use crate::utils::checks::{find_directory_in_parents, is_valid_bucket_info};
-use crate::utils::utils::{
-    find_bucket_repo, find_files_excluding_top_level_b, hash_file,
-};
+use crate::utils::utils::{find_bucket_repo, find_files_excluding_top_level_b, hash_file};
 use blake3::Hash;
 use log::debug;
 use serde::{Deserialize, Serialize};
@@ -43,12 +41,17 @@ impl BucketTrait for Bucket {
             // If given an absolute path, try to make it relative to the repo root
             // This shouldn't happen in production but might occur in tests
             path.components()
-                .skip_while(|c| matches!(c, std::path::Component::RootDir | std::path::Component::Prefix(_)))
+                .skip_while(|c| {
+                    matches!(
+                        c,
+                        std::path::Component::RootDir | std::path::Component::Prefix(_)
+                    )
+                })
                 .collect::<PathBuf>()
         } else {
             path.to_path_buf()
         };
-        
+
         Bucket {
             id: uuid,
             name: name.to_string(),
@@ -81,7 +84,8 @@ impl BucketTrait for Bucket {
 
     fn write_bucket_info(&self) -> Result<(), io::Error> {
         // Use full_path for filesystem operations
-        let full_path = self.full_path()
+        let full_path = self
+            .full_path()
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
         let mut file = File::create(full_path.join(".b").join("info"))?;
         let serialized = to_string(self)
@@ -93,7 +97,21 @@ impl BucketTrait for Bucket {
     /// Test-friendly version of write_bucket_info that accepts an explicit repository path
     #[cfg(test)]
     fn write_bucket_info_with_repo_path(&self, repo_path: &Path) -> Result<(), io::Error> {
-        let full_path = repo_path.join(&self.relative_bucket_path);
+        let repo_root = if repo_path
+            .file_name()
+            .map(|name| name == ".buckets")
+            .unwrap_or(false)
+        {
+            repo_path
+                .parent()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| repo_path.to_path_buf())
+        } else {
+            repo_path.to_path_buf()
+        };
+
+        let full_path = repo_root.join(&self.relative_bucket_path);
+        std::fs::create_dir_all(full_path.join(".b"))?;
         let mut file = File::create(full_path.join(".b").join("info"))?;
         let serialized = to_string(self)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
@@ -120,15 +138,12 @@ impl BucketTrait for Bucket {
         // Delegate to full_path for consistency
         self.full_path()
     }
-    
+
     fn full_path(&self) -> Result<PathBuf, BucketError> {
         let current_dir = env::current_dir().map_err(BucketError::from)?;
-        let repo_path = find_bucket_repo(&current_dir.as_path())
-            .ok_or(BucketError::NotInRepo)?;
-        let repo_root = repo_path
-            .parent()
-            .ok_or(BucketError::NotInRepo)?;
-        
+        let repo_path = find_bucket_repo(&current_dir.as_path()).ok_or(BucketError::NotInRepo)?;
+        let repo_root = repo_path.parent().ok_or(BucketError::NotInRepo)?;
+
         // Always treat relative_bucket_path as relative to repo root
         let full_path = repo_root.join(&self.relative_bucket_path);
         Ok(full_path)
@@ -136,7 +151,8 @@ impl BucketTrait for Bucket {
 
     fn list_files_with_metadata_in_bucket(&self) -> io::Result<Commit> {
         let mut files = Vec::new();
-        let bucket_path = self.full_path()
+        let bucket_path = self
+            .full_path()
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
         for entry in find_files_excluding_top_level_b(bucket_path.as_path()) {
@@ -227,39 +243,49 @@ mod tests {
         assert_eq!(bucket.name, name);
         assert_eq!(bucket.relative_bucket_path, path);
     }
-    
+
     #[test]
     fn test_relative_bucket_path_always_relative() {
         let name = String::from("test_bucket");
-        
+
         // Test with absolute path - should be converted to relative
         let absolute_path = PathBuf::from("/absolute/path/to/bucket");
         let bucket1 = Bucket::default(Uuid::new_v4(), &name, &absolute_path);
-        assert!(!bucket1.relative_bucket_path.is_absolute(), 
-                "relative_bucket_path should never be absolute, got: {:?}", 
-                bucket1.relative_bucket_path);
-        assert_eq!(bucket1.relative_bucket_path, PathBuf::from("absolute/path/to/bucket"));
-        
+        assert!(
+            !bucket1.relative_bucket_path.is_absolute(),
+            "relative_bucket_path should never be absolute, got: {:?}",
+            bucket1.relative_bucket_path
+        );
+        assert_eq!(
+            bucket1.relative_bucket_path,
+            PathBuf::from("absolute/path/to/bucket")
+        );
+
         // Test with relative path - should remain relative
         let relative_path = PathBuf::from("relative/path/to/bucket");
         let bucket2 = Bucket::default(Uuid::new_v4(), &name, &relative_path);
-        assert!(!bucket2.relative_bucket_path.is_absolute(), 
-                "relative_bucket_path should remain relative, got: {:?}", 
-                bucket2.relative_bucket_path);
+        assert!(
+            !bucket2.relative_bucket_path.is_absolute(),
+            "relative_bucket_path should remain relative, got: {:?}",
+            bucket2.relative_bucket_path
+        );
         assert_eq!(bucket2.relative_bucket_path, relative_path);
-        
+
         // Test with various absolute path formats
         let paths = vec![
             PathBuf::from("/usr/local/bucket"),
             PathBuf::from("/home/user/projects/bucket"),
             PathBuf::from("/tmp/bucket"),
         ];
-        
+
         for abs_path in paths {
             let bucket = Bucket::default(Uuid::new_v4(), &name, &abs_path);
-            assert!(!bucket.relative_bucket_path.is_absolute(), 
-                    "relative_bucket_path should never be absolute for path: {:?}, got: {:?}", 
-                    abs_path, bucket.relative_bucket_path);
+            assert!(
+                !bucket.relative_bucket_path.is_absolute(),
+                "relative_bucket_path should never be absolute for path: {:?}, got: {:?}",
+                abs_path,
+                bucket.relative_bucket_path
+            );
         }
     }
 
@@ -270,12 +296,13 @@ mod tests {
         let bucket_path = temp_dir.path().to_path_buf().join(&bucket_name);
         let bucket_meta_path = bucket_path.join(".b");
         create_dir_all(&bucket_meta_path)?;
-        
+
         // Set up repository structure
         let buckets_repo_path = temp_dir.path().join(".buckets");
         create_dir_all(&buckets_repo_path)?;
 
-        let bucket_default = Bucket::default(Uuid::new_v4(), &bucket_name, &PathBuf::from(&bucket_name));
+        let bucket_default =
+            Bucket::default(Uuid::new_v4(), &bucket_name, &PathBuf::from(&bucket_name));
         bucket_default
             .write_bucket_info_with_repo_path(&buckets_repo_path)
             .expect("Failed to write bucket info in test");
@@ -351,12 +378,16 @@ mod tests {
         let bucket_meta_path = bucket_path.join(".b");
         create_dir_all(&bucket_meta_path)?;
 
-        let bucket = Bucket::default(Uuid::new_v4(), &"test".to_string(), &PathBuf::from("bucket_readonly"));
+        let bucket = Bucket::default(
+            Uuid::new_v4(),
+            &"test".to_string(),
+            &PathBuf::from("bucket_readonly"),
+        );
 
         // Set up buckets directory structure
         let buckets_dir = temp_dir.path().join(".buckets");
         create_dir_all(&buckets_dir)?;
-        
+
         // Make directory read-only on Unix systems
         #[cfg(unix)]
         {
@@ -384,9 +415,13 @@ mod tests {
         let (bucket_path, _buckets_repo_path) = setup_test_environment()?;
         // Change to the temp directory so full_path() can find the .buckets repo
         env::set_current_dir(bucket_path.parent().unwrap())?;
-        
+
         // Use relative path for bucket creation
-        let bucket = Bucket::default(Uuid::new_v4(), &"test".to_string(), &PathBuf::from("test_bucket"));
+        let bucket = Bucket::default(
+            Uuid::new_v4(),
+            &"test".to_string(),
+            &PathBuf::from("test_bucket"),
+        );
 
         match bucket.get_full_bucket_path() {
             Ok(_) => Ok(()),
@@ -405,7 +440,11 @@ mod tests {
         env::set_current_dir(bucket_path.parent().unwrap())?;
 
         // Use relative path for bucket creation
-        let bucket = Bucket::default(Uuid::new_v4(), &"empty".to_string(), &PathBuf::from("test_bucket"));
+        let bucket = Bucket::default(
+            Uuid::new_v4(),
+            &"empty".to_string(),
+            &PathBuf::from("test_bucket"),
+        );
         match bucket.list_files_with_metadata_in_bucket() {
             Ok(files) => {
                 assert!(files.files.is_empty());
@@ -430,7 +469,11 @@ mod tests {
         std::fs::write(bucket_path.join("file2.txt"), "content2")?;
 
         // Use relative path for bucket creation
-        let bucket = Bucket::default(Uuid::new_v4(), &"with_files".to_string(), &PathBuf::from("test_bucket"));
+        let bucket = Bucket::default(
+            Uuid::new_v4(),
+            &"with_files".to_string(),
+            &PathBuf::from("test_bucket"),
+        );
         match bucket.list_files_with_metadata_in_bucket() {
             Ok(files) => {
                 assert_eq!(files.files.len(), 2);
@@ -457,7 +500,11 @@ mod tests {
         std::fs::write(subdir.join("file2.txt"), "content2")?;
 
         // Use relative path for bucket creation
-        let bucket = Bucket::default(Uuid::new_v4(), &"with_subdirs".to_string(), &PathBuf::from("test_bucket"));
+        let bucket = Bucket::default(
+            Uuid::new_v4(),
+            &"with_subdirs".to_string(),
+            &PathBuf::from("test_bucket"),
+        );
         match bucket.list_files_with_metadata_in_bucket() {
             Ok(files) => {
                 assert_eq!(files.files.len(), 2);
@@ -487,8 +534,11 @@ mod tests {
         // Create a valid bucket and write its info
         let buckets_dir = temp_dir.path().join(".buckets");
         create_dir_all(&buckets_dir)?;
-        let original_bucket =
-            Bucket::default(Uuid::new_v4(), &"valid_bucket".to_string(), &PathBuf::from("valid_bucket"));
+        let original_bucket = Bucket::default(
+            Uuid::new_v4(),
+            &"valid_bucket".to_string(),
+            &PathBuf::from("valid_bucket"),
+        );
         // Create the bucket directory structure first
         create_dir_all(bucket_path.join(".b"))?;
         original_bucket.write_bucket_info_with_repo_path(&buckets_dir)?;

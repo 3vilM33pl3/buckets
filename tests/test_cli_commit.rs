@@ -2,12 +2,12 @@ mod common;
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::File, io::Write, path::PathBuf};
+    use std::{fs::File, io::Write};
 
     use predicates::str::contains;
     use serial_test::serial;
 
-    use crate::common::tests::get_test_dir;
+    use crate::common::tests::{get_test_dir, RepoFixture};
     /// Test the `commit` command.
     ///
     /// # Commands
@@ -17,11 +17,11 @@ mod tests {
     ///
     #[test]
     #[serial]
-    #[ignore]
     fn test_cli_commit() {
-        let repo_dir = setup();
-
-        let bucket_dir = repo_dir.join("test_bucket");
+        let Some(fixture) = repo_fixture_or_skip() else {
+            return;
+        };
+        let bucket_dir = fixture.bucket_dir.clone();
         let file_path = bucket_dir.join("test_file.txt");
         let mut file = File::create(&file_path).expect("Failed to create file");
         file.write_all(b"test").expect("Failed to write to file");
@@ -40,10 +40,11 @@ mod tests {
     /// Test commit with no files in bucket (should fail)
     #[test]
     #[serial]
-    #[ignore]
     fn test_cli_commit_no_files() {
-        let repo_dir = setup();
-        let bucket_dir = repo_dir.join("test_bucket");
+        let Some(fixture) = repo_fixture_or_skip() else {
+            return;
+        };
+        let bucket_dir = fixture.bucket_dir.clone();
 
         // Attempt commit with empty bucket
         let mut cmd = assert_cmd::Command::cargo_bin("buckets").expect("failed to run command");
@@ -58,7 +59,6 @@ mod tests {
     /// Test commit with invalid/non-existent bucket directory
     #[test]
     #[serial]
-    #[ignore]
     fn test_cli_commit_invalid_bucket() {
         let temp_dir = get_test_dir();
         let invalid_dir = temp_dir.join("not_a_bucket");
@@ -76,7 +76,6 @@ mod tests {
     /// Test commit outside of repository
     #[test]
     #[serial]
-    #[ignore]
     fn test_cli_commit_not_in_repo() {
         let temp_dir = get_test_dir();
         let outside_repo = temp_dir.join("outside");
@@ -94,10 +93,11 @@ mod tests {
     /// Test commit with missing commit message
     #[test]
     #[serial]
-    #[ignore]
     fn test_cli_commit_missing_message() {
-        let repo_dir = setup();
-        let bucket_dir = repo_dir.join("test_bucket");
+        let Some(fixture) = repo_fixture_or_skip() else {
+            return;
+        };
+        let bucket_dir = fixture.bucket_dir.clone();
 
         // Create a test file
         let file_path = bucket_dir.join("test_file.txt");
@@ -115,10 +115,11 @@ mod tests {
     /// Test commit with very large file to test edge cases
     #[test]
     #[serial]
-    #[ignore]
     fn test_cli_commit_large_file() {
-        let repo_dir = setup();
-        let bucket_dir = repo_dir.join("test_bucket");
+        let Some(fixture) = repo_fixture_or_skip() else {
+            return;
+        };
+        let bucket_dir = fixture.bucket_dir.clone();
 
         // Create a larger test file (1MB)
         let file_path = bucket_dir.join("large_file.txt");
@@ -138,10 +139,11 @@ mod tests {
     /// Test commit with special characters in filename
     #[test]
     #[serial]
-    #[ignore]
     fn test_cli_commit_special_filename() {
-        let repo_dir = setup();
-        let bucket_dir = repo_dir.join("test_bucket");
+        let Some(fixture) = repo_fixture_or_skip() else {
+            return;
+        };
+        let bucket_dir = fixture.bucket_dir.clone();
 
         // Create file with special characters
         let file_path = bucket_dir.join("test file with spaces & symbols!.txt");
@@ -160,10 +162,11 @@ mod tests {
     /// Test commit with binary file
     #[test]
     #[serial]
-    #[ignore]
     fn test_cli_commit_binary_file() {
-        let repo_dir = setup();
-        let bucket_dir = repo_dir.join("test_bucket");
+        let Some(fixture) = repo_fixture_or_skip() else {
+            return;
+        };
+        let bucket_dir = fixture.bucket_dir.clone();
 
         // Create a binary file
         let file_path = bucket_dir.join("binary_file.bin");
@@ -183,10 +186,11 @@ mod tests {
     /// Test commit with empty file
     #[test]
     #[serial]
-    #[ignore]
     fn test_cli_commit_empty_file() {
-        let repo_dir = setup();
-        let bucket_dir = repo_dir.join("test_bucket");
+        let Some(fixture) = repo_fixture_or_skip() else {
+            return;
+        };
+        let bucket_dir = fixture.bucket_dir.clone();
 
         // Create empty file
         let file_path = bucket_dir.join("empty_file.txt");
@@ -200,22 +204,13 @@ mod tests {
             .success();
     }
 
-    fn setup() -> PathBuf {
-        let temp_dir = get_test_dir();
-        let mut cmd1 = assert_cmd::Command::cargo_bin("buckets").expect("failed to run command");
-        cmd1.current_dir(temp_dir.as_path())
-            .arg("init")
-            .arg("test_repo")
-            .assert()
-            .success();
-
-        let mut cmd2 = assert_cmd::Command::cargo_bin("buckets").expect("failed to run command");
-        let repo_dir = temp_dir.as_path().join("test_repo");
-        cmd2.current_dir(repo_dir.as_path())
-            .arg("create")
-            .arg("test_bucket")
-            .assert()
-            .success();
-        repo_dir
+    fn repo_fixture_or_skip() -> Option<RepoFixture> {
+        match RepoFixture::new() {
+            Ok(fixture) => Some(fixture),
+            Err(message) => {
+                eprintln!("Skipping CLI commit test: {message}");
+                None
+            }
+        }
     }
 }

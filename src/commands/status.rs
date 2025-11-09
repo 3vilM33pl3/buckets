@@ -2,12 +2,13 @@ use crate::args::StatusCommand;
 use crate::commands::commit::Commit;
 use crate::commands::BucketCommand;
 use crate::data::bucket::{Bucket, BucketTrait};
+use crate::data::commit::CommitStatus;
 use crate::errors::BucketError;
 use crate::utils::checks;
 use crate::utils::config::RepositoryConfig;
 use crate::utils::utils::find_bucket_path;
 use crate::CURRENT_DIR;
-use log::{debug, info, error};
+use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::io::{self, Error, ErrorKind};
@@ -87,7 +88,7 @@ impl Status {
         // Read the bucket's metadata
         let bucket = Bucket::from_meta_data(&bucket.get_full_bucket_path()?)?;
         let bucket_files = bucket.list_files_with_metadata_in_bucket()?;
-        
+
         if bucket_files.files.is_empty() {
             if self.args.shared.json {
                 let output = BucketStatusOutput { files: vec![] };
@@ -102,25 +103,36 @@ impl Status {
         }
 
         // Create async runtime for database operations
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| BucketError::from(format!("Failed to create async runtime: {}", e).as_str()))?;
-        
+        let rt = tokio::runtime::Runtime::new().map_err(|e| {
+            BucketError::from(format!("Failed to create async runtime: {}", e).as_str())
+        })?;
+
         let file_statuses = match rt.block_on(Commit::load_last_commit_async(bucket.id)) {
-            Ok(None) => {
-                bucket_files.files.iter().map(|file| FileStatus {
+            Ok(None) => bucket_files
+                .files
+                .iter()
+                .map(|file| FileStatus {
                     name: file.name.clone(),
                     status: file.status.to_string(),
-                }).collect::<Vec<FileStatus>>()
-            }
-            Ok(Some(previous_commit)) => {
-                let changes = bucket_files
-                    .compare(&previous_commit)
-                    .ok_or_else(|| BucketError::from("Failed to compare files."))?;
-                changes.iter().map(|change| FileStatus {
-                    name: change.name.clone(),
-                    status: change.status.to_string(),
-                }).collect::<Vec<FileStatus>>()
-            }
+                })
+                .collect::<Vec<FileStatus>>(),
+            Ok(Some(previous_commit)) => match bucket_files.compare(&previous_commit) {
+                Some(changes) => changes
+                    .iter()
+                    .map(|change| FileStatus {
+                        name: change.name.clone(),
+                        status: change.status.to_string(),
+                    })
+                    .collect::<Vec<FileStatus>>(),
+                None => bucket_files
+                    .files
+                    .iter()
+                    .map(|file| FileStatus {
+                        name: file.name.clone(),
+                        status: CommitStatus::Committed.to_string(),
+                    })
+                    .collect::<Vec<FileStatus>>(),
+            },
             Err(_) => {
                 error!("Failed to load previous commit.");
                 return Err(BucketError::from(Error::new(
@@ -131,7 +143,9 @@ impl Status {
         };
 
         if self.args.shared.json {
-            let output = BucketStatusOutput { files: file_statuses };
+            let output = BucketStatusOutput {
+                files: file_statuses,
+            };
             match serde_json::to_string_pretty(&output) {
                 Ok(json) => println!("{}", json),
                 Err(e) => eprintln!("Error serializing to JSON: {}", e),
@@ -153,20 +167,24 @@ impl Status {
             ))
         })?;
         let repo_config = RepositoryConfig::from_file(current_dir)?;
-        
+
         // Create async runtime for database operations
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| BucketError::from(format!("Failed to create async runtime: {}", e).as_str()))?;
-        
+        let rt = tokio::runtime::Runtime::new().map_err(|e| {
+            BucketError::from(format!("Failed to create async runtime: {}", e).as_str())
+        })?;
+
         let buckets = rt.block_on(self.query_buckets_async())?;
-        
+
         if self.args.shared.json {
-            let bucket_infos: Vec<BucketInfo> = buckets.iter().map(|bucket| BucketInfo {
-                id: bucket.id.to_string(),
-                name: bucket.name.clone(),
-                path: bucket.relative_bucket_path.display().to_string(),
-            }).collect();
-            
+            let bucket_infos: Vec<BucketInfo> = buckets
+                .iter()
+                .map(|bucket| BucketInfo {
+                    id: bucket.id.to_string(),
+                    name: bucket.name.clone(),
+                    path: bucket.relative_bucket_path.display().to_string(),
+                })
+                .collect();
+
             let output = RepositoryStatusOutput {
                 config: format!("{:?}", repo_config),
                 bucket_count: buckets.len(),
@@ -186,18 +204,18 @@ impl Status {
 
     async fn query_buckets_async(&self) -> Result<Vec<Bucket>, BucketError> {
         let db = crate::postgres_db::get_database().await?;
-        
+
         let rows = db.query("SELECT id, name, path FROM buckets", &[]).await?;
-        
+
         let mut buckets = Vec::new();
         for row in &rows {
             let uuid_str: String = row.get(0);
             let name: String = row.get(1);
             let path_str: String = row.get(2);
-            
+
             let uuid = uuid::Uuid::parse_str(&uuid_str)
                 .map_err(|e| BucketError::InvalidData(e.to_string()))?;
-            
+
             buckets.push(Bucket {
                 id: uuid,
                 name,

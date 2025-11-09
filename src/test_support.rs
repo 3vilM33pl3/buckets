@@ -1,63 +1,30 @@
-#[cfg(test)]
-pub mod tests {
-    use assert_cmd::Command;
+#![cfg(test)]
+
+pub mod docker {
     use once_cell::sync::Lazy;
     use std::path::{Path, PathBuf};
     use std::thread;
     use std::time::Duration;
     use std::{env, fs};
-    use tempfile::tempdir;
     use testcontainers::{clients::Cli, core::WaitFor, Container, GenericImage};
     use tokio_postgres::NoTls;
     use uuid::Uuid;
 
     static DOCKER: Lazy<Cli> = Lazy::new(|| Cli::default());
-
     const POSTGRES_IMAGE: &str = "postgres";
     const POSTGRES_TAG: &str = "16-alpine";
 
-    #[allow(dead_code)]
-    pub fn get_test_dir() -> PathBuf {
-        match env::var("TEST_DIR") {
-            Ok(val) => PathBuf::from(val),
-            Err(_) => tempdir().expect("error creating temp dir").keep(),
-        }
-    }
-
-    #[allow(dead_code)]
-    fn docker_tests_disabled() -> bool {
-        const SKIP_VARS: [&str; 3] = [
-            "BUCKETS_SKIP_DOCKER_TESTS",
-            "BUCKETS_SKIP_DB_TESTS",
-            "NO_NETWORK",
-        ];
-
-        SKIP_VARS.iter().any(|var| match env::var(var) {
-            Ok(value) => {
-                let normalized = value.to_ascii_lowercase();
-                value.is_empty() || normalized == "1" || normalized == "true" || normalized == "yes"
-            }
-            Err(_) => false,
-        })
-    }
-
     #[derive(Debug)]
-    #[allow(dead_code)]
     pub struct TestDatabase {
         connection_string: String,
-        #[allow(dead_code)]
-        container: Container<'static, GenericImage>,
+        _container: Container<'static, GenericImage>,
         previous_database_url: Option<String>,
     }
 
-    #[allow(dead_code)]
     impl TestDatabase {
-        pub fn new() -> Result<Self, String> {
+        pub fn new() -> Option<Self> {
             if docker_tests_disabled() {
-                return Err(
-                    "Skipping Docker-dependent test (set BUCKETS_SKIP_DOCKER_TESTS=0 to enable)."
-                        .to_string(),
-                );
+                return None;
             }
 
             let db_name = format!("buckets_test_{}", Uuid::new_v4().simple());
@@ -78,25 +45,20 @@ pub mod tests {
 
             let previous_database_url = env::var("DATABASE_URL").ok();
             env::set_var("DATABASE_URL", &connection_string);
-
             if wait_for_postgres_ready().is_none() {
                 if let Some(prev) = &previous_database_url {
                     env::set_var("DATABASE_URL", prev);
                 } else {
                     env::remove_var("DATABASE_URL");
                 }
-                return Err("PostgreSQL container did not become ready in time".to_string());
+                return None;
             }
 
-            Ok(Self {
+            Some(Self {
                 connection_string,
-                container,
+                _container: container,
                 previous_database_url,
             })
-        }
-
-        pub fn apply_database_url(&self) {
-            // DATABASE_URL already set in new(); nothing additional required but keep helper
         }
 
         pub fn connection_string(&self) -> &str {
@@ -114,72 +76,25 @@ pub mod tests {
         }
     }
 
-    #[derive(Debug)]
-    #[allow(dead_code)]
-    pub struct RepoFixture {
-        pub repo_dir: PathBuf,
-        pub bucket_dir: PathBuf,
-        #[allow(dead_code)]
-        temp_dir: PathBuf,
-        #[allow(dead_code)]
-        db: TestDatabase,
-    }
+    fn docker_tests_disabled() -> bool {
+        const SKIP_VARS: [&str; 3] = [
+            "BUCKETS_SKIP_DOCKER_TESTS",
+            "BUCKETS_SKIP_DB_TESTS",
+            "NO_NETWORK",
+        ];
 
-    #[allow(dead_code)]
-    impl RepoFixture {
-        pub fn new() -> Result<Self, String> {
-            let db = TestDatabase::new()?;
-            db.apply_database_url();
-
-            let temp_dir = get_test_dir();
-            let repo_name = format!("repo_{}", Uuid::new_v4().simple());
-            let bucket_name = format!("bucket_{}", Uuid::new_v4().simple());
-
-            run_buckets_command(&temp_dir, ["init", &repo_name]);
-            let repo_dir = temp_dir.join(&repo_name);
-            let buckets_dir = repo_dir.join(".buckets");
-
-            if !buckets_dir.exists() {
-                return Err(format!(
-                    "Init command did not create .buckets at {}",
-                    buckets_dir.display()
-                ));
+        SKIP_VARS.iter().any(|var| match env::var(var) {
+            Ok(value) => {
+                let normalized = value.to_ascii_lowercase();
+                value.is_empty() || normalized == "1" || normalized == "true" || normalized == "yes"
             }
-
-            let db_type_file = buckets_dir.join("database_type");
-            if !db_type_file.exists() {
-                std::fs::write(&db_type_file, "PostgreSQL").map_err(|e| {
-                    format!(
-                        "Failed to write database_type file at {}: {}",
-                        db_type_file.display(),
-                        e
-                    )
-                })?;
-            }
-
-            let bucket_dir = provision_bucket(&repo_dir, &bucket_name, db.connection_string())?;
-
-            Ok(Self {
-                repo_dir,
-                bucket_dir,
-                temp_dir,
-                db,
-            })
-        }
-    }
-
-    #[allow(dead_code)]
-    fn run_buckets_command<'a>(dir: &Path, args: impl IntoIterator<Item = &'a str>) {
-        let mut cmd = Command::cargo_bin("buckets").expect("failed to run command");
-        cmd.current_dir(dir);
-        for arg in args {
-            cmd.arg(arg);
-        }
-        cmd.assert().success();
+            Err(_) => false,
+        })
     }
 
     fn wait_for_postgres_ready() -> Option<()> {
-        let connection_string = env::var("DATABASE_URL").ok()?;
+        let connection_string =
+            env::var("DATABASE_URL").expect("DATABASE_URL must be set before waiting");
         let runtime = tokio::runtime::Runtime::new().ok()?;
 
         for _ in 0..10 {
@@ -189,7 +104,11 @@ pub mod tests {
                         tokio::spawn(async move {
                             let _ = connection.await;
                         });
-                        client.simple_query("SELECT 1").await.map(|_| ())
+                        if let Err(e) = client.simple_query("SELECT 1").await {
+                            Err(e)
+                        } else {
+                            Ok(())
+                        }
                     }
                     Err(e) => Err(e),
                 }
@@ -205,7 +124,7 @@ pub mod tests {
         None
     }
 
-    fn provision_bucket(
+    pub fn create_bucket_for_tests(
         repo_dir: &Path,
         bucket_name: &str,
         connection_string: &str,
@@ -224,13 +143,14 @@ pub mod tests {
         fs::write(&info_path, info_content)
             .map_err(|e| format!("Failed to write bucket info: {}", e))?;
 
-        let runtime =
-            tokio::runtime::Runtime::new().map_err(|e| format!("Runtime error: {}", e))?;
         let escaped_name = bucket_name.replace('\'', "''");
         let insert_sql = format!(
             "INSERT INTO buckets (id, name, path, created_at) VALUES ('{}'::uuid, '{}'::text, '{}'::text, NOW())",
             bucket_id, escaped_name, escaped_name
         );
+
+        let runtime =
+            tokio::runtime::Runtime::new().map_err(|e| format!("Runtime error: {}", e))?;
         runtime
             .block_on(async {
                 let (client, connection) = tokio_postgres::connect(connection_string, NoTls)
@@ -247,5 +167,17 @@ pub mod tests {
             .map_err(|e| format!("Failed to insert bucket row: {}", e))?;
 
         Ok(bucket_dir)
+    }
+
+    pub fn ensure_database_initialized(connection_string: &str) {
+        let config = crate::postgres_db::DatabaseConfig::from_url(connection_string)
+            .expect("Invalid connection string for test database");
+        let runtime = tokio::runtime::Runtime::new().expect("Failed to create runtime for DB init");
+        runtime
+            .block_on(async move {
+                crate::postgres_db::reset_database_for_tests().await;
+                crate::postgres_db::init_database(config).await
+            })
+            .expect("Failed to initialize test database");
     }
 }

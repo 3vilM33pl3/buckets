@@ -17,6 +17,8 @@ mod data;
 mod database;
 mod errors;
 mod postgres_db;
+#[cfg(test)]
+mod test_support;
 mod utils;
 mod world;
 
@@ -46,20 +48,18 @@ fn set_failed() {
 
 fn init_logging(verbose: bool) {
     let log_level = if verbose {
-        LevelFilter::Debug  // -v: debug level
+        LevelFilter::Debug // -v: debug level
     } else {
-        LevelFilter::Warn   // Default: warnings and errors only
+        LevelFilter::Warn // Default: warnings and errors only
     };
 
-    Builder::from_default_env()
-        .filter_level(log_level)
-        .init();
+    Builder::from_default_env().filter_level(log_level).init();
 }
 
 fn main() -> ExitCode {
     // Initialize logging based on verbose flag
     init_logging(ARGS.command.shared_args().verbose);
-    
+
     let res = dispatch();
 
     if let Err(msg) = res {
@@ -90,7 +90,7 @@ fn dispatch() -> Result<(), BucketError> {
         Command::Link(command) => commands::link::Link::new(command).execute()?,
         Command::Finalize(command) => commands::finalize::Finalize::new(command).execute()?,
         Command::Schema(command) => commands::schema::Schema::new(command).execute()?,
-        // Global commands  
+        // Global commands
         Command::Setup(command) => commands::setup::Setup::new(command).execute()?,
         Command::Doctor(command) => commands::doctor::Doctor::new(command).execute()?,
     }

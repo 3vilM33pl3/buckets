@@ -48,19 +48,21 @@ impl BucketCommand for Create {
         .to_path_buf();
 
         // Create async runtime for database operations
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| BucketError::from(format!("Failed to create async runtime: {}", e).as_str()))?;
-        
+        let rt = tokio::runtime::Runtime::new().map_err(|e| {
+            BucketError::from(format!("Failed to create async runtime: {}", e).as_str())
+        })?;
+
         let bucket_id = rt.block_on(async {
             let db = get_database().await?;
             let timestamp = Utc::now().to_rfc3339();
-            
-            let path_str = relative_path.to_str().ok_or_else(|| {
-                BucketError::from("Invalid path string")
-            })?;
-            
+
+            let path_str =
+                relative_path
+                    .to_str()
+                    .ok_or_else(|| BucketError::from("Invalid path string"))?;
+
             let params: Vec<&(dyn ToSql + Sync)> = vec![bucket_name, &path_str, &timestamp];
-            
+
             // Insert and get the new bucket ID in one query
             let rows = db.query(
                 "INSERT INTO buckets (id, name, path, created_at) VALUES (uuid_generate_v4(), $1, $2, $3) RETURNING id",
@@ -68,7 +70,7 @@ impl BucketCommand for Create {
             ).await.map_err(|e| {
                 BucketError::from(format!("Error inserting into database: {}", e).as_str())
             })?;
-            
+
             if let Some(row) = rows.first() {
                 let id_str: String = row.get(0);
                 Uuid::parse_str(&id_str).map_err(|e| {
@@ -78,7 +80,7 @@ impl BucketCommand for Create {
                 Err(BucketError::from("Failed to get bucket ID from insert"))
             }
         })?;
-        
+
         let bucket = Bucket::default(bucket_id, bucket_name, &relative_path);
         bucket
             .write_bucket_info()

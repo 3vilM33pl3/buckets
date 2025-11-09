@@ -1,8 +1,10 @@
 use crate::errors::BucketError;
 use deadpool_postgres::{Config, Pool, Runtime};
 use log::info;
+use once_cell::sync::Lazy;
 use refinery::embed_migrations;
 use std::time::Duration;
+use tokio::sync::{Mutex, MutexGuard};
 use tokio_postgres::NoTls;
 
 // Embed migrations
@@ -91,10 +93,7 @@ pub struct DatabaseManager {
 impl DatabaseManager {
     /// Create a new database manager
     pub fn new(config: DatabaseConfig) -> Self {
-        Self {
-            config,
-            pool: None,
-        }
+        Self { config, pool: None }
     }
 
     /// Initialize the database (create pool, run migrations)
@@ -107,7 +106,10 @@ impl DatabaseManager {
             return Ok(());
         }
 
-        info!("Connecting to external PostgreSQL database at {}:{}", self.config.host, self.config.port);
+        info!(
+            "Connecting to external PostgreSQL database at {}:{}",
+            self.config.host, self.config.port
+        );
 
         // Create connection pool
         self.create_pool().await?;
@@ -201,32 +203,38 @@ impl DatabaseManager {
             .await
             .map_err(|e| BucketError::from(format!("Query failed: {}", e).as_str()))
     }
-
 }
 
 // Global database manager instance
-static DATABASE: once_cell::sync::OnceCell<tokio::sync::Mutex<DatabaseManager>> =
-    once_cell::sync::OnceCell::new();
+static DATABASE: Lazy<Mutex<Option<DatabaseManager>>> = Lazy::new(|| Mutex::new(None));
 
 /// Initialize the global database
 pub async fn init_database(config: DatabaseConfig) -> Result<(), BucketError> {
     let mut manager = DatabaseManager::new(config);
     manager.initialize().await?;
 
-    DATABASE
-        .set(tokio::sync::Mutex::new(manager))
-        .map_err(|_| BucketError::from("Database already initialized"))?;
+    let mut slot = DATABASE.lock().await;
+    if slot.is_some() {
+        return Err(BucketError::from("Database already initialized"));
+    }
+    *slot = Some(manager);
 
     Ok(())
 }
 
 /// Get the global database manager
-pub async fn get_database() -> Result<tokio::sync::MutexGuard<'static, DatabaseManager>, BucketError>
-{
-    let db = DATABASE
-        .get()
-        .ok_or_else(|| BucketError::from("Database not initialized"))?;
-    Ok(db.lock().await)
+pub async fn get_database() -> Result<DatabaseHandle<'static>, BucketError> {
+    if let Some(handle) = try_get_database().await {
+        return Ok(handle);
+    }
+
+    initialize_database_from_env().await?;
+
+    if let Some(handle) = try_get_database().await {
+        return Ok(handle);
+    }
+
+    Err(BucketError::from("Database not initialized"))
 }
 
 /// Execute a database operation with the global database
@@ -237,4 +245,53 @@ where
 {
     let db = get_database().await?;
     Ok(f(&*db))
+}
+
+pub struct DatabaseHandle<'a> {
+    guard: MutexGuard<'a, Option<DatabaseManager>>,
+}
+
+impl<'a> std::ops::Deref for DatabaseHandle<'a> {
+    type Target = DatabaseManager;
+
+    fn deref(&self) -> &Self::Target {
+        self.guard.as_ref().expect("database initialized")
+    }
+}
+
+impl<'a> std::ops::DerefMut for DatabaseHandle<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.guard.as_mut().expect("database initialized")
+    }
+}
+
+#[cfg(test)]
+pub async fn reset_database_for_tests() {
+    let mut guard = DATABASE.lock().await;
+    if let Some(manager) = guard.take() {
+        drop(manager);
+    }
+}
+
+async fn try_get_database() -> Option<DatabaseHandle<'static>> {
+    let guard = DATABASE.lock().await;
+    if guard.is_some() {
+        Some(DatabaseHandle { guard })
+    } else {
+        None
+    }
+}
+
+async fn initialize_database_from_env() -> Result<(), BucketError> {
+    let config = DatabaseConfig::from_env()?;
+    match init_database(config).await {
+        Ok(_) => Ok(()),
+        Err(err) => {
+            if err.to_string().contains("Database already initialized") {
+                Ok(())
+            } else {
+                Err(err)
+            }
+        }
+    }
 }

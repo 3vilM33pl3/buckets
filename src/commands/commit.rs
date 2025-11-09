@@ -41,12 +41,11 @@ trait CommitStore: Send + Sync {
 #[async_trait]
 impl CommitStore for DatabaseManager {
     async fn latest_commit(&self, bucket_id: Uuid) -> Result<Option<LatestCommitRow>, BucketError> {
-        let bucket_id_str = bucket_id.to_string();
-        let params: Vec<&(dyn ToSql + Sync)> = vec![&bucket_id_str];
+        let params: Vec<&(dyn ToSql + Sync)> = vec![&bucket_id];
 
         let rows = DatabaseManager::query(
             self,
-            "SELECT c.id::text, c.created_at, b.name
+            "SELECT c.id, c.created_at, b.name
              FROM commits c
              JOIN buckets b ON c.bucket_id = b.id
              WHERE c.bucket_id = $1
@@ -57,14 +56,7 @@ impl CommitStore for DatabaseManager {
         .await?;
 
         if let Some(row) = rows.first() {
-            let id_str: String = row.get(0);
-            let commit_id = Uuid::parse_str(&id_str).map_err(|e| {
-                BucketError::from(Error::new(
-                    ErrorKind::InvalidData,
-                    format!("Invalid UUID: {}", e),
-                ))
-            })?;
-
+            let commit_id: Uuid = row.get(0);
             let created_at: std::time::SystemTime = row.get(1);
             let bucket_name: String = row.get(2);
 
@@ -79,12 +71,11 @@ impl CommitStore for DatabaseManager {
     }
 
     async fn files_for_commit(&self, commit_id: Uuid) -> Result<Vec<CommitFileRow>, BucketError> {
-        let commit_id_str = commit_id.to_string();
-        let params: Vec<&(dyn ToSql + Sync)> = vec![&commit_id_str];
+        let params: Vec<&(dyn ToSql + Sync)> = vec![&commit_id];
 
         let rows = DatabaseManager::query(
             self,
-            "SELECT f.id::text, f.file_path, f.hash
+            "SELECT f.id, f.file_path, f.hash
              FROM files f
              WHERE f.commit_id = $1
              ORDER BY f.file_path ASC",
@@ -94,14 +85,7 @@ impl CommitStore for DatabaseManager {
 
         let mut files = Vec::with_capacity(rows.len());
         for row in rows {
-            let id_str: String = row.get(0);
-            let file_id = Uuid::parse_str(&id_str).map_err(|e| {
-                BucketError::from(Error::new(
-                    ErrorKind::InvalidData,
-                    format!("Invalid UUID: {}", e),
-                ))
-            })?;
-
+            let file_id: Uuid = row.get(0);
             let file_path: String = row.get(1);
             let hash: String = row.get(2);
 
@@ -192,9 +176,9 @@ impl BucketCommand for Commit {
                     return Ok(());
                 }
             }
-            Err(_) => {
+            Err(err) => {
                 println!("Failed to load previous commit. ########################################################## ");
-                error!("Failed to load previous commit.");
+                error!("Failed to load previous commit: {}", err);
                 return Err(BucketError::from(Error::new(
                     ErrorKind::Other,
                     "Failed to load previous commit.",
@@ -240,14 +224,14 @@ impl Commit {
     async fn insert_file_into_db_async(
         &self,
         db: &crate::postgres_db::DatabaseManager,
-        commit_id: &str,
+        commit_id: &Uuid,
         file_path: &str,
         hash: &str,
     ) -> Result<(), BucketError> {
-        let params: Vec<&(dyn ToSql + Sync)> = vec![&commit_id, &file_path, &hash];
+        let params: Vec<&(dyn ToSql + Sync)> = vec![commit_id, &file_path, &hash];
 
         db.execute(
-            "INSERT INTO files (id, commit_id, file_path, hash) VALUES (uuid_generate_v4(), $1, $2, $3)",
+            "INSERT INTO files (id, commit_id, file_path, hash) VALUES (uuid_generate_v4(), $1::uuid, $2, $3)",
             &params,
         ).await
         .map_err(|e| {
@@ -264,20 +248,19 @@ impl Commit {
         db: &crate::postgres_db::DatabaseManager,
         bucket_id: Uuid,
         message: &String,
-    ) -> Result<String, BucketError> {
+    ) -> Result<Uuid, BucketError> {
         debug!("CommitCommand: inserting commit into PostgreSQL database");
 
-        let bucket_id_str = bucket_id.to_string();
-        let params: Vec<&(dyn ToSql + Sync)> = vec![&bucket_id_str, message];
+        let params: Vec<&(dyn ToSql + Sync)> = vec![&bucket_id, message];
 
         let rows = db.query(
-            "INSERT INTO commits (id, bucket_id, message) VALUES (uuid_generate_v4(), $1, $2) RETURNING id",
+            "INSERT INTO commits (id, bucket_id, message) VALUES (uuid_generate_v4(), $1::uuid, $2) RETURNING id",
             &params,
         ).await?;
 
         if let Some(row) = rows.first() {
-            let id_str: String = row.get(0);
-            Ok(id_str)
+            let id: Uuid = row.get(0);
+            Ok(id)
         } else {
             Err(BucketError::from(Error::new(
                 ErrorKind::Other,
@@ -396,6 +379,9 @@ mod tests {
     use crate::data::bucket::read_bucket_info;
     use crate::data::commit::{CommitStatus, CommittedFile};
     use crate::errors::BucketError;
+    use crate::test_support::docker::{
+        create_bucket_for_tests, ensure_database_initialized, TestDatabase,
+    };
     use async_trait::async_trait;
     use blake3::Hash;
     use log::error;
@@ -410,10 +396,17 @@ mod tests {
     #[test]
     #[serial]
     fn test_process_files() {
+        let Some(db) = TestDatabase::new() else {
+            eprintln!("Skipping commit::tests::test_process_files: Docker/Postgres unavailable");
+            return;
+        };
+        ensure_database_initialized(db.connection_string());
+
         // Need to setup a proper test environment
         let temp_dir = tempdir().expect("invalid temp dir").keep();
         let mut cmd1 = assert_cmd::Command::cargo_bin("buckets").expect("invalid command");
         let init_output = cmd1
+            .env("DATABASE_URL", db.connection_string())
             .current_dir(temp_dir.as_path())
             .arg("init")
             .arg("test_repo")
@@ -437,25 +430,16 @@ mod tests {
             return;
         }
 
-        let mut cmd2 = assert_cmd::Command::cargo_bin("buckets").expect("invalid command");
         let repo_dir = temp_dir.as_path().join("test_repo");
-        cmd2.current_dir(repo_dir.as_path())
-            .arg("create")
-            .arg("test_bucket")
-            .assert()
-            .success();
+        let buckets_dir = repo_dir.join(".buckets");
+        let db_type_file = buckets_dir.join("database_type");
+        std::fs::write(&db_type_file, "PostgreSQL").expect("Failed to write database_type file");
 
-        let bucket_dir = repo_dir.join("test_bucket");
+        let bucket_dir = create_bucket_for_tests(&repo_dir, "test_bucket", db.connection_string())
+            .expect("Failed to create test bucket");
         let file_path = bucket_dir.join("test_file.txt");
         let mut file = File::create(&file_path).expect("Failed to create test file");
         file.write_all(b"test").expect("Failed to write test data");
-        let mut cmd3 =
-            assert_cmd::Command::cargo_bin("buckets").expect("Failed to find buckets binary");
-        cmd3.current_dir(bucket_dir.as_path())
-            .arg("commit")
-            .arg("test message")
-            .assert()
-            .success();
 
         // Bucket id is stored in the bucket info file
         // Can be read first to get the bucket id and then use
@@ -478,6 +462,7 @@ mod tests {
         };
 
         // change to bucket directory
+        let original_dir = env::current_dir().ok();
         env::set_current_dir(&bucket_dir).expect("Failed to change to bucket directory");
 
         let commit_cmd = Commit::new(&crate::args::CommitCommand {
@@ -503,6 +488,9 @@ mod tests {
             Err(e) => {
                 panic!("Error processing files: {}", e);
             }
+        }
+        if let Some(dir) = original_dir {
+            let _ = env::set_current_dir(dir);
         }
     }
 
@@ -1073,6 +1061,10 @@ mod execute_tests {
         };
 
         let changes = current_commit.compare(&previous_commit);
-        assert!(changes.is_none(), "Expected no changes but found: {:?}", changes);
+        assert!(
+            changes.is_none(),
+            "Expected no changes but found: {:?}",
+            changes
+        );
     }
 }
