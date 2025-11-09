@@ -45,22 +45,28 @@ impl BucketCommand for List {
         }
 
         info!("Querying buckets from database");
-        
+
         // Create async runtime for database operations
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| BucketError::from(format!("Failed to create async runtime: {}", e).as_str()))?;
-        
+        let rt = tokio::runtime::Runtime::new().map_err(|e| {
+            BucketError::from(format!("Failed to create async runtime: {}", e).as_str())
+        })?;
+
         let buckets = rt.block_on(self.query_buckets_async())?;
         debug!("Found {} buckets", buckets.len());
-        
+
         if self.args.shared.json {
-            let bucket_items: Vec<BucketListItem> = buckets.iter().map(|bucket| BucketListItem {
-                id: bucket.id.to_string(),
-                name: bucket.name.clone(),
-                path: bucket.relative_bucket_path.display().to_string(),
-            }).collect();
-            
-            let output = ListOutput { buckets: bucket_items };
+            let bucket_items: Vec<BucketListItem> = buckets
+                .iter()
+                .map(|bucket| BucketListItem {
+                    id: bucket.id.to_string(),
+                    name: bucket.name.clone(),
+                    path: bucket.relative_bucket_path.display().to_string(),
+                })
+                .collect();
+
+            let output = ListOutput {
+                buckets: bucket_items,
+            };
             match serde_json::to_string_pretty(&output) {
                 Ok(json) => println!("{}", json),
                 Err(e) => eprintln!("Error serializing to JSON: {}", e),
@@ -71,11 +77,16 @@ impl BucketCommand for List {
             } else {
                 println!("Buckets:");
                 for bucket in &buckets {
-                    println!("  {} - {} ({})", bucket.name, bucket.id, bucket.relative_bucket_path.display());
+                    println!(
+                        "  {} - {} ({})",
+                        bucket.name,
+                        bucket.id,
+                        bucket.relative_bucket_path.display()
+                    );
                 }
             }
         }
-        
+
         Ok(())
     }
 }
@@ -83,25 +94,22 @@ impl BucketCommand for List {
 impl List {
     async fn query_buckets_async(&self) -> Result<Vec<Bucket>, BucketError> {
         let db = get_database().await?;
-        
+
         let rows = db.query("SELECT id, name, path FROM buckets", &[]).await?;
-        
+
         let mut buckets = Vec::new();
         for row in &rows {
-            let uuid_str: String = row.get(0);
+            let uuid: Uuid = row.get(0);
             let name: String = row.get(1);
             let path_str: String = row.get(2);
-            
-            let uuid = Uuid::parse_str(&uuid_str)
-                .map_err(|e| BucketError::InvalidData(e.to_string()))?;
-            
+
             buckets.push(Bucket {
                 id: uuid,
                 name,
                 relative_bucket_path: PathBuf::from(path_str),
             });
         }
-        
+
         Ok(buckets)
     }
 }
