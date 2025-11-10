@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 mod args;
+mod bootstrap;
 mod commands;
 mod config;
 mod data;
@@ -71,6 +72,10 @@ fn main() -> ExitCode {
 }
 
 fn dispatch() -> Result<(), BucketError> {
+    if command_requires_repository(&ARGS.command) {
+        bootstrap::bootstrap_database()?;
+    }
+
     match &ARGS.command {
         // Commands that modify the repository
         Command::Init(command) => commands::init::Init::new(command).execute()?,
@@ -96,4 +101,12 @@ fn dispatch() -> Result<(), BucketError> {
     }
 
     Ok(())
+}
+
+fn command_requires_repository(command: &Command) -> bool {
+    match command {
+        Command::Init(_) | Command::Setup(_) => false,
+        Command::Doctor(args) => args.use_repo,
+        _ => true,
+    }
 }
