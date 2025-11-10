@@ -384,8 +384,14 @@ mod tests {
         let init = create_test_init_command(test_file_name);
         let result = init.checks(test_file_name);
 
-        // Clean up the test file
-        fs::remove_file(&existing_file).expect("Failed to remove test file");
+        // Clean up the test file while tolerating cases where the command under
+        // test already removed it (some checks may canonicalize paths outside
+        // of this test's working directory when other tests run in parallel).
+        if let Err(err) = fs::remove_file(&existing_file) {
+            if err.kind() != std::io::ErrorKind::NotFound {
+                panic!("Failed to remove test file: {err}");
+            }
+        }
 
         assert!(result.is_err());
         match result.unwrap_err() {
