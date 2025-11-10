@@ -105,7 +105,7 @@ fn dispatch() -> Result<(), BucketError> {
 
 fn command_requires_repository(command: &Command) -> bool {
     match command {
-        Command::Init(_) | Command::Setup(_) => false,
+        Command::Init(_) | Command::Setup(_) | Command::Schema(_) => false,
         Command::Doctor(args) => args.use_repo,
         _ => true,
     }

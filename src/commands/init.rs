@@ -9,7 +9,7 @@ use crate::utils::runtime::RuntimeManager;
 use crate::CURRENT_DIR;
 use log::debug;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::{fs, io};
 
 /// Initialize a new bucket repository
@@ -42,6 +42,41 @@ impl BucketCommand for Init {
 }
 
 impl Init {
+    fn resolve_config_location(&self, location: &Path) -> Result<PathBuf, BucketError> {
+        let base_dir = CURRENT_DIR.with(|dir| dir.clone());
+        let resolved_location = if location.is_absolute() {
+            location.to_path_buf()
+        } else {
+            base_dir.join(location)
+        };
+
+        let temp_dir = std::env::temp_dir();
+        if !(resolved_location.starts_with(&base_dir) || resolved_location.starts_with(&temp_dir)) {
+            return Err(BucketError::IoError(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!(
+                    "Configuration directory must be within {} or {}",
+                    base_dir.display(),
+                    temp_dir.display()
+                ),
+            )));
+        }
+
+        if let Some(parent) = resolved_location.parent() {
+            if !parent.exists() {
+                return Err(BucketError::IoError(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!(
+                        "Configuration directory parent does not exist: {}",
+                        parent.display()
+                    ),
+                )));
+            }
+        }
+
+        Ok(resolved_location)
+    }
+
     fn create_repo(&self, repo_name: &str, repo_location: &Path) -> Result<(), BucketError> {
         let repo_path = repo_location.join(repo_name);
         let repo_buckets_path = repo_path.join(".buckets");
@@ -58,6 +93,8 @@ impl Init {
     }
 
     pub fn create_config_file(&self, location: &Path) -> Result<(), BucketError> {
+        let resolved_location = self.resolve_config_location(location)?;
+
         // Start with default configuration
         let mut config = Config {
             ntp_server: "pool.ntp.org".to_string(),
@@ -83,10 +120,10 @@ impl Init {
         })?;
 
         // Create the .buckets directory if it doesn't exist
-        fs::create_dir_all(&location)?;
+        fs::create_dir_all(&resolved_location)?;
 
         // Write the configuration file
-        let config_path = location.join("config");
+        let config_path = resolved_location.join("config");
         let mut file = fs::File::create(&config_path)?;
         file.write_all(toml_content.as_bytes())?;
 
@@ -95,6 +132,8 @@ impl Init {
 
     #[cfg(test)]
     pub fn create_config_file_no_global(&self, location: &Path) -> Result<(), BucketError> {
+        let resolved_location = self.resolve_config_location(location)?;
+
         // Create default configuration without global inheritance
         let config = Config {
             ntp_server: "pool.ntp.org".to_string(),
@@ -112,10 +151,10 @@ impl Init {
         })?;
 
         // Create the .buckets directory if it doesnt exist
-        fs::create_dir_all(&location)?;
+        fs::create_dir_all(&resolved_location)?;
 
         // Write the configuration file
-        let config_path = location.join("config");
+        let config_path = resolved_location.join("config");
         let mut file = fs::File::create(&config_path)?;
         file.write_all(toml_content.as_bytes())?;
 
@@ -123,7 +162,21 @@ impl Init {
     }
 
     fn checks(&self, repo_name: &str) -> Result<(), BucketError> {
-        let repo_path = CURRENT_DIR.with(|dir| dir.join(repo_name));
+        let repo_path = {
+            let initial_path = CURRENT_DIR.with(|dir| dir.join(repo_name));
+            if initial_path.exists() {
+                initial_path
+            } else if let Ok(actual_dir) = std::env::current_dir() {
+                let fallback_path = actual_dir.join(repo_name);
+                if fallback_path.exists() {
+                    fallback_path
+                } else {
+                    initial_path
+                }
+            } else {
+                initial_path
+            }
+        };
 
         if repo_path.exists() {
             if repo_path.is_dir() {

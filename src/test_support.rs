@@ -3,6 +3,7 @@
 pub mod docker {
     use once_cell::sync::Lazy;
     use std::path::{Path, PathBuf};
+    use std::process::{Command, Stdio};
     use std::thread;
     use std::time::Duration;
     use std::{env, fs};
@@ -24,6 +25,10 @@ pub mod docker {
     impl TestDatabase {
         pub fn new() -> Option<Self> {
             if docker_tests_disabled() {
+                return None;
+            }
+
+            if !docker_command_available() {
                 return None;
             }
 
@@ -90,6 +95,16 @@ pub mod docker {
             }
             Err(_) => false,
         })
+    }
+
+    fn docker_command_available() -> bool {
+        Command::new("docker")
+            .arg("--version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
     }
 
     fn wait_for_postgres_ready() -> Option<()> {

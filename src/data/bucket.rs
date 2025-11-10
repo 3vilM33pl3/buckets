@@ -111,8 +111,42 @@ impl BucketTrait for Bucket {
         };
 
         let full_path = repo_root.join(&self.relative_bucket_path);
-        std::fs::create_dir_all(full_path.join(".b"))?;
-        let mut file = File::create(full_path.join(".b").join("info"))?;
+        let bucket_meta_path = full_path.join(".b");
+        std::fs::create_dir_all(&bucket_meta_path)?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let metadata = std::fs::metadata(&bucket_meta_path)?;
+            let mode = metadata.permissions().mode();
+            let writable = (mode & 0o222) != 0;
+            let executable = (mode & 0o111) != 0;
+            if !writable || !executable {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    format!(
+                        "Bucket metadata directory is not writable: {}",
+                        bucket_meta_path.display()
+                    ),
+                ));
+            }
+        }
+
+        #[cfg(not(unix))]
+        {
+            let metadata = std::fs::metadata(&bucket_meta_path)?;
+            if metadata.permissions().readonly() {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    format!(
+                        "Bucket metadata directory is not writable: {}",
+                        bucket_meta_path.display()
+                    ),
+                ));
+            }
+        }
+
+        let mut file = File::create(bucket_meta_path.join("info"))?;
         let serialized = to_string(self)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
         file.write_fmt(format_args!("{}", serialized))?;
