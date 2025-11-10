@@ -112,12 +112,8 @@ impl Init {
         }
 
         // Serialize the configuration to TOML format
-        let toml_content = toml::to_string(&config).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!("Failed to serialize config: {}", e),
-            )
-        })?;
+        let toml_content = toml::to_string(&config)
+            .map_err(|e| io::Error::other(format!("Failed to serialize config: {}", e)))?;
 
         // Create the .buckets directory if it doesn't exist
         fs::create_dir_all(&resolved_location)?;
@@ -143,12 +139,8 @@ impl Init {
         };
 
         // Serialize the configuration to TOML format
-        let toml_content = toml::to_string(&config).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!("Failed to serialize config: {}", e),
-            )
-        })?;
+        let toml_content = toml::to_string(&config)
+            .map_err(|e| io::Error::other(format!("Failed to serialize config: {}", e)))?;
 
         // Create the .buckets directory if it doesnt exist
         fs::create_dir_all(&resolved_location)?;
@@ -216,14 +208,22 @@ impl Init {
         // 1. If command line arguments are provided, use them
         if self.args.external_host.is_some() && self.args.external_username.is_some() {
             return Ok(DatabaseConfig {
-                host: self.args.external_host.clone().unwrap(),
+                host: self
+                    .args
+                    .external_host
+                    .clone()
+                    .expect("external host must be provided when username is set"),
                 port: self.args.external_port.unwrap_or(5432),
                 database: self
                     .args
                     .external_database
                     .clone()
                     .unwrap_or_else(|| "buckets".to_string()),
-                username: self.args.external_username.clone().unwrap(),
+                username: self
+                    .args
+                    .external_username
+                    .clone()
+                    .expect("external username must be provided when host is set"),
                 password: self.args.external_password.clone(),
             });
         }

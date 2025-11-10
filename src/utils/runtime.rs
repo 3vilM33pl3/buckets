@@ -1,12 +1,11 @@
-use std::io::{Error, ErrorKind};
+use std::io::Error;
 
 use once_cell::sync::Lazy;
 use tokio::runtime::{Handle, Runtime};
 
 use crate::errors::BucketError;
 
-static RUNTIME: Lazy<Result<Runtime, std::io::Error>> =
-    Lazy::new(|| tokio::runtime::Runtime::new());
+static RUNTIME: Lazy<Result<Runtime, std::io::Error>> = Lazy::new(tokio::runtime::Runtime::new);
 
 pub struct RuntimeManager;
 
@@ -19,10 +18,10 @@ impl RuntimeManager {
     }
 
     fn runtime_error(err: &std::io::Error) -> BucketError {
-        BucketError::IoError(Error::new(
-            ErrorKind::Other,
-            format!("Failed to create async runtime: {}", err),
-        ))
+        BucketError::IoError(Error::other(format!(
+            "Failed to create async runtime: {}",
+            err
+        )))
     }
 
     pub fn handle() -> Result<Handle, BucketError> {

@@ -25,22 +25,21 @@ impl BucketCommand for Create {
     fn execute(&self) -> Result<(), BucketError> {
         let bucket_name = &self.args.bucket_name;
 
-        self.checks(&bucket_name)?;
+        self.checks(bucket_name)?;
 
-        let bucket_path = CURRENT_DIR.with(|dir| dir.join(&bucket_name));
-        std::fs::create_dir_all(&bucket_path.join(".b").join("storage"))?;
+        let bucket_path = CURRENT_DIR.with(|dir| dir.join(bucket_name));
+        std::fs::create_dir_all(bucket_path.join(".b").join("storage"))?;
 
         let buckets_repo_path = find_directory_in_parents(&bucket_path, ".buckets")
             .ok_or_else(|| BucketError::NotInRepo)?;
         let relative_path = match bucket_path.strip_prefix(
-            &buckets_repo_path
+            buckets_repo_path
                 .parent()
                 .ok_or_else(|| BucketError::NotInRepo)?,
         ) {
             Ok(x) => x,
             Err(_) => {
-                return Err(BucketError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                return Err(BucketError::IoError(std::io::Error::other(
                     "Error stripping prefix",
                 )))
             }
@@ -73,9 +72,7 @@ impl BucketCommand for Create {
         })?;
 
         let bucket = Bucket::default(bucket_id, bucket_name, &relative_path);
-        bucket
-            .write_bucket_info()
-            .map_err(|e| BucketError::from(e))?;
+        bucket.write_bucket_info()?;
 
         Ok(())
     }

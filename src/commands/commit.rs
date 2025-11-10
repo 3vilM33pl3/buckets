@@ -177,8 +177,7 @@ impl BucketCommand for Commit {
             Err(err) => {
                 println!("Failed to load previous commit. ########################################################## ");
                 error!("Failed to load previous commit: {}", err);
-                return Err(BucketError::from(Error::new(
-                    ErrorKind::Other,
+                return Err(BucketError::from(Error::other(
                     "Failed to load previous commit.",
                 )));
             }
@@ -201,13 +200,13 @@ impl Commit {
 
         // Insert the commit into the database
         let commit_id = self
-            .insert_commit_into_db_async(&*db, bucket_id, message)
+            .insert_commit_into_db_async(&db, bucket_id, message)
             .await?;
 
         // Process each file in the commit
         for file in files {
             // Insert the file into the database
-            self.insert_file_into_db_async(&*db, &commit_id, &file.name, &file.hash.to_string())
+            self.insert_file_into_db_async(&db, &commit_id, &file.name, &file.hash.to_string())
                 .await?;
 
             // Compress and store the file (no database operation)
@@ -233,10 +232,10 @@ impl Commit {
             &params,
         ).await
         .map_err(|e| {
-            BucketError::from(Error::new(
-                ErrorKind::Other,
-                format!("Error inserting file into database: {}, commit id: {}, file path: {}, hash: {}", e, commit_id, file_path, hash),
-            ))
+            BucketError::from(Error::other(format!(
+                "Error inserting file into database: {}, commit id: {}, file path: {}, hash: {}",
+                e, commit_id, file_path, hash
+            )))
         })?;
         Ok(())
     }
@@ -260,8 +259,7 @@ impl Commit {
             let id: Uuid = row.get(0);
             Ok(id)
         } else {
-            Err(BucketError::from(Error::new(
-                ErrorKind::Other,
+            Err(BucketError::from(Error::other(
                 "Query returned no rows".to_string(),
             )))
         }

@@ -110,28 +110,22 @@ fn perform_bootstrap() -> Result<(), BucketError> {
     })?;
 
     let runtime = tokio::runtime::Runtime::new().map_err(|err| {
-        BucketError::IoError(Error::new(
-            ErrorKind::Other,
-            format!(
-                "Failed to create async runtime for database bootstrap: {}",
-                err
-            ),
-        ))
+        BucketError::IoError(Error::other(format!(
+            "Failed to create async runtime for database bootstrap: {}",
+            err
+        )))
     })?;
 
     let init_result = runtime.block_on(async { init_database(config).await });
 
     match init_result {
         Ok(()) => Ok(()),
-        Err(err) => Err(BucketError::IoError(Error::new(
-            ErrorKind::Other,
-            format!(
-                "Failed to initialize PostgreSQL using the {} at {}: {}",
-                source.description(),
-                source.path().display(),
-                err
-            ),
-        ))),
+        Err(err) => Err(BucketError::IoError(Error::other(format!(
+            "Failed to initialize PostgreSQL using the {} at {}: {}",
+            source.description(),
+            source.path().display(),
+            err
+        )))),
     }
 }
 

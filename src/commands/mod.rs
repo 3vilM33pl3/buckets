@@ -61,7 +61,7 @@ pub trait BucketCommand {
 #[macro_export]
 macro_rules! impl_command {
     ($command_struct:ident, $args_type:ty, $execute_body:block) => {
-        impl crate::commands::BucketCommand for $command_struct
+        impl $crate::commands::BucketCommand for $command_struct
         where
             $args_type: Clone,
         {
@@ -71,7 +71,7 @@ macro_rules! impl_command {
                 Self { args: args.clone() }
             }
 
-            fn execute(&self) -> Result<(), crate::errors::BucketError> {
+            fn execute(&self) -> Result<(), $crate::errors::BucketError> {
                 $execute_body
             }
         }
