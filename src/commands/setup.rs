@@ -20,6 +20,20 @@ impl BucketCommand for Setup {
     }
 
     fn execute(&self) -> Result<(), BucketError> {
+        if self.args.shared.json {
+            if self.args.test_connection {
+                return Err(BucketError::InvalidData(
+                    "--json cannot be combined with --test-connection".to_string(),
+                ));
+            }
+
+            let config = GlobalConfig::load().unwrap_or_default();
+            let json = serde_json::to_string_pretty(&config)
+                .map_err(|e| BucketError::InvalidData(e.to_string()))?;
+            println!("{}", json);
+            return Ok(());
+        }
+
         println!("Buckets Global Configuration Setup");
         println!("=================================");
         println!();
