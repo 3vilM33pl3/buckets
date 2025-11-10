@@ -1,5 +1,6 @@
 use crate::args::CommitCommand;
 use crate::commands::BucketCommand;
+use crate::data::bucket::read_bucket_info;
 use crate::data::commit::{Commit as CommitData, CommitStatus, CommittedFile};
 use crate::errors::BucketError;
 use crate::postgres_db::{get_database, DatabaseManager};
@@ -198,6 +199,8 @@ impl Commit {
     ) -> Result<(), BucketError> {
         let db = get_database().await?;
 
+        self.ensure_bucket_row(&db, bucket_id, bucket_path).await?;
+
         // Insert the commit into the database
         let commit_id = self
             .insert_commit_into_db_async(&db, bucket_id, message)
@@ -215,6 +218,45 @@ impl Commit {
                 e
             })?;
         }
+        Ok(())
+    }
+
+    async fn ensure_bucket_row(
+        &self,
+        db: &crate::postgres_db::DatabaseManager,
+        bucket_id: Uuid,
+        bucket_path: &PathBuf,
+    ) -> Result<(), BucketError> {
+        let check_params: Vec<&(dyn ToSql + Sync)> = vec![&bucket_id];
+        let rows = db
+            .query("SELECT 1 FROM buckets WHERE id = $1::uuid", &check_params)
+            .await?;
+
+        if !rows.is_empty() {
+            return Ok(());
+        }
+
+        let bucket = read_bucket_info(bucket_path).map_err(|err| {
+            BucketError::IoError(std::io::Error::other(format!(
+                "Failed to read bucket metadata: {}",
+                err
+            )))
+        })?;
+
+        let relative_path = bucket
+            .relative_bucket_path
+            .to_str()
+            .ok_or_else(|| BucketError::from("Bucket path is not valid UTF-8"))?;
+
+        let insert_params: Vec<&(dyn ToSql + Sync)> =
+            vec![&bucket_id, &bucket.name, &relative_path];
+
+        db.execute(
+            "INSERT INTO buckets (id, name, path) VALUES ($1::uuid, $2, $3) ON CONFLICT (id) DO NOTHING",
+            &insert_params,
+        )
+        .await?;
+
         Ok(())
     }
 
