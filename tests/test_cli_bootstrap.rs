@@ -46,8 +46,7 @@ mod tests {
             fs::File::create(buckets_dir.join("config")).expect("failed to create config file");
         writeln!(
             config_file,
-            "ntp_server = \"pool.ntp.org\"\nip_check = \"8.8.8.8\"\nurl_check = \"api.ipify.org\""
-        )
+            r#"ntp_server = "pool.ntp.org"
         .expect("failed to write config");
 
         let mut cmd = Command::cargo_bin("buckets").expect("failed to run command");
