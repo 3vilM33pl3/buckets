@@ -56,7 +56,7 @@ pub fn is_valid_bucket_repo(dir_path: &Path) -> bool {
             // Check for either database type marker or PostgreSQL directory structure
             let db_type_path = path.join("database_type");
             let postgres_path = path.join("postgres");
-            
+
             if !db_type_path.exists() && !postgres_path.exists() {
                 debug!("Neither database_type file nor postgres directory found");
                 return false;

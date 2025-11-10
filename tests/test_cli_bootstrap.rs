@@ -44,10 +44,7 @@ mod tests {
 
         let mut config_file =
             fs::File::create(buckets_dir.join("config")).expect("failed to create config file");
-        writeln!(
-            config_file,
-            r#"ntp_server = "pool.ntp.org"
-        .expect("failed to write config");
+        writeln!(config_file, r#"ntp_server = "pool.ntp.org""#).expect("failed to write config");
 
         let mut cmd = Command::cargo_bin("buckets").expect("failed to run command");
         cmd.current_dir(&repo_dir)

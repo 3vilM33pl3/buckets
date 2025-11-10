@@ -43,7 +43,7 @@ impl Doctor {
         // Test database connection
         if !self.args.skip_database {
             match self.test_database_connection() {
-                Ok(()) => {},
+                Ok(()) => {}
                 Err(e) => {
                     all_passed = false;
                     if self.args.shared.verbose {
@@ -57,7 +57,7 @@ impl Doctor {
         // Test NTP server
         if !self.args.skip_ntp {
             match self.test_ntp_server() {
-                Ok(()) => {},
+                Ok(()) => {}
                 Err(e) => {
                     all_passed = false;
                     if self.args.shared.verbose {
@@ -126,9 +126,12 @@ impl Doctor {
             "all_passed": all_passed
         });
 
-        println!("{}", serde_json::to_string_pretty(&results).map_err(|e| {
-            BucketError::from(format!("Failed to serialize JSON: {}", e).as_str())
-        })?);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&results).map_err(|e| {
+                BucketError::from(format!("Failed to serialize JSON: {}", e).as_str())
+            })?
+        );
 
         if !all_passed {
             return Err(BucketError::from("System diagnostics failed"));
@@ -146,20 +149,20 @@ impl Doctor {
             let current_dir = std::env::current_dir().map_err(|e| {
                 BucketError::from(format!("Failed to get current directory: {}", e).as_str())
             })?;
-            
+
             match RepositoryConfig::from_file(current_dir) {
-                Ok(config) => {
-                    match config.postgresql_connection {
-                        Some(conn) => {
-                            println!("Using repository configuration");
-                            conn
-                        }
-                        None => {
-                            println!("❌ No PostgreSQL connection configured in repository");
-                            return Err(BucketError::from("No repository PostgreSQL configuration found"));
-                        }
+                Ok(config) => match config.postgresql_connection {
+                    Some(conn) => {
+                        println!("Using repository configuration");
+                        conn
                     }
-                }
+                    None => {
+                        println!("❌ No PostgreSQL connection configured in repository");
+                        return Err(BucketError::from(
+                            "No repository PostgreSQL configuration found",
+                        ));
+                    }
+                },
                 Err(_) => {
                     println!("❌ Not in a Buckets repository or no configuration found");
                     return Err(BucketError::from("Cannot find repository configuration"));
@@ -168,19 +171,19 @@ impl Doctor {
         } else {
             // Use global config
             match GlobalConfig::load() {
-                Ok(config) => {
-                    match config.postgresql_connection {
-                        Some(conn) => {
-                            println!("Using global configuration");
-                            conn
-                        }
-                        None => {
-                            println!("❌ No PostgreSQL connection configured globally");
-                            println!("   Run 'buckets setup' to configure a database connection");
-                            return Err(BucketError::from("No global PostgreSQL configuration found"));
-                        }
+                Ok(config) => match config.postgresql_connection {
+                    Some(conn) => {
+                        println!("Using global configuration");
+                        conn
                     }
-                }
+                    None => {
+                        println!("❌ No PostgreSQL connection configured globally");
+                        println!("   Run 'buckets setup' to configure a database connection");
+                        return Err(BucketError::from(
+                            "No global PostgreSQL configuration found",
+                        ));
+                    }
+                },
                 Err(_) => {
                     println!("❌ No global configuration found");
                     println!("   Run 'buckets setup' to create global configuration");
@@ -194,15 +197,16 @@ impl Doctor {
         println!("Testing connection: {}", display_conn);
 
         let start = Instant::now();
-        
+
         let schema_result = RuntimeManager::block_on(async {
-            self.test_postgresql_connection_and_schema(&connection_string).await
+            self.test_postgresql_connection_and_schema(&connection_string)
+                .await
         })?;
 
         let duration = start.elapsed();
         println!("✅ Database connection successful");
         println!("   Connection time: {}ms", duration.as_millis());
-        
+
         // Display schema validation results
         self.display_schema_results(&schema_result)?;
 
@@ -215,13 +219,11 @@ impl Doctor {
             let current_dir = std::env::current_dir().map_err(|e| {
                 BucketError::from(format!("Failed to get current directory: {}", e).as_str())
             })?;
-            
+
             match RepositoryConfig::from_file(current_dir) {
-                Ok(config) => {
-                    config.postgresql_connection.ok_or_else(|| {
-                        BucketError::from("No repository PostgreSQL configuration found")
-                    })?
-                }
+                Ok(config) => config.postgresql_connection.ok_or_else(|| {
+                    BucketError::from("No repository PostgreSQL configuration found")
+                })?,
                 Err(_) => {
                     return Err(BucketError::from("Cannot find repository configuration"));
                 }
@@ -229,11 +231,9 @@ impl Doctor {
         } else {
             // Use global config
             match GlobalConfig::load() {
-                Ok(config) => {
-                    config.postgresql_connection.ok_or_else(|| {
-                        BucketError::from("No global PostgreSQL configuration found")
-                    })?
-                }
+                Ok(config) => config
+                    .postgresql_connection
+                    .ok_or_else(|| BucketError::from("No global PostgreSQL configuration found"))?,
                 Err(_) => {
                     return Err(BucketError::from("No global configuration found"));
                 }
@@ -241,9 +241,10 @@ impl Doctor {
         };
 
         let start = Instant::now();
-        
+
         let schema_result = RuntimeManager::block_on(async {
-            self.test_postgresql_connection_and_schema(&connection_string).await
+            self.test_postgresql_connection_and_schema(&connection_string)
+                .await
         })?;
 
         let duration = start.elapsed();
@@ -266,38 +267,40 @@ impl Doctor {
         Ok(result)
     }
 
-
-    async fn test_postgresql_connection_and_schema(&self, connection_string: &str) -> Result<serde_json::Value, BucketError> {
+    async fn test_postgresql_connection_and_schema(
+        &self,
+        connection_string: &str,
+    ) -> Result<serde_json::Value, BucketError> {
         // Parse connection string into database config
         let db_config = DatabaseConfig::from_url(connection_string)?;
-        
+
         // Create connection configuration
         let mut cfg = Config::new();
-        
+
         cfg.host = Some(db_config.host);
         cfg.port = Some(db_config.port);
         cfg.user = Some(db_config.username);
         cfg.password = db_config.password;
         cfg.dbname = Some(db_config.database);
-        
+
         // Set connection timeout
         cfg.connect_timeout = Some(Duration::from_secs(10));
-        
+
         // Create pool and test connection
         let pool = cfg.create_pool(Some(Runtime::Tokio1), NoTls).map_err(|e| {
             BucketError::from(format!("Failed to create connection pool: {}", e).as_str())
         })?;
-        
+
         // Test the connection
         let client = pool.get().await.map_err(|e| {
             BucketError::from(format!("Failed to connect to PostgreSQL database: {}", e).as_str())
         })?;
-        
+
         // Try to execute a simple query
         client.execute("SELECT 1", &[]).await.map_err(|e| {
             BucketError::from(format!("Failed to execute test query: {}", e).as_str())
         })?;
-        
+
         // Validate database schema
         self.validate_database_schema(&client).await
     }
@@ -306,30 +309,34 @@ impl Doctor {
         println!();
         println!("Database Schema Validation");
         println!("--------------------------");
-        
-        let overall_status = schema_result["overall_status"].as_str().unwrap_or("unknown");
+
+        let overall_status = schema_result["overall_status"]
+            .as_str()
+            .unwrap_or("unknown");
         let empty_map = serde_json::Map::new();
         let tables = schema_result["tables"].as_object().unwrap_or(&empty_map);
-        
+
         for (table_name, table_info) in tables {
             let status = table_info["status"].as_str().unwrap_or("unknown");
             let exists = table_info["exists"].as_bool().unwrap_or(false);
-            
+
             if exists {
                 let status_icon = if status == "passed" { "✅" } else { "❌" };
                 println!("{} Table '{}': {}", status_icon, table_name, status);
-                
+
                 if let Some(missing_columns) = table_info["missing_columns"].as_array() {
                     if !missing_columns.is_empty() {
                         println!("   Missing columns:");
                         for missing in missing_columns {
-                            if let (Some(name), Some(col_type)) = (missing["name"].as_str(), missing["type"].as_str()) {
+                            if let (Some(name), Some(col_type)) =
+                                (missing["name"].as_str(), missing["type"].as_str())
+                            {
                                 println!("   - {} ({})", name, col_type);
                             }
                         }
                     }
                 }
-                
+
                 if let Some(constraints) = table_info["constraints"].as_array() {
                     if !constraints.is_empty() {
                         println!("   Foreign key constraints: {}", constraints.len());
@@ -342,7 +349,7 @@ impl Doctor {
                 }
             }
         }
-        
+
         println!();
         if overall_status == "passed" {
             println!("✅ Database schema validation passed");
@@ -350,7 +357,7 @@ impl Doctor {
             println!("❌ Database schema validation failed");
             println!("   Consider running database migrations to create/update tables");
         }
-        
+
         Ok(())
     }
 
@@ -362,13 +369,21 @@ impl Doctor {
         println!("Testing NTP server: {}", ntp_server);
 
         let start = Instant::now();
-        
+
         // Resolve the NTP server address
         let addr = format!("{}:123", ntp_server)
             .to_socket_addrs()
-            .map_err(|e| BucketError::from(format!("Failed to resolve NTP server '{}': {}", ntp_server, e).as_str()))?
+            .map_err(|e| {
+                BucketError::from(
+                    format!("Failed to resolve NTP server '{}': {}", ntp_server, e).as_str(),
+                )
+            })?
             .next()
-            .ok_or_else(|| BucketError::from(format!("No address found for NTP server '{}'", ntp_server).as_str()))?;
+            .ok_or_else(|| {
+                BucketError::from(
+                    format!("No address found for NTP server '{}'", ntp_server).as_str(),
+                )
+            })?;
 
         // Query NTP server
         let _result = request(addr).map_err(|e| {
@@ -376,10 +391,10 @@ impl Doctor {
         })?;
 
         let duration = start.elapsed();
-        
+
         println!("✅ NTP server reachable");
         println!("   Response time: {}ms", duration.as_millis());
-        
+
         // Calculate basic info (NTP packet doesn't have offset method in this crate)
         // We can calculate basic offset from transmit and receive times
         println!("   NTP query successful");
@@ -390,13 +405,21 @@ impl Doctor {
     fn test_ntp_server_json(&self) -> Result<serde_json::Value, BucketError> {
         let ntp_server = self.get_ntp_server()?;
         let start = Instant::now();
-        
+
         // Resolve the NTP server address
         let addr = format!("{}:123", ntp_server)
             .to_socket_addrs()
-            .map_err(|e| BucketError::from(format!("Failed to resolve NTP server '{}': {}", ntp_server, e).as_str()))?
+            .map_err(|e| {
+                BucketError::from(
+                    format!("Failed to resolve NTP server '{}': {}", ntp_server, e).as_str(),
+                )
+            })?
             .next()
-            .ok_or_else(|| BucketError::from(format!("No address found for NTP server '{}'", ntp_server).as_str()))?;
+            .ok_or_else(|| {
+                BucketError::from(
+                    format!("No address found for NTP server '{}'", ntp_server).as_str(),
+                )
+            })?;
 
         // Query NTP server
         let _result = request(addr).map_err(|e| {
@@ -420,12 +443,10 @@ impl Doctor {
             let current_dir = std::env::current_dir().map_err(|e| {
                 BucketError::from(format!("Failed to get current directory: {}", e).as_str())
             })?;
-            
+
             match RepositoryConfig::from_file(current_dir) {
                 Ok(config) => Ok(config.ntp_server),
-                Err(_) => {
-                    Err(BucketError::from("Cannot find repository configuration"))
-                }
+                Err(_) => Err(BucketError::from("Cannot find repository configuration")),
             }
         } else {
             // Use global config
@@ -458,7 +479,10 @@ impl Doctor {
         }
     }
 
-    async fn validate_database_schema(&self, client: &tokio_postgres::Client) -> Result<serde_json::Value, BucketError> {
+    async fn validate_database_schema(
+        &self,
+        client: &tokio_postgres::Client,
+    ) -> Result<serde_json::Value, BucketError> {
         let mut results = json!({
             "tables": {},
             "overall_status": "passed"
@@ -493,19 +517,28 @@ impl Doctor {
         Ok(results)
     }
 
-    async fn validate_table_structure(&self, client: &tokio_postgres::Client, table_name: &str) -> Result<serde_json::Value, BucketError> {
+    async fn validate_table_structure(
+        &self,
+        client: &tokio_postgres::Client,
+        table_name: &str,
+    ) -> Result<serde_json::Value, BucketError> {
         // Check if table exists
         let exists_query = "SELECT EXISTS (
             SELECT 1 FROM information_schema.tables 
             WHERE table_schema = 'public' AND table_name = $1
         )";
-        
-        let row = client.query_one(exists_query, &[&table_name]).await.map_err(|e| {
-            BucketError::from(format!("Failed to check if table '{}' exists: {}", table_name, e).as_str())
-        })?;
-        
+
+        let row = client
+            .query_one(exists_query, &[&table_name])
+            .await
+            .map_err(|e| {
+                BucketError::from(
+                    format!("Failed to check if table '{}' exists: {}", table_name, e).as_str(),
+                )
+            })?;
+
         let table_exists: bool = row.get(0);
-        
+
         if !table_exists {
             return Ok(json!({
                 "status": "failed",
@@ -521,10 +554,15 @@ impl Doctor {
             WHERE table_schema = 'public' AND table_name = $1
             ORDER BY ordinal_position
         ";
-        
-        let rows = client.query(columns_query, &[&table_name]).await.map_err(|e| {
-            BucketError::from(format!("Failed to get columns for table '{}': {}", table_name, e).as_str())
-        })?;
+
+        let rows = client
+            .query(columns_query, &[&table_name])
+            .await
+            .map_err(|e| {
+                BucketError::from(
+                    format!("Failed to get columns for table '{}': {}", table_name, e).as_str(),
+                )
+            })?;
 
         let mut columns = Vec::new();
         for row in rows {
@@ -532,7 +570,7 @@ impl Doctor {
             let data_type: String = row.get(1);
             let is_nullable: String = row.get(2);
             let column_default: Option<String> = row.get(3);
-            
+
             columns.push(json!({
                 "name": column_name,
                 "type": data_type,
@@ -544,11 +582,11 @@ impl Doctor {
         // Check for expected columns based on table
         let expected_columns = self.get_expected_columns(table_name);
         let mut missing_columns = Vec::new();
-        
+
         for expected in &expected_columns {
             let expected_name = expected["name"].as_str().unwrap_or("");
             let expected_type = expected["type"].as_str().unwrap_or("").to_lowercase();
-            
+
             if !columns.iter().any(|col| {
                 let col_name = col["name"].as_str().unwrap_or("");
                 let col_type = col["type"].as_str().unwrap_or("").to_lowercase();
@@ -574,9 +612,15 @@ impl Doctor {
                     AND tc.table_name = $1
                     AND tc.table_schema = 'public'
             ";
-            
+
             let fk_rows = client.query(fk_query, &[&table_name]).await.map_err(|e| {
-                BucketError::from(format!("Failed to get foreign keys for table '{}': {}", table_name, e).as_str())
+                BucketError::from(
+                    format!(
+                        "Failed to get foreign keys for table '{}': {}",
+                        table_name, e
+                    )
+                    .as_str(),
+                )
             })?;
 
             for row in fk_rows {
@@ -584,7 +628,7 @@ impl Doctor {
                 let column_name: String = row.get(1);
                 let referenced_table: String = row.get(2);
                 let referenced_column: String = row.get(3);
-                
+
                 constraints.push(json!({
                     "name": constraint_name,
                     "column": column_name,
@@ -614,21 +658,21 @@ impl Doctor {
                 json!({"name": "id", "type": "uuid"}),
                 json!({"name": "name", "type": "text"}),
                 json!({"name": "path", "type": "text"}),
-                json!({"name": "created_at", "type": "timestamp"})
+                json!({"name": "created_at", "type": "timestamp"}),
             ],
             "commits" => vec![
                 json!({"name": "id", "type": "uuid"}),
                 json!({"name": "bucket_id", "type": "uuid"}),
                 json!({"name": "message", "type": "text"}),
-                json!({"name": "created_at", "type": "timestamp"})
+                json!({"name": "created_at", "type": "timestamp"}),
             ],
             "files" => vec![
                 json!({"name": "id", "type": "uuid"}),
                 json!({"name": "commit_id", "type": "uuid"}),
                 json!({"name": "file_path", "type": "text"}),
-                json!({"name": "hash", "type": "text"})
+                json!({"name": "hash", "type": "text"}),
             ],
-            _ => vec![]
+            _ => vec![],
         }
     }
 }

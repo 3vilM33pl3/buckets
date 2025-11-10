@@ -66,7 +66,7 @@ pub struct CliArguments {
 pub struct SharedArguments {
     #[clap(short, long)]
     pub verbose: bool,
-    
+
     #[clap(long)]
     pub json: bool,
 }
@@ -96,7 +96,6 @@ pub struct InitCommand {
     pub external_password: Option<String>,
 }
 
-
 #[derive(Args, Clone)]
 pub struct CreateCommand {
     #[clap(flatten)]
@@ -122,8 +121,12 @@ pub struct RevertCommand {
 
     #[clap(required = true, help = "File path to revert")]
     pub file: String,
-    
-    #[clap(short = 'c', long = "commit", help = "Commit ID to revert from (defaults to most recent)")]
+
+    #[clap(
+        short = 'c',
+        long = "commit",
+        help = "Commit ID to revert from (defaults to most recent)"
+    )]
     pub commit_id: Option<String>,
 }
 
@@ -200,7 +203,7 @@ pub struct SchemaCommand {
 pub struct SetupCommand {
     #[clap(flatten)]
     pub shared: SharedArguments,
-    
+
     #[clap(long, help = "Test the database connection after configuration")]
     pub test_connection: bool,
 }
@@ -209,13 +212,13 @@ pub struct SetupCommand {
 pub struct DoctorCommand {
     #[clap(flatten)]
     pub shared: SharedArguments,
-    
+
     #[clap(long, help = "Skip database connection test")]
     pub skip_database: bool,
-    
+
     #[clap(long, help = "Skip NTP server test")]
     pub skip_ntp: bool,
-    
+
     #[clap(long, help = "Use repository config instead of global config")]
     pub use_repo: bool,
 }

@@ -1,7 +1,7 @@
 use blake3::Hash;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::collections::HashMap;
 use std::cmp::PartialEq;
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::io;
 use std::path::PathBuf;
@@ -502,7 +502,11 @@ mod tests {
 
         // Manually compress the file to simulate stored version
         use crate::utils::compression::compress_file;
-        compress_file(&bucket_path.join("original.txt"), &compressed_path, DEFAULT_COMPRESSION_LEVEL)?;
+        compress_file(
+            &bucket_path.join("original.txt"),
+            &compressed_path,
+            DEFAULT_COMPRESSION_LEVEL,
+        )?;
 
         // Remove original file
         fs::remove_file(bucket_path.join("original.txt"))?;
