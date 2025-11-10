@@ -3,6 +3,7 @@ use crate::commands::BucketCommand;
 use crate::errors::BucketError;
 use crate::postgres_db::DatabaseConfig;
 use crate::utils::config::{GlobalConfig, RepositoryConfig};
+use crate::utils::runtime::RuntimeManager;
 use chrono::Utc;
 use deadpool_postgres::{Config, Runtime};
 use ntp::request;
@@ -194,12 +195,7 @@ impl Doctor {
 
         let start = Instant::now();
         
-        // Test connection using tokio runtime
-        let rt = tokio::runtime::Runtime::new().map_err(|e| {
-            BucketError::from(format!("Failed to create async runtime: {}", e).as_str())
-        })?;
-
-        let schema_result = rt.block_on(async {
+        let schema_result = RuntimeManager::block_on(async {
             self.test_postgresql_connection_and_schema(&connection_string).await
         })?;
 
@@ -246,12 +242,7 @@ impl Doctor {
 
         let start = Instant::now();
         
-        // Test connection using tokio runtime
-        let rt = tokio::runtime::Runtime::new().map_err(|e| {
-            BucketError::from(format!("Failed to create async runtime: {}", e).as_str())
-        })?;
-
-        let schema_result = rt.block_on(async {
+        let schema_result = RuntimeManager::block_on(async {
             self.test_postgresql_connection_and_schema(&connection_string).await
         })?;
 

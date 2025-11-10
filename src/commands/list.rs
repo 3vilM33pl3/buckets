@@ -4,6 +4,7 @@ use crate::data::bucket::Bucket;
 use crate::errors::BucketError;
 use crate::postgres_db::get_database;
 use crate::utils::checks;
+use crate::utils::runtime::RuntimeManager;
 use crate::CURRENT_DIR;
 use log::{debug, info};
 use serde::{Deserialize, Serialize};
@@ -46,12 +47,7 @@ impl BucketCommand for List {
 
         info!("Querying buckets from database");
 
-        // Create async runtime for database operations
-        let rt = tokio::runtime::Runtime::new().map_err(|e| {
-            BucketError::from(format!("Failed to create async runtime: {}", e).as_str())
-        })?;
-
-        let buckets = rt.block_on(self.query_buckets_async())?;
+        let buckets = RuntimeManager::block_on(self.query_buckets_async())?;
         debug!("Found {} buckets", buckets.len());
 
         if self.args.shared.json {

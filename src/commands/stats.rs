@@ -4,6 +4,7 @@ use crate::data::bucket::Bucket;
 use crate::errors::BucketError;
 use crate::postgres_db::get_database;
 use crate::utils::checks;
+use crate::utils::runtime::RuntimeManager;
 use crate::CURRENT_DIR;
 use log::{debug, info};
 use serde::{Deserialize, Serialize};
@@ -49,26 +50,23 @@ impl BucketCommand for Stats {
 
         info!("Gathering repository statistics");
 
-        // Create async runtime for database operations
-        let rt = tokio::runtime::Runtime::new().map_err(|e| {
-            BucketError::from(format!("Failed to create async runtime: {}", e).as_str())
-        })?;
+        let runtime_handle = RuntimeManager::handle()?;
 
-        let buckets = rt.block_on(self.query_buckets_async())?;
+        let buckets = runtime_handle.block_on(self.query_buckets_async())?;
         debug!("Found {} buckets", buckets.len());
 
-        let total_commits = rt.block_on(self.count_total_commits_async())?;
+        let total_commits = runtime_handle.block_on(self.count_total_commits_async())?;
         debug!("Found {} total commits", total_commits);
 
-        let total_files = rt.block_on(self.count_total_files_async())?;
+        let total_files = runtime_handle.block_on(self.count_total_files_async())?;
         debug!("Found {} total files", total_files);
 
         let mut bucket_stats = Vec::new();
         for bucket in &buckets {
-            let commit_count = rt
+            let commit_count = runtime_handle
                 .block_on(self.count_bucket_commits_async(&bucket.id))
                 .unwrap_or(0);
-            let file_count = rt
+            let file_count = runtime_handle
                 .block_on(self.count_bucket_files_async(&bucket.id))
                 .unwrap_or(0);
             bucket_stats.push(BucketStats {

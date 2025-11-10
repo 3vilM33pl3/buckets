@@ -3,6 +3,7 @@ use crate::commands::BucketCommand;
 use crate::data::commit::{Commit as CommitData, CommitStatus, CommittedFile};
 use crate::errors::BucketError;
 use crate::postgres_db::{get_database, DatabaseManager};
+use crate::utils::runtime::RuntimeManager;
 use crate::utils::utils::{find_files_excluding_top_level_b, hash_file};
 use crate::world::World;
 use async_trait::async_trait;
@@ -140,17 +141,14 @@ impl BucketCommand for Commit {
 
         println!("Current commit: ########################################################## ");
 
-        // Create async runtime for database operations
-        let rt = tokio::runtime::Runtime::new().map_err(|e| {
-            BucketError::from(format!("Failed to create async runtime: {}", e).as_str())
-        })?;
+        let runtime_handle = RuntimeManager::handle()?;
 
         // Load the previous commit, if it exists
-        match rt.block_on(Commit::load_last_commit_async(bucket.id)) {
+        match runtime_handle.block_on(Commit::load_last_commit_async(bucket.id)) {
             Ok(None) => {
                 // There is no previous commit; Process all files in the current commit
                 println!("No previous commit found. Processing all files. ########################################################## ");
-                rt.block_on(self.process_files_async(
+                runtime_handle.block_on(self.process_files_async(
                     bucket.id,
                     &world.work_dir,
                     &current_commit.files,
@@ -163,7 +161,7 @@ impl BucketCommand for Commit {
                 if let Some(changes) = current_commit.compare(&previous_commit) {
                     // Process the files that have changed
                     println!("Processing files that have changed. ########################################################## ");
-                    rt.block_on(self.process_files_async(
+                    runtime_handle.block_on(self.process_files_async(
                         bucket.id,
                         &world.work_dir,
                         &changes,

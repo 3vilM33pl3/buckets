@@ -5,6 +5,7 @@ use crate::database::{initialize_database_with_config_async, save_database_confi
 use crate::errors::BucketError;
 use crate::postgres_db::DatabaseConfig;
 use crate::utils::checks;
+use crate::utils::runtime::RuntimeManager;
 use crate::CURRENT_DIR;
 use log::debug;
 use std::io::Write;
@@ -154,12 +155,7 @@ impl Init {
         // Save the database configuration
         save_database_config(repo_path, &config)?;
 
-        // Create a tokio runtime for async database operations
-        let rt = tokio::runtime::Runtime::new().map_err(|e| {
-            BucketError::from(format!("Failed to create async runtime: {}", e).as_str())
-        })?;
-
-        rt.block_on(async { initialize_database_with_config_async(config).await })
+        RuntimeManager::block_on(initialize_database_with_config_async(config))
     }
 
     /// Get database configuration from various sources in priority order

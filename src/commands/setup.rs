@@ -3,6 +3,7 @@ use crate::commands::BucketCommand;
 use crate::errors::BucketError;
 use crate::postgres_db::DatabaseConfig;
 use crate::utils::config::GlobalConfig;
+use crate::utils::runtime::RuntimeManager;
 use deadpool_postgres::{Config, Runtime};
 use std::io::{self, Write};
 use std::time::Duration;
@@ -138,12 +139,7 @@ impl Setup {
                          conn_str.clone()
                      });
             
-            // Test connection using tokio runtime
-            let rt = tokio::runtime::Runtime::new().map_err(|e| {
-                BucketError::from(format!("Failed to create async runtime: {}", e).as_str())
-            })?;
-            
-            rt.block_on(async {
+            RuntimeManager::block_on(async {
                 self.test_postgresql_connection(conn_str).await
             })?;
             

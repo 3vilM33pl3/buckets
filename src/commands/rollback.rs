@@ -9,6 +9,7 @@ use crate::data::bucket::{Bucket, BucketTrait};
 use crate::data::commit::CommitStatus;
 use crate::errors::BucketError;
 use crate::utils::checks;
+use crate::utils::runtime::RuntimeManager;
 use crate::utils::utils::{find_bucket_path, hash_file};
 use crate::CURRENT_DIR;
 use log::error;
@@ -54,16 +55,21 @@ fn rollback_single_file(bucket_path: &PathBuf, file: &PathBuf) -> Result<(), Buc
 
     let bucket = Bucket::from_meta_data(bucket_path)?;
 
-    // Create async runtime for database operations
-    let rt = tokio::runtime::Runtime::new()
-        .map_err(|e| BucketError::from(format!("Failed to create async runtime: {}", e).as_str()))?;
-    
-    match rt.block_on(Commit::load_last_commit_async(bucket.id)) {
-        Ok(None) => Err(BucketError::from(Error::new(
+    let previous_commit = RuntimeManager::block_on(Commit::load_last_commit_async(bucket.id))
+        .map_err(|err| {
+            error!("Failed to load previous commit: {}", err);
+            BucketError::from(Error::new(
+                ErrorKind::Other,
+                "Failed to load previous commit.",
+            ))
+        })?;
+
+    match previous_commit {
+        None => Err(BucketError::from(Error::new(
             ErrorKind::NotFound,
             "No previous commit found.",
         ))),
-        Ok(Some(previous_commit)) => {
+        Some(previous_commit) => {
             let file_name = file
                 .to_str()
                 .ok_or_else(|| BucketError::from("Invalid UTF-8 path."))?; // Handle UTF-8 conversion error
@@ -85,13 +91,6 @@ fn rollback_single_file(bucket_path: &PathBuf, file: &PathBuf) -> Result<(), Buc
                 }
             }
         }
-        Err(_) => {
-            error!("Failed to load previous commit.");
-            Err(BucketError::from(Error::new(
-                ErrorKind::Other,
-                "Failed to load previous commit.",
-            )))
-        }
     }
 }
 
@@ -104,18 +103,23 @@ fn rollback_all(bucket_path: &PathBuf) -> Result<(), BucketError> {
         return Ok(());
     }
 
-    // Create async runtime for database operations
-    let rt = tokio::runtime::Runtime::new()
-        .map_err(|e| BucketError::from(format!("Failed to create async runtime: {}", e).as_str()))?;
+    let previous_commit = RuntimeManager::block_on(Commit::load_last_commit_async(bucket.id))
+        .map_err(|err| {
+            error!("Failed to load previous commit: {}", err);
+            BucketError::from(Error::new(
+                ErrorKind::Other,
+                "Failed to load previous commit.",
+            ))
+        })?;
 
-    match rt.block_on(Commit::load_last_commit_async(bucket.id)) {
-        Ok(None) => {
+    match previous_commit {
+        None => {
             return Err(BucketError::from(Error::new(
                 ErrorKind::NotFound,
                 "No previous commit found.",
             )));
         }
-        Ok(Some(previous_commit)) => {
+        Some(previous_commit) => {
             let changes = bucket_files.compare(&previous_commit).ok_or_else(|| {
                 BucketError::from(Error::new(ErrorKind::Other, "Failed to compare files."))
             })?;
@@ -138,13 +142,6 @@ fn rollback_all(bucket_path: &PathBuf) -> Result<(), BucketError> {
                         error!("Failed to restore file: {}", e);
                     }
                 });
-        }
-        Err(_) => {
-            error!("Failed to load previous commit.");
-            return Err(BucketError::from(Error::new(
-                ErrorKind::Other,
-                "Failed to load previous commit.",
-            )));
         }
     }
 
@@ -196,7 +193,7 @@ url_check = "api.ipify.org"
         fs::write(&config_path, config_content)?;
 
         // Skip database initialization in tests as embedded is no longer supported
-        // Create minimal directory structure that validates as a repository  
+        // Create minimal directory structure that validates as a repository
         eprintln!("Note: Skipping database initialization in test as embedded database is no longer supported");
 
         // Create bucket structure
@@ -316,7 +313,7 @@ url_check = "api.ipify.org"
             eprintln!("Skipping database-dependent test due to network/environment issues");
             return;
         }
-        
+
         let (_temp_dir, _repo_path, bucket_path) = match create_test_repo_and_bucket_structure() {
             Ok(result) => result,
             Err(e) => {
@@ -353,14 +350,19 @@ url_check = "api.ipify.org"
                 } else {
                     // When database initialization fails, we might get Other error kind
                     eprintln!("Database initialization failed, got IoError: {}", err);
-                    assert!(err.to_string().contains("Failed to load previous commit") || 
-                           err.to_string().contains("database") ||
-                           err.to_string().contains("PostgreSQL"));
+                    assert!(
+                        err.to_string().contains("Failed to load previous commit")
+                            || err.to_string().contains("database")
+                            || err.to_string().contains("PostgreSQL")
+                    );
                 }
             }
             _ => {
                 // When there are other database-related failures, just ensure we get an error
-                eprintln!("Expected IoError, but got different error due to database issues: {:?}", error);
+                eprintln!(
+                    "Expected IoError, but got different error due to database issues: {:?}",
+                    error
+                );
                 // For now, just ensure we get some kind of error when database fails
             }
         }
@@ -374,7 +376,7 @@ url_check = "api.ipify.org"
             eprintln!("Skipping database-dependent test due to network/environment issues");
             return;
         }
-        
+
         let (_temp_dir, _repo_path, bucket_path) = match create_test_repo_and_bucket_structure() {
             Ok(result) => result,
             Err(e) => {
@@ -520,9 +522,9 @@ url_check = "api.ipify.org"
 
     fn should_skip_database_tests() -> bool {
         // Check for environment variables that indicate we should skip database tests
-        std::env::var("BUCKETS_SKIP_DB_TESTS").is_ok() || 
-        std::env::var("NO_NETWORK").is_ok() ||
-        std::env::var("CI").is_ok()
+        std::env::var("BUCKETS_SKIP_DB_TESTS").is_ok()
+            || std::env::var("NO_NETWORK").is_ok()
+            || std::env::var("CI").is_ok()
     }
 
     #[test]
@@ -532,7 +534,7 @@ url_check = "api.ipify.org"
             eprintln!("Skipping database-dependent test due to network/environment issues");
             return;
         }
-        
+
         let (_temp_dir, _repo_path, bucket_path) = match create_test_repo_and_bucket_structure() {
             Ok(result) => result,
             Err(e) => {
@@ -563,7 +565,7 @@ url_check = "api.ipify.org"
             eprintln!("Skipping database-dependent test due to network/environment issues");
             return;
         }
-        
+
         let (_temp_dir, _repo_path, bucket_path) = match create_test_repo_and_bucket_structure() {
             Ok(result) => result,
             Err(e) => {
@@ -601,14 +603,19 @@ url_check = "api.ipify.org"
                 } else {
                     // When database initialization fails, we might get Other error kind
                     eprintln!("Database initialization failed, got IoError: {}", err);
-                    assert!(err.to_string().contains("Failed to load previous commit") || 
-                           err.to_string().contains("database") ||
-                           err.to_string().contains("PostgreSQL"));
+                    assert!(
+                        err.to_string().contains("Failed to load previous commit")
+                            || err.to_string().contains("database")
+                            || err.to_string().contains("PostgreSQL")
+                    );
                 }
             }
             _ => {
                 // When there are other database-related failures, just ensure we get an error
-                eprintln!("Expected IoError, but got different error due to database issues: {:?}", error);
+                eprintln!(
+                    "Expected IoError, but got different error due to database issues: {:?}",
+                    error
+                );
                 // For now, just ensure we get some kind of error when database fails
             }
         }

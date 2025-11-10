@@ -5,6 +5,7 @@ use crate::errors::BucketError;
 use crate::postgres_db::get_database;
 use crate::utils::checks;
 use crate::utils::checks::{find_directory_in_parents, is_valid_bucket};
+use crate::utils::runtime::RuntimeManager;
 use crate::CURRENT_DIR;
 use tokio_postgres::types::ToSql;
 use uuid::Uuid;
@@ -46,18 +47,12 @@ impl BucketCommand for Create {
         }
         .to_path_buf();
 
-        // Create async runtime for database operations
-        let rt = tokio::runtime::Runtime::new().map_err(|e| {
-            BucketError::from(format!("Failed to create async runtime: {}", e).as_str())
-        })?;
-
-        let bucket_id = rt.block_on(async {
+        let bucket_id = RuntimeManager::block_on(async {
             let db = get_database().await?;
 
-            let path_str =
-                relative_path
-                    .to_str()
-                    .ok_or_else(|| BucketError::from("Invalid path string"))?;
+            let path_str = relative_path
+                .to_str()
+                .ok_or_else(|| BucketError::from("Invalid path string"))?;
 
             let params: Vec<&(dyn ToSql + Sync)> = vec![bucket_name, &path_str];
 
