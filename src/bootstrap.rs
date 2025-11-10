@@ -53,7 +53,7 @@ pub fn bootstrap_database() -> Result<(), BucketError> {
         }
         Err(err) => {
             // If the database is already initialized we can treat this as success.
-            if err.to_string().contains("Database already initialized") {
+            if matches!(err, BucketError::DatabaseAlreadyInitialized) {
                 BOOTSTRAPPED.store(true, Ordering::SeqCst);
                 Ok(())
             } else {
