@@ -4,6 +4,7 @@ use crate::data::bucket::{Bucket, BucketTrait};
 use crate::errors::BucketError;
 use crate::postgres_db::get_database;
 use crate::utils::checks;
+use crate::utils::runtime::RuntimeManager;
 use crate::utils::utils::find_bucket_path;
 use crate::CURRENT_DIR;
 use log::{debug, error};
@@ -41,13 +42,8 @@ impl BucketCommand for Revert {
 
         let file_path = self.args.file.clone();
 
-        // Create async runtime for database operations
-        let rt = tokio::runtime::Runtime::new().map_err(|e| {
-            BucketError::from(format!("Failed to create async runtime: {}", e).as_str())
-        })?;
-
         // Get the file's hash from the specified commit or the last commit
-        let hash = rt.block_on(async {
+        let hash = RuntimeManager::block_on(async {
             let db = get_database().await?;
 
             let relative_path = PathBuf::from(&file_path)

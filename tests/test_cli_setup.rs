@@ -36,7 +36,10 @@ mod tests {
     fn test_cli_setup_json_outputs_existing_config() {
         let temp_home = tempdir().expect("failed to create temp home");
         let config_path = temp_home.path().join(".buckets_config.toml");
-        let config_content = r#"ntp_server = "time.google.com"
+        let config_content = r#"
+ntp_server = "time.google.com"
+postgresql_connection = "postgresql://user:pass@localhost:5432/buckets"
+"#;
         fs::write(&config_path, config_content).expect("failed to write config file");
 
         let mut cmd = Command::cargo_bin("buckets").expect("failed to run command");

@@ -2,6 +2,8 @@ use crate::errors::BucketError;
 use blake3::{Hash, Hasher};
 use std::fs::File;
 use std::io::Read;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 use walkdir::{DirEntry, WalkDir};
@@ -38,6 +40,9 @@ fn make_relative_path(path: &Path, base: &Path) -> Option<PathBuf> {
 }
 
 pub(crate) fn hash_file<P: AsRef<Path>>(path: P) -> io::Result<Hash> {
+    let path = path.as_ref();
+    ensure_file_readable(path)?;
+
     let mut file = File::open(path)?;
     let mut hasher = Hasher::new();
     let mut buffer = [0; 1024]; // Buffer for reading chunks
@@ -51,6 +56,27 @@ pub(crate) fn hash_file<P: AsRef<Path>>(path: P) -> io::Result<Hash> {
     }
 
     Ok(hasher.finalize())
+}
+
+fn ensure_file_readable(path: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        let metadata = fs::metadata(path)?;
+        let mode = metadata.permissions().mode();
+        if (mode & 0o444) == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!("File is not readable: {}", path.display()),
+            ));
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = fs::metadata(path)?;
+    }
+
+    Ok(())
 }
 
 pub fn find_directory_in_parents(start_path: &Path, target_dir_name: &str) -> Option<PathBuf> {

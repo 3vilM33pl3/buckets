@@ -84,7 +84,7 @@ fn parse_database_config(content: &str) -> Result<DatabaseConfig, BucketError> {
 /// Save database configuration to file
 pub fn save_database_config(repo_path: &Path, config: &DatabaseConfig) -> Result<(), BucketError> {
     let buckets_dir = repo_path.join(".buckets");
-    std::fs::create_dir_all(&buckets_dir).map_err(|e| BucketError::from(e))?;
+    std::fs::create_dir_all(&buckets_dir)?;
     let config_file = buckets_dir.join("db_config.toml");
 
     let mut content = String::from("type = \"external\"\n");

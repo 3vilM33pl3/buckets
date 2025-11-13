@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use crate::args::HistoryCommand;
 use crate::errors::BucketError;
 use crate::postgres_db::get_database;
+use crate::utils::runtime::RuntimeManager;
 use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -41,12 +42,7 @@ impl CommitRecord {
 pub fn execute(command: HistoryCommand) -> Result<(), BucketError> {
     let current_dir = std::env::current_dir()?;
 
-    // Create async runtime for database operations
-    let rt = tokio::runtime::Runtime::new().map_err(|e| {
-        BucketError::from(format!("Failed to create async runtime: {}", e).as_str())
-    })?;
-
-    let commits = rt.block_on(fetch_commit_history_async(&current_dir))?;
+    let commits = RuntimeManager::block_on(fetch_commit_history_async(&current_dir))?;
 
     if command.shared.json {
         let output = HistoryOutput { commits };

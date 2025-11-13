@@ -215,7 +215,7 @@ pub async fn init_database(config: DatabaseConfig) -> Result<(), BucketError> {
 
     let mut slot = DATABASE.lock().await;
     if slot.is_some() {
-        return Err(BucketError::from("Database already initialized"));
+        return Err(BucketError::DatabaseAlreadyInitialized);
     }
     *slot = Some(manager);
 
@@ -286,12 +286,9 @@ async fn initialize_database_from_env() -> Result<(), BucketError> {
     let config = DatabaseConfig::from_env()?;
     match init_database(config).await {
         Ok(_) => Ok(()),
-        Err(err) => {
-            if err.to_string().contains("Database already initialized") {
-                Ok(())
-            } else {
-                Err(err)
-            }
-        }
+        Err(err) => match err {
+            BucketError::DatabaseAlreadyInitialized => Ok(()),
+            other => Err(other),
+        },
     }
 }

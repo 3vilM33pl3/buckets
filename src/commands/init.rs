@@ -5,10 +5,11 @@ use crate::database::{initialize_database_with_config_async, save_database_confi
 use crate::errors::BucketError;
 use crate::postgres_db::DatabaseConfig;
 use crate::utils::checks;
+use crate::utils::runtime::RuntimeManager;
 use crate::CURRENT_DIR;
 use log::debug;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::{fs, io};
 
 /// Initialize a new bucket repository
@@ -41,6 +42,41 @@ impl BucketCommand for Init {
 }
 
 impl Init {
+    fn resolve_config_location(&self, location: &Path) -> Result<PathBuf, BucketError> {
+        let base_dir = CURRENT_DIR.with(|dir| dir.clone());
+        let resolved_location = if location.is_absolute() {
+            location.to_path_buf()
+        } else {
+            base_dir.join(location)
+        };
+
+        let temp_dir = std::env::temp_dir();
+        if !(resolved_location.starts_with(&base_dir) || resolved_location.starts_with(&temp_dir)) {
+            return Err(BucketError::IoError(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!(
+                    "Configuration directory must be within {} or {}",
+                    base_dir.display(),
+                    temp_dir.display()
+                ),
+            )));
+        }
+
+        if let Some(parent) = resolved_location.parent() {
+            if !parent.exists() {
+                return Err(BucketError::IoError(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!(
+                        "Configuration directory parent does not exist: {}",
+                        parent.display()
+                    ),
+                )));
+            }
+        }
+
+        Ok(resolved_location)
+    }
+
     fn create_repo(&self, repo_name: &str, repo_location: &Path) -> Result<(), BucketError> {
         let repo_path = repo_location.join(repo_name);
         let repo_buckets_path = repo_path.join(".buckets");
@@ -57,6 +93,8 @@ impl Init {
     }
 
     pub fn create_config_file(&self, location: &Path) -> Result<(), BucketError> {
+        let resolved_location = self.resolve_config_location(location)?;
+
         // Start with default configuration
         let mut config = Config {
             ntp_server: "pool.ntp.org".to_string(),
@@ -74,18 +112,14 @@ impl Init {
         }
 
         // Serialize the configuration to TOML format
-        let toml_content = toml::to_string(&config).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!("Failed to serialize config: {}", e),
-            )
-        })?;
+        let toml_content = toml::to_string(&config)
+            .map_err(|e| io::Error::other(format!("Failed to serialize config: {}", e)))?;
 
         // Create the .buckets directory if it doesn't exist
-        fs::create_dir_all(&location)?;
+        fs::create_dir_all(&resolved_location)?;
 
         // Write the configuration file
-        let config_path = location.join("config");
+        let config_path = resolved_location.join("config");
         let mut file = fs::File::create(&config_path)?;
         file.write_all(toml_content.as_bytes())?;
 
@@ -94,6 +128,8 @@ impl Init {
 
     #[cfg(test)]
     pub fn create_config_file_no_global(&self, location: &Path) -> Result<(), BucketError> {
+        let resolved_location = self.resolve_config_location(location)?;
+
         // Create default configuration without global inheritance
         let config = Config {
             ntp_server: "pool.ntp.org".to_string(),
@@ -103,18 +139,14 @@ impl Init {
         };
 
         // Serialize the configuration to TOML format
-        let toml_content = toml::to_string(&config).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!("Failed to serialize config: {}", e),
-            )
-        })?;
+        let toml_content = toml::to_string(&config)
+            .map_err(|e| io::Error::other(format!("Failed to serialize config: {}", e)))?;
 
         // Create the .buckets directory if it doesnt exist
-        fs::create_dir_all(&location)?;
+        fs::create_dir_all(&resolved_location)?;
 
         // Write the configuration file
-        let config_path = location.join("config");
+        let config_path = resolved_location.join("config");
         let mut file = fs::File::create(&config_path)?;
         file.write_all(toml_content.as_bytes())?;
 
@@ -122,7 +154,21 @@ impl Init {
     }
 
     fn checks(&self, repo_name: &str) -> Result<(), BucketError> {
-        let repo_path = CURRENT_DIR.with(|dir| dir.join(repo_name));
+        let repo_path = {
+            let initial_path = CURRENT_DIR.with(|dir| dir.join(repo_name));
+            if initial_path.exists() {
+                initial_path
+            } else if let Ok(actual_dir) = std::env::current_dir() {
+                let fallback_path = actual_dir.join(repo_name);
+                if fallback_path.exists() {
+                    fallback_path
+                } else {
+                    initial_path
+                }
+            } else {
+                initial_path
+            }
+        };
 
         if repo_path.exists() {
             if repo_path.is_dir() {
@@ -154,12 +200,7 @@ impl Init {
         // Save the database configuration
         save_database_config(repo_path, &config)?;
 
-        // Create a tokio runtime for async database operations
-        let rt = tokio::runtime::Runtime::new().map_err(|e| {
-            BucketError::from(format!("Failed to create async runtime: {}", e).as_str())
-        })?;
-
-        rt.block_on(async { initialize_database_with_config_async(config).await })
+        RuntimeManager::block_on(initialize_database_with_config_async(config))
     }
 
     /// Get database configuration from various sources in priority order
@@ -167,14 +208,22 @@ impl Init {
         // 1. If command line arguments are provided, use them
         if self.args.external_host.is_some() && self.args.external_username.is_some() {
             return Ok(DatabaseConfig {
-                host: self.args.external_host.clone().unwrap(),
+                host: self
+                    .args
+                    .external_host
+                    .clone()
+                    .expect("external host must be provided when username is set"),
                 port: self.args.external_port.unwrap_or(5432),
                 database: self
                     .args
                     .external_database
                     .clone()
                     .unwrap_or_else(|| "buckets".to_string()),
-                username: self.args.external_username.clone().unwrap(),
+                username: self
+                    .args
+                    .external_username
+                    .clone()
+                    .expect("external username must be provided when host is set"),
                 password: self.args.external_password.clone(),
             });
         }
@@ -335,8 +384,14 @@ mod tests {
         let init = create_test_init_command(test_file_name);
         let result = init.checks(test_file_name);
 
-        // Clean up the test file
-        fs::remove_file(&existing_file).expect("Failed to remove test file");
+        // Clean up the test file while tolerating cases where the command under
+        // test already removed it (some checks may canonicalize paths outside
+        // of this test's working directory when other tests run in parallel).
+        if let Err(err) = fs::remove_file(&existing_file) {
+            if err.kind() != std::io::ErrorKind::NotFound {
+                panic!("Failed to remove test file: {err}");
+            }
+        }
 
         assert!(result.is_err());
         match result.unwrap_err() {

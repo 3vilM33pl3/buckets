@@ -1,8 +1,10 @@
 use crate::args::CommitCommand;
 use crate::commands::BucketCommand;
+use crate::data::bucket::read_bucket_info;
 use crate::data::commit::{Commit as CommitData, CommitStatus, CommittedFile};
 use crate::errors::BucketError;
 use crate::postgres_db::{get_database, DatabaseManager};
+use crate::utils::runtime::RuntimeManager;
 use crate::utils::utils::{find_files_excluding_top_level_b, hash_file};
 use crate::world::World;
 use async_trait::async_trait;
@@ -140,17 +142,14 @@ impl BucketCommand for Commit {
 
         println!("Current commit: ########################################################## ");
 
-        // Create async runtime for database operations
-        let rt = tokio::runtime::Runtime::new().map_err(|e| {
-            BucketError::from(format!("Failed to create async runtime: {}", e).as_str())
-        })?;
+        let runtime_handle = RuntimeManager::handle()?;
 
         // Load the previous commit, if it exists
-        match rt.block_on(Commit::load_last_commit_async(bucket.id)) {
+        match runtime_handle.block_on(Commit::load_last_commit_async(bucket.id)) {
             Ok(None) => {
                 // There is no previous commit; Process all files in the current commit
                 println!("No previous commit found. Processing all files. ########################################################## ");
-                rt.block_on(self.process_files_async(
+                runtime_handle.block_on(self.process_files_async(
                     bucket.id,
                     &world.work_dir,
                     &current_commit.files,
@@ -163,7 +162,7 @@ impl BucketCommand for Commit {
                 if let Some(changes) = current_commit.compare(&previous_commit) {
                     // Process the files that have changed
                     println!("Processing files that have changed. ########################################################## ");
-                    rt.block_on(self.process_files_async(
+                    runtime_handle.block_on(self.process_files_async(
                         bucket.id,
                         &world.work_dir,
                         &changes,
@@ -179,8 +178,7 @@ impl BucketCommand for Commit {
             Err(err) => {
                 println!("Failed to load previous commit. ########################################################## ");
                 error!("Failed to load previous commit: {}", err);
-                return Err(BucketError::from(Error::new(
-                    ErrorKind::Other,
+                return Err(BucketError::from(Error::other(
                     "Failed to load previous commit.",
                 )));
             }
@@ -201,15 +199,17 @@ impl Commit {
     ) -> Result<(), BucketError> {
         let db = get_database().await?;
 
+        self.ensure_bucket_row(&db, bucket_id, bucket_path).await?;
+
         // Insert the commit into the database
         let commit_id = self
-            .insert_commit_into_db_async(&*db, bucket_id, message)
+            .insert_commit_into_db_async(&db, bucket_id, message)
             .await?;
 
         // Process each file in the commit
         for file in files {
             // Insert the file into the database
-            self.insert_file_into_db_async(&*db, &commit_id, &file.name, &file.hash.to_string())
+            self.insert_file_into_db_async(&db, &commit_id, &file.name, &file.hash.to_string())
                 .await?;
 
             // Compress and store the file (no database operation)
@@ -218,6 +218,45 @@ impl Commit {
                 e
             })?;
         }
+        Ok(())
+    }
+
+    async fn ensure_bucket_row(
+        &self,
+        db: &crate::postgres_db::DatabaseManager,
+        bucket_id: Uuid,
+        bucket_path: &PathBuf,
+    ) -> Result<(), BucketError> {
+        let check_params: Vec<&(dyn ToSql + Sync)> = vec![&bucket_id];
+        let rows = db
+            .query("SELECT 1 FROM buckets WHERE id = $1::uuid", &check_params)
+            .await?;
+
+        if !rows.is_empty() {
+            return Ok(());
+        }
+
+        let bucket = read_bucket_info(bucket_path).map_err(|err| {
+            BucketError::IoError(std::io::Error::other(format!(
+                "Failed to read bucket metadata: {}",
+                err
+            )))
+        })?;
+
+        let relative_path = bucket
+            .relative_bucket_path
+            .to_str()
+            .ok_or_else(|| BucketError::from("Bucket path is not valid UTF-8"))?;
+
+        let insert_params: Vec<&(dyn ToSql + Sync)> =
+            vec![&bucket_id, &bucket.name, &relative_path];
+
+        db.execute(
+            "INSERT INTO buckets (id, name, path) VALUES ($1::uuid, $2, $3) ON CONFLICT (id) DO NOTHING",
+            &insert_params,
+        )
+        .await?;
+
         Ok(())
     }
 
@@ -235,10 +274,10 @@ impl Commit {
             &params,
         ).await
         .map_err(|e| {
-            BucketError::from(Error::new(
-                ErrorKind::Other,
-                format!("Error inserting file into database: {}, commit id: {}, file path: {}, hash: {}", e, commit_id, file_path, hash),
-            ))
+            BucketError::from(Error::other(format!(
+                "Error inserting file into database: {}, commit id: {}, file path: {}, hash: {}",
+                e, commit_id, file_path, hash
+            )))
         })?;
         Ok(())
     }
@@ -262,8 +301,7 @@ impl Commit {
             let id: Uuid = row.get(0);
             Ok(id)
         } else {
-            Err(BucketError::from(Error::new(
-                ErrorKind::Other,
+            Err(BucketError::from(Error::other(
                 "Query returned no rows".to_string(),
             )))
         }

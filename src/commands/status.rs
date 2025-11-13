@@ -6,6 +6,7 @@ use crate::data::commit::CommitStatus;
 use crate::errors::BucketError;
 use crate::utils::checks;
 use crate::utils::config::RepositoryConfig;
+use crate::utils::runtime::RuntimeManager;
 use crate::utils::utils::find_bucket_path;
 use crate::CURRENT_DIR;
 use log::{debug, error, info};
@@ -102,13 +103,17 @@ impl Status {
             return Ok(());
         }
 
-        // Create async runtime for database operations
-        let rt = tokio::runtime::Runtime::new().map_err(|e| {
-            BucketError::from(format!("Failed to create async runtime: {}", e).as_str())
-        })?;
+        let latest_commit = RuntimeManager::block_on(Commit::load_last_commit_async(bucket.id))
+            .map_err(|err| {
+                error!("Failed to load previous commit: {}", err);
+                BucketError::from(Error::new(
+                    ErrorKind::Other,
+                    "Failed to load previous commit.",
+                ))
+            })?;
 
-        let file_statuses = match rt.block_on(Commit::load_last_commit_async(bucket.id)) {
-            Ok(None) => bucket_files
+        let file_statuses = match latest_commit {
+            None => bucket_files
                 .files
                 .iter()
                 .map(|file| FileStatus {
@@ -116,7 +121,7 @@ impl Status {
                     status: file.status.to_string(),
                 })
                 .collect::<Vec<FileStatus>>(),
-            Ok(Some(previous_commit)) => match bucket_files.compare(&previous_commit) {
+            Some(previous_commit) => match bucket_files.compare(&previous_commit) {
                 Some(changes) => changes
                     .iter()
                     .map(|change| FileStatus {
@@ -133,13 +138,6 @@ impl Status {
                     })
                     .collect::<Vec<FileStatus>>(),
             },
-            Err(_) => {
-                error!("Failed to load previous commit.");
-                return Err(BucketError::from(Error::new(
-                    ErrorKind::Other,
-                    "Failed to load previous commit.",
-                )));
-            }
         };
 
         if self.args.shared.json {
@@ -168,12 +166,7 @@ impl Status {
         })?;
         let repo_config = RepositoryConfig::from_file(current_dir)?;
 
-        // Create async runtime for database operations
-        let rt = tokio::runtime::Runtime::new().map_err(|e| {
-            BucketError::from(format!("Failed to create async runtime: {}", e).as_str())
-        })?;
-
-        let buckets = rt.block_on(self.query_buckets_async())?;
+        let buckets = RuntimeManager::block_on(self.query_buckets_async())?;
 
         if self.args.shared.json {
             let bucket_infos: Vec<BucketInfo> = buckets

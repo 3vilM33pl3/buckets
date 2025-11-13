@@ -3,6 +3,7 @@ pub mod tests {
     use assert_cmd::Command;
     use once_cell::sync::Lazy;
     use std::path::{Path, PathBuf};
+    use std::process::{Command as ProcessCommand, Stdio};
     use std::thread;
     use std::time::Duration;
     use std::{env, fs};
@@ -41,6 +42,16 @@ pub mod tests {
         })
     }
 
+    fn docker_command_available() -> bool {
+        ProcessCommand::new("docker")
+            .arg("--version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    }
+
     #[derive(Debug)]
     #[allow(dead_code)]
     pub struct TestDatabase {
@@ -56,6 +67,13 @@ pub mod tests {
             if docker_tests_disabled() {
                 return Err(
                     "Skipping Docker-dependent test (set BUCKETS_SKIP_DOCKER_TESTS=0 to enable)."
+                        .to_string(),
+                );
+            }
+
+            if !docker_command_available() {
+                return Err(
+                    "Skipping Docker-dependent test because the docker CLI was not found"
                         .to_string(),
                 );
             }

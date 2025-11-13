@@ -1,5 +1,5 @@
-use crate::utils::checks::find_directory_in_parents;
 use crate::errors::BucketError;
+use crate::utils::checks::find_directory_in_parents;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
 use std::io::{Read, Write};
@@ -18,7 +18,10 @@ impl RepositoryConfig {
         Self::from_file_with_global_config(path, true)
     }
 
-    fn from_file_with_global_config(path: PathBuf, use_global: bool) -> Result<Self, std::io::Error> {
+    fn from_file_with_global_config(
+        path: PathBuf,
+        use_global: bool,
+    ) -> Result<Self, std::io::Error> {
         let buckets_repo_path = find_directory_in_parents(&path, ".buckets").ok_or(
             std::io::Error::new(std::io::ErrorKind::NotFound, "No .buckets directory found"),
         )?;
@@ -162,7 +165,10 @@ postgresql_connection = "postgresql://test:test@localhost:5432/test"
         assert_eq!(config.ntp_server, "custom.ntp.server");
         assert_eq!(config.ip_check, "1.1.1.1");
         assert_eq!(config.url_check, "custom.check.url");
-        assert_eq!(config.postgresql_connection, Some("postgresql://test:test@localhost:5432/test".to_string()));
+        assert_eq!(
+            config.postgresql_connection,
+            Some("postgresql://test:test@localhost:5432/test".to_string())
+        );
     }
 
     #[test]
@@ -258,17 +264,18 @@ pub(crate) struct GlobalConfig {
 
 impl GlobalConfig {
     pub(crate) fn config_path() -> Result<PathBuf, BucketError> {
-        let home_dir = dirs::home_dir()
-            .ok_or_else(|| BucketError::IoError(std::io::Error::new(
-                std::io::ErrorKind::NotFound, 
-                "Could not find home directory"
-            )))?;
+        let home_dir = dirs::home_dir().ok_or_else(|| {
+            BucketError::IoError(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Could not find home directory",
+            ))
+        })?;
         Ok(home_dir.join(".buckets_config.toml"))
     }
 
     pub(crate) fn load() -> Result<Self, BucketError> {
         let config_path = Self::config_path()?;
-        
+
         if !config_path.exists() {
             return Ok(Self::default());
         }
@@ -277,26 +284,28 @@ impl GlobalConfig {
         let mut content = String::new();
         file.read_to_string(&mut content)?;
 
-        toml::from_str(&content)
-            .map_err(|e| BucketError::IoError(std::io::Error::new(
+        toml::from_str(&content).map_err(|e| {
+            BucketError::IoError(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("Failed to parse global config: {}", e)
-            )))
+                format!("Failed to parse global config: {}", e),
+            ))
+        })
     }
 
     pub(crate) fn save(&self) -> Result<(), BucketError> {
         let config_path = Self::config_path()?;
-        
+
         // Create parent directory if it doesn't exist
         if let Some(parent) = config_path.parent() {
             fs::create_dir_all(parent)?;
         }
 
-        let content = toml::to_string_pretty(self)
-            .map_err(|e| BucketError::IoError(std::io::Error::new(
+        let content = toml::to_string_pretty(self).map_err(|e| {
+            BucketError::IoError(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("Failed to serialize global config: {}", e)
-            )))?;
+                format!("Failed to serialize global config: {}", e),
+            ))
+        })?;
 
         let mut file = File::create(&config_path)?;
         file.write_all(content.as_bytes())?;

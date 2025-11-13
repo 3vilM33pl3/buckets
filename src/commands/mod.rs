@@ -61,7 +61,7 @@ pub trait BucketCommand {
 #[macro_export]
 macro_rules! impl_command {
     ($command_struct:ident, $args_type:ty, $execute_body:block) => {
-        impl crate::commands::BucketCommand for $command_struct
+        impl $crate::commands::BucketCommand for $command_struct
         where
             $args_type: Clone,
         {
@@ -71,7 +71,7 @@ macro_rules! impl_command {
                 Self { args: args.clone() }
             }
 
-            fn execute(&self) -> Result<(), crate::errors::BucketError> {
+            fn execute(&self) -> Result<(), $crate::errors::BucketError> {
                 $execute_body
             }
         }
@@ -125,6 +125,7 @@ impl CommandDispatcher {
 pub(crate) mod check;
 pub(crate) mod commit;
 pub(crate) mod create;
+pub(crate) mod doctor;
 pub(crate) mod expect;
 pub(crate) mod finalize;
 pub(crate) mod history;
@@ -134,11 +135,10 @@ pub(crate) mod list;
 pub(crate) mod revert;
 pub(crate) mod rollback;
 pub mod schema;
+pub(crate) mod setup;
 pub(crate) mod stash;
 pub(crate) mod stats;
 pub(crate) mod status;
-pub(crate) mod setup;
-pub(crate) mod doctor;
 
 #[cfg(test)]
 mod macro_tests {
@@ -154,9 +154,7 @@ mod macro_tests {
         args: TestArgs,
     }
 
-    crate::impl_command!(TestCommand, TestArgs, {
-        Ok(())
-    });
+    crate::impl_command!(TestCommand, TestArgs, { Ok(()) });
 
     #[test]
     fn impl_command_produces_bucket_command_impl() {

@@ -10,6 +10,8 @@ pub enum BucketError {
     #[error("Database Error: {0}")]
     #[allow(dead_code)] // Used for PostgreSQL migration
     DatabaseError(String),
+    #[error("Database already initialized")]
+    DatabaseAlreadyInitialized,
     #[error("Bucket already exists")]
     BucketAlreadyExists,
     #[error("Repository {0} already exists")]
@@ -37,7 +39,7 @@ pub enum BucketError {
 
 impl From<&str> for BucketError {
     fn from(error: &str) -> Self {
-        BucketError::IoError(io::Error::new(io::ErrorKind::Other, error))
+        BucketError::IoError(io::Error::other(error))
     }
 }
 

@@ -35,7 +35,7 @@ static ARGS: Lazy<CliArguments> = Lazy::new(|| {
 
 // Define the thread-local EXIT variable with initial value of SUCCESS
 thread_local! {
-    static EXIT: Cell<ExitCode> = Cell::new(ExitCode::SUCCESS);
+    static EXIT: Cell<ExitCode> = const { Cell::new(ExitCode::SUCCESS) };
     static CURRENT_DIR: PathBuf = std::env::current_dir().unwrap_or_else(|_| {
         eprintln!("Error: Failed to get current directory. Using current directory as fallback.");
         PathBuf::from(".")
@@ -105,7 +105,7 @@ fn dispatch() -> Result<(), BucketError> {
 
 fn command_requires_repository(command: &Command) -> bool {
     match command {
-        Command::Init(_) | Command::Setup(_) => false,
+        Command::Init(_) | Command::Setup(_) | Command::Schema(_) => false,
         Command::Doctor(args) => args.use_repo,
         _ => true,
     }
