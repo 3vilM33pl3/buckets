@@ -1,5 +1,5 @@
 use crate::utils::checks::validate_path;
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 #[derive(Subcommand)]
@@ -25,6 +25,7 @@ pub enum Command {
     // Global commands
     Setup(SetupCommand),
     Doctor(DoctorCommand),
+    Completions(CompletionsCommand),
 }
 
 impl Command {
@@ -47,6 +48,7 @@ impl Command {
             Command::Schema(cmd) => &cmd.shared,
             Command::Setup(cmd) => &cmd.shared,
             Command::Doctor(cmd) => &cmd.shared,
+            Command::Completions(cmd) => &cmd.shared,
         }
     }
 }
@@ -221,4 +223,22 @@ pub struct DoctorCommand {
 
     #[clap(long, help = "Use repository config instead of global config")]
     pub use_repo: bool,
+}
+
+#[derive(ValueEnum, Clone, Debug)]
+pub enum CompletionShell {
+    Bash,
+    Zsh,
+    Fish,
+    Powershell,
+    Elvish,
+}
+
+#[derive(Args, Clone)]
+pub struct CompletionsCommand {
+    #[clap(flatten)]
+    pub shared: SharedArguments,
+
+    #[clap(value_enum)]
+    pub shell: CompletionShell,
 }

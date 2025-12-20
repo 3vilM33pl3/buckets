@@ -98,6 +98,9 @@ fn dispatch() -> Result<(), BucketError> {
         // Global commands
         Command::Setup(command) => commands::setup::Setup::new(command).execute()?,
         Command::Doctor(command) => commands::doctor::Doctor::new(command).execute()?,
+        Command::Completions(command) => {
+            commands::completions::Completions::new(command).execute()?
+        }
     }
 
     Ok(())
@@ -105,7 +108,9 @@ fn dispatch() -> Result<(), BucketError> {
 
 fn command_requires_repository(command: &Command) -> bool {
     match command {
-        Command::Init(_) | Command::Setup(_) | Command::Schema(_) => false,
+        Command::Init(_) | Command::Setup(_) | Command::Schema(_) | Command::Completions(_) => {
+            false
+        }
         Command::Doctor(args) => args.use_repo,
         _ => true,
     }
