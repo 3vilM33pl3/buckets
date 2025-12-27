@@ -160,7 +160,10 @@ The setup command creates and manages a configuration file at:
 ### File Format
 
 ```toml
+[network]
 ntp_server = "time.google.com"
+
+[database]
 postgresql_connection = "postgresql://user:pass@localhost:5432/buckets"
 ```
 
@@ -168,8 +171,8 @@ postgresql_connection = "postgresql://user:pass@localhost:5432/buckets"
 
 | Field | Type | Description | Required |
 |-------|------|-------------|----------|
-| `ntp_server` | String | NTP server hostname or IP | Yes |
-| `postgresql_connection` | String | PostgreSQL connection string | No |
+| `network.ntp_server` | String | NTP server hostname or IP | Yes |
+| `database.postgresql_connection` | String | PostgreSQL connection string | No |
 
 ## Integration with Repositories
 
@@ -195,7 +198,7 @@ buckets init my_project
 # 3. Repository automatically inherits global settings
 cd my_project
 cat .buckets/config
-# Will show ntp_server = "time.company.com"
+# Will show network.ntp_server = "time.company.com"
 ```
 
 ## Command Behavior
@@ -384,18 +387,25 @@ The setup command respects certain environment variables:
 
 **Minimal Configuration:**
 ```toml
+[network]
 ntp_server = "pool.ntp.org"
 ```
 
 **Full Configuration:**
 ```toml
+[network]
 ntp_server = "time.google.com"
+
+[database]
 postgresql_connection = "postgresql://buckets:secret@db.example.com:5432/buckets_prod"
 ```
 
 **Corporate Environment:**
 ```toml
+[network]
 ntp_server = "ntp.company.internal"
+
+[database]
 postgresql_connection = "postgresql://app_user:app_pass@db.company.internal:5432/buckets"
 ```
 

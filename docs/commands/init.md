@@ -139,6 +139,7 @@ my-project/
 #### `.buckets/config`
 Repository configuration in TOML format:
 ```toml
+[network]
 ntp_server = "pool.ntp.org"
 ip_check = "8.8.8.8"
 url_check = "api.ipify.org"

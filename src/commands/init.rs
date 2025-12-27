@@ -97,17 +97,21 @@ impl Init {
 
         // Start with default configuration
         let mut config = Config {
-            ntp_server: "pool.ntp.org".to_string(),
-            ip_check: "8.8.8.8".to_string(),
-            url_check: "api.ipify.org".to_string(),
-            postgresql_connection: None,
+            network: crate::config::NetworkConfig {
+                ntp_server: "pool.ntp.org".to_string(),
+                ip_check: "8.8.8.8".to_string(),
+                url_check: "api.ipify.org".to_string(),
+            },
+            database: None,
         };
 
         // Override with global config values if available
         if let Ok(global_config) = crate::utils::config::GlobalConfig::load() {
-            config.ntp_server = global_config.ntp_server;
-            if global_config.postgresql_connection.is_some() {
-                config.postgresql_connection = global_config.postgresql_connection;
+            config.network.ntp_server = global_config.ntp_server;
+            if let Some(connection) = global_config.postgresql_connection {
+                config.database = Some(crate::config::DatabaseConfig {
+                    postgresql_connection: connection,
+                });
             }
         }
 
@@ -132,10 +136,12 @@ impl Init {
 
         // Create default configuration without global inheritance
         let config = Config {
-            ntp_server: "pool.ntp.org".to_string(),
-            ip_check: "8.8.8.8".to_string(),
-            url_check: "api.ipify.org".to_string(),
-            postgresql_connection: None,
+            network: crate::config::NetworkConfig {
+                ntp_server: "pool.ntp.org".to_string(),
+                ip_check: "8.8.8.8".to_string(),
+                url_check: "api.ipify.org".to_string(),
+            },
+            database: None,
         };
 
         // Serialize the configuration to TOML format
@@ -689,14 +695,22 @@ mod tests {
         // Verify it's valid TOML format by parsing it
         let parsed: toml::Value = toml::from_str(&content).expect("Config file is not valid TOML");
 
-        // Verify the structure
-        assert!(parsed.get("ntp_server").is_some());
-        assert!(parsed.get("ip_check").is_some());
-        assert!(parsed.get("url_check").is_some());
+        let network = parsed
+            .get("network")
+            .and_then(|value| value.as_table())
+            .expect("network table missing");
 
-        // Verify the values
-        assert_eq!(parsed["ntp_server"].as_str(), Some("pool.ntp.org"));
-        assert_eq!(parsed["ip_check"].as_str(), Some("8.8.8.8"));
-        assert_eq!(parsed["url_check"].as_str(), Some("api.ipify.org"));
+        assert_eq!(
+            network.get("ntp_server").and_then(|value| value.as_str()),
+            Some("pool.ntp.org")
+        );
+        assert_eq!(
+            network.get("ip_check").and_then(|value| value.as_str()),
+            Some("8.8.8.8")
+        );
+        assert_eq!(
+            network.get("url_check").and_then(|value| value.as_str()),
+            Some("api.ipify.org")
+        );
     }
 }

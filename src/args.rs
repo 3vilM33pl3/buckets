@@ -24,6 +24,7 @@ pub enum Command {
     Schema(SchemaCommand),
     // Global commands
     Setup(SetupCommand),
+    Config(ConfigCommand),
     Doctor(DoctorCommand),
     Completions(CompletionsCommand),
 }
@@ -47,6 +48,7 @@ impl Command {
             Command::Finalize(cmd) => &cmd.shared,
             Command::Schema(cmd) => &cmd.shared,
             Command::Setup(cmd) => &cmd.shared,
+            Command::Config(cmd) => &cmd.shared,
             Command::Doctor(cmd) => &cmd.shared,
             Command::Completions(cmd) => &cmd.shared,
         }
@@ -208,6 +210,74 @@ pub struct SetupCommand {
 
     #[clap(long, help = "Test the database connection after configuration")]
     pub test_connection: bool,
+}
+
+#[derive(Subcommand, Clone)]
+pub enum ConfigSubcommand {
+    Get(ConfigGetCommand),
+    Set(ConfigSetCommand),
+    Unset(ConfigUnsetCommand),
+    List(ConfigListCommand),
+}
+
+#[derive(Args, Clone)]
+pub struct ConfigCommand {
+    #[clap(flatten)]
+    pub shared: SharedArguments,
+
+    #[clap(subcommand)]
+    pub command: ConfigSubcommand,
+}
+
+#[derive(Args, Clone)]
+pub struct ConfigGetCommand {
+    #[clap(required = true)]
+    pub key: String,
+
+    #[clap(long, conflicts_with = "local", help = "Use global configuration")]
+    pub global: bool,
+
+    #[clap(long, conflicts_with = "global", help = "Use repository configuration")]
+    pub local: bool,
+}
+
+#[derive(Args, Clone)]
+pub struct ConfigSetCommand {
+    #[clap(required = true)]
+    pub key: String,
+
+    #[clap(required = true)]
+    pub value: String,
+
+    #[clap(long, conflicts_with = "local", help = "Write to global configuration")]
+    pub global: bool,
+
+    #[clap(long, conflicts_with = "global", help = "Write to repository configuration")]
+    pub local: bool,
+}
+
+#[derive(Args, Clone)]
+pub struct ConfigUnsetCommand {
+    #[clap(required = true)]
+    pub key: String,
+
+    #[clap(long, conflicts_with = "local", help = "Unset in global configuration")]
+    pub global: bool,
+
+    #[clap(long, conflicts_with = "global", help = "Unset in repository configuration")]
+    pub local: bool,
+}
+
+#[derive(Args, Clone)]
+pub struct ConfigListCommand {
+    #[clap(long, conflicts_with_all = ["local", "global"], help = "Show merged config values")]
+    pub effective: bool,
+
+    #[clap(long, conflicts_with = "global", help = "List repository configuration")]
+    pub local: bool,
+
+    #[clap(long, conflicts_with = "local", help = "List global configuration")]
+    pub global: bool,
 }
 
 #[derive(Args, Clone)]
