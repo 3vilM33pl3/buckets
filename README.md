@@ -18,7 +18,7 @@ Buckets is a version control and workflow management tool designed specifically 
 - **Expectation Management**: Define and check requirements between workflow stages
 - **File Integrity**: BLAKE3 hashing ensures file integrity
 - **Compression**: Built-in zstd compression for efficient storage
-- **Database Backend**: DuckDB for fast, reliable data persistence
+- **Database Backend**: PostgreSQL for reliable data persistence
 
 ### How It Works
 
@@ -280,7 +280,7 @@ buckets/
 ## Technical Details
 
 - **Storage**: Files are stored compressed (zstd) in `.b/storage/` using content-addressable hashing
-- **Database**: DuckDB stores metadata, commit history, and bucket information
+- **Database**: PostgreSQL stores metadata, commit history, and bucket information
 - **Hashing**: BLAKE3 for fast, secure content hashing
 - **Compression**: Zstd compression for efficient storage
 

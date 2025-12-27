@@ -19,7 +19,7 @@ This branch contains a partial migration from DuckDB to PostgreSQL. Due to the e
 The following files need to be updated to use the new PostgreSQL database:
 
 ### Core Database Operations
-- [ ] `src/utils/utils.rs` - Replace DuckDB connections with PostgreSQL
+- [x] `src/utils/utils.rs` - Replace DuckDB connections with PostgreSQL
 - [ ] `src/commands/init.rs` - Update to initialize PostgreSQL
 - [ ] `src/commands/commit.rs` - Update queries to PostgreSQL syntax
 - [ ] `src/data/commit.rs` - Update data operations
