@@ -195,7 +195,9 @@ fn set_value_at_path(root: &mut Value, key: &str, value: Value) -> Result<(), Bu
         if is_last {
             current.insert(
                 part.to_string(),
-                value.take().expect("value is set for final key"),
+                value
+                    .take()
+                    .expect("Internal error: value was already consumed before reaching final key"),
             );
         } else {
             let entry = current
