@@ -4,6 +4,30 @@ use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::PathBuf;
+use toml::Value;
+
+fn load_toml_value(path: &PathBuf) -> Result<Value, std::io::Error> {
+    let mut file = File::open(path)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::NotFound, e.to_string()))?;
+    let mut toml_string = String::new();
+    file.read_to_string(&mut toml_string)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
+
+    toml::from_str(&toml_string)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
+}
+
+fn get_string_at_path(value: &Value, path: &[&str]) -> Option<String> {
+    let mut current = value;
+    for part in path {
+        current = current.get(*part)?;
+    }
+    current.as_str().map(|value| value.to_string())
+}
+
+fn get_string_with_fallback(value: &Value, nested: &[&str], flat: &str) -> Option<String> {
+    get_string_at_path(value, nested).or_else(|| get_string_at_path(value, &[flat]))
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct RepositoryConfig {
@@ -26,14 +50,21 @@ impl RepositoryConfig {
             std::io::Error::new(std::io::ErrorKind::NotFound, "No .buckets directory found"),
         )?;
 
-        let mut file = File::open(buckets_repo_path.join("config"))
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::NotFound, e.to_string()))?;
-        let mut toml_string = String::new();
-        file.read_to_string(&mut toml_string)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
-
-        let mut config: RepositoryConfig = toml::from_str(&toml_string)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
+        let config_path = buckets_repo_path.join("config");
+        let value = load_toml_value(&config_path)?;
+        let mut config = RepositoryConfig {
+            ntp_server: get_string_with_fallback(&value, &["network", "ntp_server"], "ntp_server")
+                .unwrap_or_else(|| "pool.ntp.org".to_string()),
+            ip_check: get_string_with_fallback(&value, &["network", "ip_check"], "ip_check")
+                .unwrap_or_else(|| "8.8.8.8".to_string()),
+            url_check: get_string_with_fallback(&value, &["network", "url_check"], "url_check")
+                .unwrap_or_else(|| "api.ipify.org".to_string()),
+            postgresql_connection: get_string_with_fallback(
+                &value,
+                &["database", "postgresql_connection"],
+                "postgresql_connection",
+            ),
+        };
 
         // Override with global config values if available and requested
         if use_global {
@@ -280,15 +311,15 @@ impl GlobalConfig {
             return Ok(Self::default());
         }
 
-        let mut file = File::open(&config_path)?;
-        let mut content = String::new();
-        file.read_to_string(&mut content)?;
-
-        toml::from_str(&content).map_err(|e| {
-            BucketError::IoError(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("Failed to parse global config: {}", e),
-            ))
+        let value = load_toml_value(&config_path)?;
+        Ok(Self {
+            ntp_server: get_string_with_fallback(&value, &["network", "ntp_server"], "ntp_server")
+                .unwrap_or_else(|| "pool.ntp.org".to_string()),
+            postgresql_connection: get_string_with_fallback(
+                &value,
+                &["database", "postgresql_connection"],
+                "postgresql_connection",
+            ),
         })
     }
 
@@ -300,7 +331,7 @@ impl GlobalConfig {
             fs::create_dir_all(parent)?;
         }
 
-        let content = toml::to_string_pretty(self).map_err(|e| {
+        let content = toml::to_string_pretty(&self.to_toml_value()).map_err(|e| {
             BucketError::IoError(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!("Failed to serialize global config: {}", e),
@@ -321,5 +352,31 @@ impl Default for GlobalConfig {
             ntp_server: "pool.ntp.org".to_string(),
             postgresql_connection: None,
         }
+    }
+}
+
+impl GlobalConfig {
+    fn to_toml_value(&self) -> Value {
+        let mut root = toml::map::Map::new();
+
+        let mut network = toml::map::Map::new();
+        network.insert(
+            "ntp_server".to_string(),
+            Value::String(self.ntp_server.clone()),
+        );
+        root.insert("network".to_string(), Value::Table(network));
+
+        let mut database = toml::map::Map::new();
+        if let Some(connection) = &self.postgresql_connection {
+            database.insert(
+                "postgresql_connection".to_string(),
+                Value::String(connection.clone()),
+            );
+        }
+        if !database.is_empty() {
+            root.insert("database".to_string(), Value::Table(database));
+        }
+
+        Value::Table(root)
     }
 }

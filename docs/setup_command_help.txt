@@ -29,7 +29,10 @@ CONFIGURATION FILE:
     Format:   TOML (Tom's Obvious, Minimal Language)
     
     Example content:
+    [network]
     ntp_server = "time.google.com"
+
+    [database]
     postgresql_connection = "postgresql://user:pass@localhost:5432/buckets"
 
 USAGE EXAMPLES:
