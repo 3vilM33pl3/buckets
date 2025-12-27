@@ -9,8 +9,7 @@ use toml::Value;
 fn load_toml_value(path: &PathBuf) -> Result<Value, std::io::Error> {
     let mut file = File::open(path)?;
     let mut toml_string = String::new();
-    file.read_to_string(&mut toml_string)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
+    file.read_to_string(&mut toml_string)?;
 
     toml::from_str(&toml_string)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
