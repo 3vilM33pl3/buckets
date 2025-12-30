@@ -236,7 +236,7 @@ echo $?
 
 **Preconditions:**
 - Clean test environment
-- `DATABASE_URL` set ORGlobal config setup
+- `DATABASE_URL` set OR Global config setup
 
 **Test Steps:**
 ```bash
