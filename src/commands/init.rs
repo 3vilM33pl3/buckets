@@ -462,52 +462,6 @@ mod tests {
 
     #[test]
     #[ignore]
-    fn test_create_repo_with_embedded_database() {
-        let temp_dir = tempdir().expect("Failed to create temporary directory");
-
-        let init = create_test_init_command("test_repo");
-        let result = init.create_repo("test_repo", temp_dir.path());
-
-        // Handle network issues gracefully
-        if result.is_err() {
-            let error = result.unwrap_err();
-            if error.to_string().contains("rate limit")
-                || error.to_string().contains("Failed to install PostgreSQL")
-            {
-                eprintln!("Skipping test due to network issues: {}", error);
-                return;
-            } else {
-                panic!("Unexpected error: {}", error);
-            }
-        }
-
-        let repo_path = temp_dir.path().join("test_repo");
-        assert!(repo_path.exists());
-        assert!(repo_path.is_dir());
-
-        let buckets_path = repo_path.join(".buckets");
-        assert!(buckets_path.exists());
-        assert!(buckets_path.is_dir());
-
-        let config_file = buckets_path.join("config");
-        assert!(config_file.exists());
-        assert!(config_file.is_file());
-
-        let postgres_dir = buckets_path.join("postgres");
-        assert!(postgres_dir.exists());
-        assert!(postgres_dir.is_dir());
-
-        let db_type_file = buckets_path.join("database_type");
-        assert!(db_type_file.exists());
-        assert!(db_type_file.is_file());
-
-        let db_type_content =
-            fs::read_to_string(db_type_file).expect("Failed to read database_type file");
-        assert_eq!(db_type_content.trim(), "embedded");
-    }
-
-    #[test]
-    #[ignore]
     fn test_create_repo_with_postgresql() {
         let temp_dir = tempdir().expect("Failed to create temporary directory");
 
@@ -609,6 +563,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_get_database_config_with_database_url() {
         // Set DATABASE_URL environment variable
         std::env::set_var(

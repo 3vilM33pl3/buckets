@@ -227,18 +227,21 @@ echo $?
 
 ## Core Functionality Tests
 
-### TC005: Repository Initialization - Default (Embedded PostgreSQL)
+### TC005: Repository Initialization - Default
 
 **Priority:** Critical
 **Category:** Core Functionality
 
-**Objective:** Verify repository initialization with default embedded PostgreSQL backend
+**Objective:** Verify repository initialization with default PostgreSQL backend (requires global config or env var)
 
-**Preconditions:** Clean test environment
+**Preconditions:**
+- Clean test environment
+- `DATABASE_URL` set OR Global config setup
 
 **Test Steps:**
 ```bash
-buckets init test_repo_embedded
+export DATABASE_URL="postgresql://username:password@localhost:5432/buckets_test"
+buckets init test_repo_default
 ```
 
 **Expected Results:**
@@ -246,22 +249,12 @@ buckets init test_repo_embedded
 - Console output: "Bucket repository initialized successfully."
 - Directory structure:
   ```
-  ./test_repo_embedded/
-  ./test_repo_embedded/.buckets/
-  ./test_repo_embedded/.buckets/config
-  ./test_repo_embedded/.buckets/database_type
-  ./test_repo_embedded/.buckets/postgres_data/
-  ./test_repo_embedded/.buckets/postgres_data/postgresql.conf
-  ./test_repo_embedded/.buckets/postgres_data/pg_hba.conf
+  ./test_repo_default/
+  ./test_repo_default/.buckets/
+  ./test_repo_default/.buckets/config
+  ./test_repo_default/.buckets/database_type
   ```
-- Database type file contains: `embedded`
-- PostgreSQL data directory initialized with proper permissions
-
-**Database Schema Verification:**
-```bash
-# Connect to embedded PostgreSQL (port will be dynamically assigned)
-buckets list --json  # This will verify database connectivity
-```
+- Database type file contains: `PostgreSQL`
 
 **Post-conditions:** Repository ready for bucket creation
 
@@ -323,8 +316,6 @@ Expected tables: `buckets`, `commits`, `files`
 
 #### TC007a: Valid Database Types
 ```bash
-buckets init test_valid_embedded --database embedded    # Should succeed
-buckets init test_valid_external --database external    # Should succeed  
 buckets init test_valid_postgres --database postgres    # Should succeed
 buckets init test_valid_postgresql --database postgresql # Should succeed
 ```
@@ -335,7 +326,7 @@ buckets init test_invalid --database mysql
 ```
 **Expected Results:**
 - Exit code: non-zero
-- Error message: "Invalid database type 'mysql'. Valid options are: embedded, external, postgresql"
+- Error message: "Invalid database type 'mysql'. Valid options are: external, postgresql"
 
 #### TC007c: External PostgreSQL Without Connection
 ```bash
@@ -360,7 +351,7 @@ buckets init test_no_connection --database external
 
 **Test Steps:**
 ```bash
-cd test_repo_embedded  # or test_repo_external
+cd test_repo_default  # or test_repo_external
 buckets create test_bucket
 ```
 
@@ -605,7 +596,7 @@ buckets history -v
 
 **Test Steps:**
 ```bash
-cd test_repo_embedded
+cd test_repo_default
 buckets create bucket_one
 buckets create bucket_two
 buckets list
@@ -904,7 +895,7 @@ buckets doctor --skip-ntp
 buckets doctor --json
 
 # Test with repository config
-cd test_repo_embedded
+cd test_repo_default
 buckets doctor --use-repo
 
 # Test verbose output with potential errors
@@ -1244,7 +1235,7 @@ cargo install --path .
 1. **TC001** - Setup command (global configuration)
 2. **TC002** - Setup PostgreSQL configuration
 3. **TC003** - Setup integration with repository config
-4. **TC005** - Repository initialization (embedded)
+4. **TC005** - Repository initialization (Default)
 5. **TC008** - Bucket creation
 6. **TC009** - File commit operations
 7. **TC011** - Status and file tracking

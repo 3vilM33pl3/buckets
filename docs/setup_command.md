@@ -282,10 +282,7 @@ buckets setup
 ```bash
 # Configure for local-only development
 buckets setup
-# Enter: (leave empty for embedded PostgreSQL)
-# Enter: pool.ntp.org
-
-# Uses embedded PostgreSQL for each repository
+# Enter: (leave empty if configuring per-repository or via env vars)
 ```
 
 ## Security Considerations

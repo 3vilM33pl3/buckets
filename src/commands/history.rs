@@ -104,6 +104,7 @@ fn display_commit_history(commits: &[CommitRecord]) {
 mod tests {
     use super::*;
     use crate::args::HistoryCommand;
+    use crate::postgres_db::reset_database_for_tests;
     use crate::test_support::docker::{
         create_bucket_for_tests, ensure_database_initialized, TestDatabase,
     };
@@ -129,6 +130,10 @@ mod tests {
     #[test]
     #[serial]
     fn test_fetch_commit_history() {
+        // Reset database state first
+        let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
+        rt.block_on(reset_database_for_tests());
+
         let Some(db) = TestDatabase::new() else {
             eprintln!("Skipping history test_fetch_commit_history: Docker/Postgres unavailable");
             return;
@@ -203,6 +208,10 @@ mod tests {
     #[test]
     #[serial]
     fn test_history_command() {
+        // Reset database state first
+        let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
+        rt.block_on(reset_database_for_tests());
+
         let Some(db) = TestDatabase::new() else {
             eprintln!("Skipping history test_history_command: Docker/Postgres unavailable");
             return;

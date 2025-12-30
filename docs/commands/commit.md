@@ -135,7 +135,7 @@ Error: No commitable files found in bucket.
 ```
 Error: Failed to connect to PostgreSQL database
 ```
-**Solution**: Ensure PostgreSQL is running (embedded mode) or check connection settings (external mode).
+**Solution**: Ensure PostgreSQL is running or check connection settings.
 
 #### File Access Errors
 ```
@@ -196,7 +196,7 @@ Error: No space left on device
 - Corrupted files can be detected through hash mismatches
 
 ### Database Security
-- Embedded PostgreSQL uses local file permissions for access control
+
 - External PostgreSQL should use proper authentication and SSL
 - Connection credentials should be stored securely
 

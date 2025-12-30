@@ -5,9 +5,10 @@ use crate::errors::BucketError;
 use crate::postgres_db::get_database;
 use crate::utils::checks;
 use crate::utils::runtime::RuntimeManager;
-use crate::utils::utils::find_bucket_path;
+use crate::utils::utils::{find_bucket_path, find_files_excluding_top_level_b};
 use crate::CURRENT_DIR;
 use log::{debug, error};
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use std::path::PathBuf;
@@ -40,8 +41,20 @@ impl BucketCommand for Revert {
 
         let bucket = Bucket::from_meta_data(&current_dir)?;
 
-        let file_path = self.args.file.clone();
+        match &self.args.file {
+            Some(file_path) => self.revert_single_file(bucket, &bucket_path, file_path),
+            None => self.revert_all(bucket, &bucket_path),
+        }
+    }
+}
 
+impl Revert {
+    fn revert_single_file(
+        &self,
+        bucket: Bucket,
+        bucket_path: &PathBuf,
+        file_path: &String,
+    ) -> Result<(), BucketError> {
         // Get the file's hash from the specified commit or the last commit
         let hash = RuntimeManager::block_on(async {
             let db = get_database().await?;
@@ -136,9 +149,104 @@ impl BucketCommand for Revert {
         }
         Ok(())
     }
-}
 
-impl Revert {
+    fn revert_all(&self, bucket: Bucket, bucket_path: &PathBuf) -> Result<(), BucketError> {
+        let (files_to_restore, commit_id_str) = RuntimeManager::block_on(async {
+            let db = get_database().await?;
+            let bucket_id = bucket.id;
+
+            let parsed_commit_id = self
+                .args
+                .commit_id
+                .as_ref()
+                .map(|id| {
+                    Uuid::parse_str(id).map_err(|e| {
+                        BucketError::from(format!("Invalid commit id '{}': {}", id, e).as_str())
+                    })
+                })
+                .transpose()?;
+
+            let (query, params, display_id): (String, Vec<&(dyn ToSql + Sync)>, String) =
+                match parsed_commit_id.as_ref() {
+                    Some(commit_uuid) => {
+                        let query = "SELECT f.file_path, f.hash 
+                        FROM files f
+                        JOIN commits c ON f.commit_id = c.id
+                        WHERE c.id = $1
+                        AND c.bucket_id = $2"
+                            .to_string();
+                        let params: Vec<&(dyn ToSql + Sync)> = vec![commit_uuid, &bucket_id];
+                        (query, params, commit_uuid.to_string())
+                    }
+                    None => {
+                        let query = "SELECT f.file_path, f.hash 
+                        FROM files f
+                        JOIN commits c ON f.commit_id = c.id
+                        WHERE c.created_at = (
+                            SELECT MAX(created_at) 
+                            FROM commits 
+                            WHERE bucket_id = $1
+                        ) AND c.bucket_id = $1"
+                            .to_string();
+                        let params: Vec<&(dyn ToSql + Sync)> = vec![&bucket_id];
+                        (query, params, "latest".to_string())
+                    }
+                };
+
+            let rows = db.query(&query, &params).await?;
+
+            let mut files = Vec::new();
+            for row in rows {
+                let path: String = row.get(0);
+                let hash: String = row.get(1);
+                files.push((path, hash));
+            }
+            Ok((files, display_id))
+        })?;
+
+        if files_to_restore.is_empty() {
+            println!("No files found in commit {}", commit_id_str);
+            return Ok(());
+        }
+
+        // Get current workspace files
+        let current_files = find_files_excluding_top_level_b(bucket_path);
+        let target_files_set: HashSet<PathBuf> = files_to_restore
+            .iter()
+            .map(|(p, _)| PathBuf::from(p))
+            .collect();
+
+        // 1. Delete files not in target
+        for file in current_files {
+            if !target_files_set.contains(&file) {
+                let full_path = bucket_path.join(&file);
+                debug!("Deleting {}", full_path.display());
+                if full_path.exists() {
+                    std::fs::remove_file(&full_path)?;
+                }
+            }
+        }
+
+        // 2. Restore/Overwrite files from target
+        for (rel_path, hash) in files_to_restore {
+            let target_path = bucket_path.join(&rel_path);
+            let storage_path = bucket_path.join(".b").join("storage").join(&hash);
+
+            debug!(
+                "Restoring {} from {}",
+                target_path.display(),
+                storage_path.display()
+            );
+            self.decompress_and_revert_file(&storage_path, &target_path)
+                .map_err(|e| {
+                    error!("Failed to revert file {}: {}", rel_path, e);
+                    BucketError::from(e)
+                })?;
+        }
+
+        println!("Reverted entire bucket to commit {}", commit_id_str);
+        Ok(())
+    }
     fn decompress_and_revert_file(
         &self,
         storage_path: &PathBuf,
@@ -252,7 +360,7 @@ mod tests {
 
         // Revert the file (use relative path)
         let revert_cmd = RevertCommand {
-            file: "test_file.txt".to_string(),
+            file: Some("test_file.txt".to_string()),
             shared: Default::default(),
             commit_id: None,
         };
@@ -295,7 +403,7 @@ mod tests {
         // Call the function we're testing
         let revert_cmd = Revert::new(&RevertCommand {
             shared: crate::args::SharedArguments::default(),
-            file: "test".to_string(),
+            file: Some("test".to_string()),
             commit_id: None,
         });
         revert_cmd
@@ -310,5 +418,69 @@ mod tests {
             reverted_content, original_content,
             "Reverted content doesn't match original"
         );
+    }
+
+    #[test]
+    #[serial]
+    fn test_revert_all() {
+        let Some(db) = TestDatabase::new() else {
+            return;
+        };
+        ensure_database_initialized(db.connection_string());
+
+        let temp_dir = tempdir().expect("invalid temp dir").keep();
+
+        // 1. Init
+        let mut cmd1 = assert_cmd::Command::cargo_bin("buckets").expect("invalid command");
+        cmd1.env("DATABASE_URL", db.connection_string())
+            .current_dir(temp_dir.as_path())
+            .arg("init")
+            .arg("test_repo")
+            .assert()
+            .success();
+
+        let repo_dir = temp_dir.as_path().join("test_repo");
+        let bucket_dir = create_bucket_for_tests(&repo_dir, "test_bucket", db.connection_string())
+            .expect("Failed to create test bucket");
+
+        // 2. Create state 1: file1, file2
+        let file1 = bucket_dir.join("file1.txt");
+        let file2 = bucket_dir.join("file2.txt");
+        fs::write(&file1, "v1").unwrap();
+        fs::write(&file2, "v1").unwrap();
+
+        let mut cmd = assert_cmd::Command::cargo_bin("buckets").expect("invalid command");
+        cmd.env("DATABASE_URL", db.connection_string())
+            .current_dir(&bucket_dir)
+            .arg("commit")
+            .arg("commit 1")
+            .assert()
+            .success();
+
+        // 3. Modify state: modify file1, delete file2, add file3
+        fs::write(&file1, "v2").unwrap();
+        fs::remove_file(&file2).unwrap();
+        fs::write(bucket_dir.join("file3.txt"), "v3").unwrap();
+
+        // 4. Revert all
+        let original_dir = env::current_dir().ok();
+        env::set_current_dir(&bucket_dir).unwrap();
+
+        let revert_cmd = Revert::new(&RevertCommand {
+            shared: crate::args::SharedArguments::default(),
+            file: None,      // All
+            commit_id: None, // Latest
+        });
+        revert_cmd.execute().expect("Revert failed");
+
+        if let Some(dir) = original_dir {
+            env::set_current_dir(dir).ok();
+        }
+
+        // 5. Verify
+        assert_eq!(fs::read_to_string(&file1).unwrap(), "v1"); // Restored
+        assert!(file2.exists());
+        assert_eq!(fs::read_to_string(&file2).unwrap(), "v1"); // Restored
+        assert!(!bucket_dir.join("file3.txt").exists()); // Deleted (not in clean state)
     }
 }
