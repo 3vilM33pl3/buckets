@@ -54,6 +54,7 @@ mod tests {
         let mut cmd = Command::cargo_bin("buckets").expect("failed to run command");
         cmd.current_dir(&repo_dir)
             .env("HOME", &temp_dir) // Ensure subprocess sees the mocked HOME
+            .env_remove("DATABASE_URL")
             .arg("status")
             .assert()
             .failure()
