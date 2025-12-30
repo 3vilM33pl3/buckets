@@ -72,12 +72,6 @@ async fn fetch_commit_history_async(
         )
         .await?;
 
-    println!("DEBUG: Query returned {} rows", rows.len());
-    for row in &rows {
-        let msg: String = row.get(1);
-        println!("DEBUG: Found commit: {}", msg);
-    }
-
     let mut commits = Vec::new();
 
     for row in &rows {
