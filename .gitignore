@@ -12,3 +12,19 @@ debian/buckets/
 debian/files
 debian/*.log
 debian/*.debhelper
+
+# Logs and Output
+*.log
+build_output.txt
+stdout.log
+stderr.log
+
+# Testing Artifacts
+functional_test_run/
+manual_test_run/
+test_repo_from_project_dir/
+test_repo_no_db_init/
+
+# AI Context
+.claude/
+.linear_mcp.sh

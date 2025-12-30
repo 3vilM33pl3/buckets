@@ -323,4 +323,15 @@ pub struct CompletionsCommand {
 
     #[clap(value_enum)]
     pub shell: CompletionShell,
+
+    #[clap(short, long, help = "Output file path")]
+    pub output: Option<PathBuf>,
+
+    #[clap(
+        short,
+        long,
+        conflicts_with = "output",
+        help = "Automatically install to standard shell directory (Bash, Zsh, Fish only)"
+    )]
+    pub install: bool,
 }

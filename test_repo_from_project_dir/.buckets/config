@@ -1,4 +1,0 @@
-ntp_server = "pool.ntp.org"
-ip_check = "8.8.8.8"
-url_check = "api.ipify.org"
-postgresql_connection = "postgresql://olivier:appeltaart@monolith:5432/buckets"
