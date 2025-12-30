@@ -149,7 +149,7 @@ Error: Not currently in a buckets repository
 ```
 Error: Failed to connect to PostgreSQL database
 ```
-**Solution**: Ensure PostgreSQL is running (embedded mode) or check connection settings (external mode).
+**Solution**: Ensure PostgreSQL is running or check connection settings.
 
 #### No Commits Found
 If no commits exist, the command displays:

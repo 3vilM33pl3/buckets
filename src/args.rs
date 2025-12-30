@@ -123,8 +123,8 @@ pub struct RevertCommand {
     #[clap(flatten)]
     pub shared: SharedArguments,
 
-    #[clap(required = true, help = "File path to revert")]
-    pub file: String,
+    #[clap(required = false, help = "File path to revert (optional)")]
+    pub file: Option<String>,
 
     #[clap(
         short = 'c',
@@ -252,7 +252,11 @@ pub struct ConfigSetCommand {
     #[clap(long, conflicts_with = "local", help = "Write to global configuration")]
     pub global: bool,
 
-    #[clap(long, conflicts_with = "global", help = "Write to repository configuration")]
+    #[clap(
+        long,
+        conflicts_with = "global",
+        help = "Write to repository configuration"
+    )]
     pub local: bool,
 }
 
@@ -264,7 +268,11 @@ pub struct ConfigUnsetCommand {
     #[clap(long, conflicts_with = "local", help = "Unset in global configuration")]
     pub global: bool,
 
-    #[clap(long, conflicts_with = "global", help = "Unset in repository configuration")]
+    #[clap(
+        long,
+        conflicts_with = "global",
+        help = "Unset in repository configuration"
+    )]
     pub local: bool,
 }
 
@@ -273,7 +281,11 @@ pub struct ConfigListCommand {
     #[clap(long, conflicts_with_all = ["local", "global"], help = "Show merged config values")]
     pub effective: bool,
 
-    #[clap(long, conflicts_with = "global", help = "List repository configuration")]
+    #[clap(
+        long,
+        conflicts_with = "global",
+        help = "List repository configuration"
+    )]
     pub local: bool,
 
     #[clap(long, conflicts_with = "local", help = "List global configuration")]
