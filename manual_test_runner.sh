@@ -108,7 +108,7 @@ if buckets revert "$TARGET_COMMIT"; then
         echo "PASS: Revert successful"
     else
         echo "FAIL: Revert ran but file content incorrect"
-        echo "Exepected 'original content', got:"
+        echo "Expected 'original content', got:"
         cat revert_test.txt
         exit 1
     fi
