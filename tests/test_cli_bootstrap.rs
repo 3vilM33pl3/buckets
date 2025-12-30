@@ -29,8 +29,7 @@ mod tests {
             .success()
             .stdout(predicate::str::contains("Repository config"));
 
-        // Restore HOME to avoid affecting other tests if they run in parallel (though serial matches this)
-        // But we didn't change HOME here, only in other tests.
+        // Restore DATABASE_URL to avoid affecting other tests
         restore_database_url(previous_database_url);
     }
 
