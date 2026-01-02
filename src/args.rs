@@ -177,12 +177,27 @@ pub struct StatsCommand {
 pub struct ExpectCommand {
     #[clap(flatten)]
     pub shared: SharedArguments,
+
+    #[clap(help = "Description of the expectation")]
+    pub description: String,
+
+    #[clap(long, help = "Bucket to expect from (optional)")]
+    pub from: Option<String>,
+
+    #[clap(
+        long,
+        help = "Bucket to add expectation to (optional, defaults to current)"
+    )]
+    pub in_bucket: Option<String>,
 }
 
 #[derive(Args, Clone)]
 pub struct CheckCommand {
     #[clap(flatten)]
     pub shared: SharedArguments,
+
+    #[clap(help = "Bucket to check (optional, defaults to current)")]
+    pub bucket: Option<String>,
 }
 
 #[derive(Args, Clone)]
@@ -195,6 +210,9 @@ pub struct LinkCommand {
 pub struct FinalizeCommand {
     #[clap(flatten)]
     pub shared: SharedArguments,
+
+    #[clap(help = "Bucket to finalize (optional, defaults to current)")]
+    pub bucket: Option<String>,
 }
 
 #[derive(Args, Clone)]

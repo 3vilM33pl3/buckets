@@ -19,9 +19,21 @@ mod tests {
             return;
         };
         let temp_dir = fixture.repo_dir.clone();
+        // Create a bucket first
+        let mut create_cmd =
+            assert_cmd::Command::cargo_bin("buckets").expect("failed to run command");
+        create_cmd
+            .current_dir(temp_dir.as_path())
+            .arg("create")
+            .arg("test_bucket")
+            .assert()
+            .success();
+
+        // Run check on the created bucket
         let mut cmd = assert_cmd::Command::cargo_bin("buckets").expect("failed to run command");
         cmd.current_dir(temp_dir.as_path())
             .arg("check")
+            .arg("test_bucket")
             .assert()
             .success();
     }
