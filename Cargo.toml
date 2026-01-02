@@ -11,7 +11,7 @@ log = "0.4.27"
 env_logger = "0.11.8"
 postgres = "0.19.9"
 tokio = { version = "1.0", features = ["rt", "rt-multi-thread", "macros"] }
-tokio-postgres = { version = "0.7.10", features = ["with-uuid-1"] }
+tokio-postgres = { version = "0.7.10", features = ["with-uuid-1", "with-chrono-0_4"] }
 deadpool-postgres = "0.11.0"
 refinery = { version = "0.8.14", features = ["tokio-postgres"] }
 tempfile = "3.20.0"
@@ -26,7 +26,7 @@ walkdir = "2.5.0"
 predicates = "3.1.3"
 zstd = "0.13.2"
 thiserror = "2.0.12"
-chrono = "0.4.41"
+chrono = { version = "0.4.41", features = ["serde"] }
 arrow = "55.1.0"
 dirs = "5.0"
 ntp = "0.5.0"
