@@ -23,11 +23,11 @@
     
     ```jsx
     # If command is executed in expecting bucket
-    # buckets expect [expectation] from [fullfilling bucket]
+    # buckets expect [expectation] from [fulfilling bucket]
     buckets expect "Concept art" from "Art bucket"
     
     # If command is executed outside expecting bucket
-    # buckets expect [expectation] from [fullfilling bucket] in [expecting bucket]
+    # buckets expect [expectation] from [fulfilling bucket] in [expecting bucket]
     buckets expect "Concept art" from "Art bucket" in "3D bucket"
     ```
     
