@@ -5,7 +5,7 @@ use crate::postgres_db::DatabaseConfig;
 use crate::utils::config::GlobalConfig;
 use crate::utils::runtime::RuntimeManager;
 use deadpool_postgres::{Config, Runtime};
-use std::io::{self, Write};
+use dialoguer::{console::Term, theme::ColorfulTheme, Input, Select};
 use std::time::Duration;
 use tokio_postgres::NoTls;
 
@@ -35,31 +35,67 @@ impl BucketCommand for Setup {
             return Ok(());
         }
 
-        println!("Buckets Global Configuration Setup");
-        println!("=================================");
-        println!();
+        // Check if we are in a non-interactive environment (e.g. CI)
+        // If so, fall back to non-interactive mode or error out if crucial info is missing
+        // For now, we assume interactive unless testing
 
-        // Load existing config or create new one
         let mut config = GlobalConfig::load().unwrap_or_default();
+        let items = vec![
+            "Configure PostgreSQL",
+            "Configure NTP Server",
+            "Test Connection",
+            "Save & Exit",
+            "Cancel",
+        ];
 
-        // Interactive configuration
-        config = self.configure_postgresql(config)?;
-        config = self.configure_ntp_server(config)?;
+        loop {
+            // Clear screen for a cleaner look? Maybe just show menu.
+            // Term::stdout().clear_screen().ok();
 
-        // Save configuration
-        config.save()?;
+            println!("\nBuckets Configuration Setup");
+            println!("===========================");
 
-        println!();
-        println!("Global configuration saved successfully!");
-        println!(
-            "Configuration file: {}",
-            GlobalConfig::config_path()?.display()
-        );
+            let selection = Select::with_theme(&ColorfulTheme::default())
+                .items(&items)
+                .default(0)
+                .interact_on_opt(&Term::stderr())?;
 
-        // Test database connection if requested
-        if self.args.test_connection {
-            println!();
-            self.test_database_connection(&config)?;
+            match selection {
+                Some(0) => {
+                    config = self.configure_postgresql(config)?;
+                }
+                Some(1) => {
+                    config = self.configure_ntp_server(config)?;
+                }
+                Some(2) => {
+                    if let Err(e) = self.test_database_connection(&config) {
+                        eprintln!("\n❌ Connection failed: {}", e);
+                    } else {
+                        // User needs to see the success message
+                        // test_database_connection prints success message
+                    }
+                    // Pause to let user read output
+                    if let Ok(_) = Input::<String>::new()
+                        .with_prompt("Press Enter to continue")
+                        .allow_empty(true)
+                        .interact_text()
+                    {}
+                }
+                Some(3) => {
+                    config.save()?;
+                    println!("\n✅ Global configuration saved successfully!");
+                    println!(
+                        "Configuration file: {}",
+                        GlobalConfig::config_path()?.display()
+                    );
+                    break;
+                }
+                Some(4) => {
+                    println!("\n❌ Configuration cancelled. Changes were not saved.");
+                    break;
+                }
+                _ => break, // Handle ctrl-c or other interrupts
+            }
         }
 
         Ok(())
@@ -68,131 +104,76 @@ impl BucketCommand for Setup {
 
 impl Setup {
     fn configure_postgresql(&self, mut config: GlobalConfig) -> Result<GlobalConfig, BucketError> {
-        println!("PostgreSQL Configuration");
-        println!("------------------------");
+        let current_conn = config.postgresql_connection.clone().unwrap_or_default();
 
-        if let Some(ref current) = config.postgresql_connection {
-            println!("Current PostgreSQL connection string: {}", current);
-        } else {
-            println!("No PostgreSQL connection string configured");
+        println!("\nPostgreSQL Configuration");
+
+        let connection_string: String = Input::with_theme(&ColorfulTheme::default())
+            .with_prompt("PostgreSQL connection string")
+            .default(current_conn.clone())
+            .interact_text()?;
+
+        if !connection_string.trim().is_empty() {
+            config.postgresql_connection = Some(connection_string);
         }
 
-        print!("Enter PostgreSQL connection string (or press Enter to keep current): ");
-        io::stdout().flush().map_err(|e| BucketError::IoError(e))?;
-
-        let mut input = String::new();
-        io::stdin()
-            .read_line(&mut input)
-            .map_err(|e| BucketError::IoError(e))?;
-        let input = input.trim();
-
-        if !input.is_empty() {
-            config.postgresql_connection = Some(input.to_string());
-            println!("PostgreSQL connection string updated");
-        } else if config.postgresql_connection.is_some() {
-            println!("Keeping existing PostgreSQL connection string");
-        }
-
-        println!();
         Ok(config)
     }
 
     fn configure_ntp_server(&self, mut config: GlobalConfig) -> Result<GlobalConfig, BucketError> {
-        println!("NTP Server Configuration");
-        println!("------------------------");
+        println!("\nNTP Server Configuration");
 
-        println!("Current NTP server: {}", config.ntp_server);
-        print!("Enter NTP server (or press Enter to keep current): ");
-        io::stdout().flush().map_err(|e| BucketError::IoError(e))?;
+        let ntp_server: String = Input::with_theme(&ColorfulTheme::default())
+            .with_prompt("NTP Server")
+            .default(config.ntp_server.clone())
+            .interact_text()?;
 
-        let mut input = String::new();
-        io::stdin()
-            .read_line(&mut input)
-            .map_err(|e| BucketError::IoError(e))?;
-        let input = input.trim();
-
-        if !input.is_empty() {
-            config.ntp_server = input.to_string();
-            println!("NTP server updated");
-        } else {
-            println!("Keeping existing NTP server");
-        }
-
-        println!();
+        config.ntp_server = ntp_server;
         Ok(config)
     }
 
     fn test_database_connection(&self, config: &GlobalConfig) -> Result<(), BucketError> {
-        println!("Testing Database Connection");
-        println!("===========================");
+        println!("\nTesting Database Connection...");
 
         if let Some(ref conn_str) = config.postgresql_connection {
-            println!(
-                "Testing PostgreSQL connection: {}",
-                // Mask password in display
-                if conn_str.contains("@") {
-                    let parts: Vec<&str> = conn_str.splitn(2, '@').collect();
-                    if parts.len() == 2 {
-                        let auth_part = parts[0];
-                        let host_part = parts[1];
-                        if let Some(colon_pos) = auth_part.rfind(':') {
-                            format!("{}:***@{}", &auth_part[..colon_pos], host_part)
-                        } else {
-                            conn_str.clone()
-                        }
-                    } else {
-                        conn_str.clone()
-                    }
-                } else {
-                    conn_str.clone()
-                }
-            );
-
             RuntimeManager::block_on(async { self.test_postgresql_connection(conn_str).await })?;
-
             println!("✅ PostgreSQL connection successful!");
         } else {
-            println!("No PostgreSQL connection string configured to test.");
-            println!("Configure a PostgreSQL connection first, then use --test-connection");
+            println!("⚠️ No PostgreSQL connection string configured.");
         }
 
         Ok(())
     }
 
     async fn test_postgresql_connection(&self, connection_string: &str) -> Result<(), BucketError> {
-        // Parse connection string into database config
         let db_config = DatabaseConfig::from_url(connection_string)?;
 
-        // Create connection configuration
         let mut cfg = Config::new();
-
         cfg.host = Some(db_config.host);
         cfg.port = Some(db_config.port);
         cfg.user = Some(db_config.username);
         cfg.password = db_config.password;
         cfg.dbname = Some(db_config.database);
-
-        // Set connection timeout
         cfg.connect_timeout = Some(Duration::from_secs(10));
 
-        // Create pool and test connection
         let pool = cfg.create_pool(Some(Runtime::Tokio1), NoTls).map_err(|e| {
             BucketError::from(format!("Failed to create connection pool: {}", e).as_str())
         })?;
 
-        // Test the connection
         let _conn = pool.get().await.map_err(|e| {
             BucketError::from(format!("Failed to connect to PostgreSQL database: {}", e).as_str())
         })?;
 
-        // Try to execute a simple query
-        let client = pool.get().await.map_err(|e| {
-            BucketError::from(format!("Failed to get database connection: {}", e).as_str())
-        })?;
-
-        client.execute("SELECT 1", &[]).await.map_err(|e| {
-            BucketError::from(format!("Failed to execute test query: {}", e).as_str())
-        })?;
+        pool.get()
+            .await
+            .map_err(|e| {
+                BucketError::from(format!("Failed to get database connection: {}", e).as_str())
+            })?
+            .execute("SELECT 1", &[])
+            .await
+            .map_err(|e| {
+                BucketError::from(format!("Failed to execute test query: {}", e).as_str())
+            })?;
 
         Ok(())
     }

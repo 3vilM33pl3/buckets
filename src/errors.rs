@@ -35,6 +35,8 @@ pub enum BucketError {
     SecurityError(String),
     #[error("Path validation error: {0}")]
     PathValidationError(String),
+    #[error("Dialog Error: {0}")]
+    DialogError(#[from] dialoguer::Error),
 }
 
 impl From<&str> for BucketError {
