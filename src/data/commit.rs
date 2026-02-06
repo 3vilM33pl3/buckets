@@ -4,15 +4,16 @@ use std::cmp::PartialEq;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::io;
-use std::path::PathBuf;
+use std::path::Path;
 use uuid::Uuid;
 
 use crate::utils::compression::{compress_file, decompress_file, DEFAULT_COMPRESSION_LEVEL};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub enum CommitStatus {
     Unknown,
     New,
+    #[default]
     Committed,
     Modified,
     Deleted,
@@ -27,12 +28,6 @@ impl Display for CommitStatus {
             CommitStatus::Modified => write!(f, "modified"),
             CommitStatus::Deleted => write!(f, "deleted"),
         }
-    }
-}
-
-impl Default for CommitStatus {
-    fn default() -> Self {
-        CommitStatus::Committed
     }
 }
 
@@ -75,13 +70,13 @@ where
 
 impl PartialEq for CommitStatus {
     fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (CommitStatus::New, CommitStatus::New) => true,
-            (CommitStatus::Committed, CommitStatus::Committed) => true,
-            (CommitStatus::Modified, CommitStatus::Modified) => true,
-            (CommitStatus::Deleted, CommitStatus::Deleted) => true,
-            _ => false,
-        }
+        matches!(
+            (self, other),
+            (CommitStatus::New, CommitStatus::New)
+                | (CommitStatus::Committed, CommitStatus::Committed)
+                | (CommitStatus::Modified, CommitStatus::Modified)
+                | (CommitStatus::Deleted, CommitStatus::Deleted)
+        )
     }
 }
 
@@ -104,8 +99,8 @@ impl Commit {
                         differences.push(CommittedFile {
                             id: file.id,
                             name: file.name.clone(),
-                            hash: file.hash.clone(),
-                            previous_hash: previous.hash.clone(),
+                            hash: file.hash,
+                            previous_hash: previous.hash,
                             status: CommitStatus::Modified,
                         });
                     }
@@ -114,8 +109,8 @@ impl Commit {
                     differences.push(CommittedFile {
                         id: file.id,
                         name: file.name.clone(),
-                        hash: file.hash.clone(),
-                        previous_hash: zero_hash.clone(),
+                        hash: file.hash,
+                        previous_hash: zero_hash,
                         status: CommitStatus::New,
                     });
                 }
@@ -127,8 +122,8 @@ impl Commit {
                 differences.push(CommittedFile {
                     id: other_file.id,
                     name: other_file.name.clone(),
-                    hash: other_file.hash.clone(),
-                    previous_hash: zero_hash.clone(),
+                    hash: other_file.hash,
+                    previous_hash: zero_hash,
                     status: CommitStatus::Deleted,
                 });
             }
@@ -154,21 +149,21 @@ impl CommittedFile {
         }
     }
 
-    pub fn compress_and_store(&self, bucket_path: &PathBuf) -> io::Result<()> {
+    pub fn compress_and_store(&self, bucket_path: &Path) -> io::Result<()> {
         let input_path = bucket_path.join(&self.name);
         let output_path = bucket_path
             .join(".b")
             .join("storage")
-            .join(&self.hash.to_string());
+            .join(self.hash.to_string());
 
         compress_file(&input_path, &output_path, DEFAULT_COMPRESSION_LEVEL)
     }
 
-    pub fn restore(&self, bucket_path: &PathBuf) -> io::Result<()> {
+    pub fn restore(&self, bucket_path: &Path) -> io::Result<()> {
         let input_path = bucket_path
             .join(".b")
             .join("storage")
-            .join(&self.previous_hash.to_string());
+            .join(self.previous_hash.to_string());
         let output_path = bucket_path.join(&self.name);
 
         // Create parent directories if they don't exist

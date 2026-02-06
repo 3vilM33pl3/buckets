@@ -149,10 +149,7 @@ impl Create {
                     "Directory already exists",
                 )));
             } else {
-                return Err(BucketError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "Unknown error",
-                )));
+                return Err(BucketError::IoError(std::io::Error::other("Unknown error")));
             }
         }
 

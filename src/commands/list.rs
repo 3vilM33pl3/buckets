@@ -67,19 +67,17 @@ impl BucketCommand for List {
                 Ok(json) => println!("{}", json),
                 Err(e) => eprintln!("Error serializing to JSON: {}", e),
             }
+        } else if buckets.is_empty() {
+            println!("No buckets found");
         } else {
-            if buckets.is_empty() {
-                println!("No buckets found");
-            } else {
-                println!("Buckets:");
-                for bucket in &buckets {
-                    println!(
-                        "  {} - {} ({})",
-                        bucket.name,
-                        bucket.id,
-                        bucket.relative_bucket_path.display()
-                    );
-                }
+            println!("Buckets:");
+            for bucket in &buckets {
+                println!(
+                    "  {} - {} ({})",
+                    bucket.name,
+                    bucket.id,
+                    bucket.relative_bucket_path.display()
+                );
             }
         }
 

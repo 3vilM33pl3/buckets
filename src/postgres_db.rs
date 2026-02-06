@@ -244,7 +244,7 @@ where
     F: FnOnce(&DatabaseManager) -> T,
 {
     let db = get_database().await?;
-    Ok(f(&*db))
+    Ok(f(&db))
 }
 
 pub struct DatabaseHandle<'a> {

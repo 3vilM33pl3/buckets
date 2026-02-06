@@ -123,8 +123,8 @@ impl CommandDispatcher {
 }
 
 pub(crate) mod check;
-pub(crate) mod completions;
 pub(crate) mod commit;
+pub(crate) mod completions;
 pub(crate) mod config;
 pub(crate) mod create;
 pub(crate) mod doctor;

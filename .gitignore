@@ -28,3 +28,4 @@ test_repo_no_db_init/
 # AI Context
 .claude/
 .linear_mcp.sh
+.brv/

@@ -73,10 +73,11 @@ impl BucketCommand for Setup {
                         eprintln!("\n❌ Extension installation failed: {}", e);
                     }
                     // Pause to let user read output
-                    if let Ok(_) = Input::<String>::new()
+                    if Input::<String>::new()
                         .with_prompt("Press Enter to continue")
                         .allow_empty(true)
                         .interact_text()
+                        .is_ok()
                     {}
                 }
                 Some(3) => {
@@ -87,10 +88,11 @@ impl BucketCommand for Setup {
                         // test_database_connection prints success message
                     }
                     // Pause to let user read output
-                    if let Ok(_) = Input::<String>::new()
+                    if Input::<String>::new()
                         .with_prompt("Press Enter to continue")
                         .allow_empty(true)
                         .interact_text()
+                        .is_ok()
                     {}
                 }
                 Some(4) => {

@@ -18,6 +18,7 @@ Buckets is a version control and workflow management tool designed specifically 
 - **Expectation Management**: Define and check requirements between workflow stages
 - **File Integrity**: BLAKE3 hashing ensures file integrity
 - **Compression**: Built-in zstd compression for efficient storage
+- **Semantic Search**: AI-powered duplicate detection for expectations using `pgvector`
 - **Database Backend**: PostgreSQL for reliable data persistence
 
 ### How It Works
@@ -235,6 +236,7 @@ buckets schema
 
 - Rust 1.70 or later
 - Cargo
+- PostgreSQL with `pgvector` extension installed
 
 ### Building from Source
 

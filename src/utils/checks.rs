@@ -38,7 +38,7 @@ pub fn find_directory_in_parents(start_path: &Path, target_dir_name: &str) -> Op
 /// - The `.buckets` directory must contain either:
 ///   - a `database_type` file (indicating a file-based database), or
 ///   - a `postgres` directory (indicating a PostgreSQL-based database).
-/// At least one of these must be present for the repository to be considered valid.
+///     At least one of these must be present for the repository to be considered valid.
 pub fn is_valid_bucket_repo(dir_path: &Path) -> bool {
     debug!("{:?}", dir_path);
     // Find the .buckets directory
@@ -80,7 +80,7 @@ pub fn is_valid_bucket(path: &Path) -> bool {
     }
 }
 
-fn has_valid_bucket_info(bucket_path: &PathBuf) -> bool {
+fn has_valid_bucket_info(bucket_path: &Path) -> bool {
     let info_path = bucket_path.join(".b").join("info");
     if info_path.exists() && info_path.is_file() {
         return true;

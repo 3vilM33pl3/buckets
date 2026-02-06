@@ -115,7 +115,7 @@ impl BucketCommand for Check {
                     );
                 }
             }
-            println!("");
+            println!();
 
             Ok(())
         })

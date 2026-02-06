@@ -50,7 +50,7 @@ fn perform_bootstrap() -> Result<(), BucketError> {
 
     // 2. Try repository configuration (db_config.toml)
     if let Ok(config) =
-        crate::database::get_database_config(&buckets_dir.parent().unwrap_or(&buckets_dir))
+        crate::database::get_database_config(buckets_dir.parent().unwrap_or(&buckets_dir))
     {
         return initialize_runtime_and_db(
             config,
@@ -79,9 +79,7 @@ fn perform_bootstrap() -> Result<(), BucketError> {
 
     Err(BucketError::IoError(Error::new(
         ErrorKind::NotFound,
-        format!(
-            "No PostgreSQL connection found. Please set DATABASE_URL, run 'buckets init' with database options, or configure globally with 'buckets setup'.",
-        ),
+        "No PostgreSQL connection found. Please set DATABASE_URL, run 'buckets init' with database options, or configure globally with 'buckets setup'.".to_string(),
     )))
 }
 

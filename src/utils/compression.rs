@@ -30,7 +30,7 @@ pub fn compress_file(
     // Validate compression level
     let level = if compression_level == 0 {
         DEFAULT_COMPRESSION_LEVEL
-    } else if compression_level < 1 || compression_level > MAX_COMPRESSION_LEVEL {
+    } else if !(1..=MAX_COMPRESSION_LEVEL).contains(&compression_level) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             format!(
@@ -79,15 +79,12 @@ pub fn compress_file(
     })?;
 
     copy_encode(&input_file, &mut output_file, level).map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::Other,
-            format!(
-                "Failed to compress file from '{}' to '{}': {}",
-                input_path.display(),
-                output_path.display(),
-                e
-            ),
-        )
+        io::Error::other(format!(
+            "Failed to compress file from '{}' to '{}': {}",
+            input_path.display(),
+            output_path.display(),
+            e
+        ))
     })?;
 
     Ok(())

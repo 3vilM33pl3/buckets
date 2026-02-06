@@ -25,9 +25,10 @@ mod tests {
         let Some(fixture) = repo_fixture_or_skip() else {
             return;
         };
-        let temp_dir = fixture.repo_dir.clone();
+        // Must run from inside a bucket directory when no bucket name is provided
+        let bucket_dir = fixture.bucket_dir.clone();
         let mut cmd = assert_cmd::Command::cargo_bin("buckets").expect("failed to run command");
-        cmd.current_dir(temp_dir.as_path())
+        cmd.current_dir(bucket_dir.as_path())
             .arg("check")
             .assert()
             .success();

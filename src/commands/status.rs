@@ -12,7 +12,7 @@ use crate::CURRENT_DIR;
 use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 use std::env;
-use std::io::{self, Error, ErrorKind};
+use std::io::{self, Error};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct BucketStatusOutput {
@@ -106,10 +106,7 @@ impl Status {
         let latest_commit = RuntimeManager::block_on(Commit::load_last_commit_async(bucket.id))
             .map_err(|err| {
                 error!("Failed to load previous commit: {}", err);
-                BucketError::from(Error::new(
-                    ErrorKind::Other,
-                    "Failed to load previous commit.",
-                ))
+                BucketError::from(Error::other("Failed to load previous commit."))
             })?;
 
         let file_statuses = match latest_commit {
@@ -159,10 +156,10 @@ impl Status {
 
     fn repository_status(&self) -> Result<(), BucketError> {
         let current_dir = env::current_dir().map_err(|e| {
-            BucketError::from(io::Error::new(
-                io::ErrorKind::Other,
-                format!("Failed to get current directory: {}", e),
-            ))
+            BucketError::from(io::Error::other(format!(
+                "Failed to get current directory: {}",
+                e
+            )))
         })?;
         let repo_config = RepositoryConfig::from_file(current_dir)?;
 

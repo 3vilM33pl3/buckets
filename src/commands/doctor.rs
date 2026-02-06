@@ -535,7 +535,7 @@ impl Doctor {
             "overall_status": "passed"
         });
 
-        let required_tables = vec!["buckets", "commits", "files"];
+        let required_tables = vec!["buckets", "commits", "files", "expectations", "pebbles"];
         let mut all_valid = true;
 
         for table_name in required_tables {
@@ -718,6 +718,25 @@ impl Doctor {
                 json!({"name": "commit_id", "type": "uuid"}),
                 json!({"name": "file_path", "type": "text"}),
                 json!({"name": "hash", "type": "text"}),
+            ],
+            "expectations" => vec![
+                json!({"name": "id", "type": "uuid"}),
+                json!({"name": "bucket_id", "type": "uuid"}),
+                json!({"name": "target_bucket_id", "type": "uuid"}),
+                json!({"name": "description", "type": "text"}),
+                json!({"name": "status", "type": "text"}),
+                json!({"name": "created_at", "type": "timestamp"}),
+                json!({"name": "embedding", "type": "user-defined"}),
+            ],
+            "pebbles" => vec![
+                json!({"name": "id", "type": "uuid"}),
+                json!({"name": "description", "type": "text"}),
+                json!({"name": "origin_bucket_id", "type": "uuid"}),
+                json!({"name": "current_bucket_id", "type": "uuid"}),
+                json!({"name": "original_pebble_id", "type": "uuid"}),
+                json!({"name": "created_via_expectation_id", "type": "uuid"}),
+                json!({"name": "status", "type": "text"}),
+                json!({"name": "created_at", "type": "timestamp"}),
             ],
             _ => vec![],
         }

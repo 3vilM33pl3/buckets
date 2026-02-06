@@ -36,6 +36,12 @@ cargo test -- --ignored
 - Tests use `#[serial]` from the `serial_test` crate for tests that need sequential execution
 - Some tests use `#[ignore]` and must be explicitly run with `-- --ignored`
 
+### Environment Variables for Tests
+Skip Docker-dependent tests when Docker is unavailable:
+- `BUCKETS_SKIP_DOCKER_TESTS=1` - Skip tests requiring Docker
+- `BUCKETS_SKIP_DB_TESTS=1` - Skip database tests
+- `NO_NETWORK=1` - Skip tests requiring network
+
 ## Architecture Overview
 
 ### Command Structure and Pattern
@@ -91,12 +97,19 @@ Buckets has a two-tier configuration system:
    - Can override global settings
 
 ### Database & Storage
-- **PostgreSQL** for data persistence (previously DuckDB)
-- Schema management in `src/postgres_db/`
-- File storage: Content-addressable in `.buckets/storage/`
+- **PostgreSQL** with **pgvector** extension for data persistence and semantic search
+- Schema in `src/postgres_db.rs`, migrations in `src/sql/migrations/`
+- File storage: Content-addressable in `.b/storage/` within each bucket
 - File hashing: BLAKE3 for content integrity
 - Compression: zstd for efficient storage
 - UUID-based object identification
+
+### Semantic Search (pgvector)
+- Expectations use vector embeddings for duplicate detection
+- Embedding model: `all-MiniLM-L6-v2` (384 dimensions) via Candle
+- Model is lazily loaded and cached globally in `src/utils/embeddings.rs`
+- First run downloads ~90MB model from HuggingFace Hub
+- HNSW index for fast cosine similarity search (>85% threshold warns for duplicates)
 
 ### Thread-Local State
 Defined in [main.rs](src/main.rs):
@@ -123,8 +136,13 @@ All errors use the centralized `BucketError` enum with:
 - Uses `tempfile` crate for isolated test environments
 - Uses `serial_test` crate with `#[serial]` for tests requiring sequential execution
 - Uses `assert_cmd` for CLI testing
+- Uses `testcontainers` with `pgvector/pgvector:pg16` Docker image for database tests
 
 Test naming convention: `test_cli_<command>`
+
+### Test Fixtures
+- `TestDatabase` - Spins up a PostgreSQL container with pgvector, sets `DATABASE_URL` env var, auto-cleans on drop
+- `RepoFixture` - Creates a complete test repository with initialized database and bucket
 
 ## Project Structure
 ```
@@ -134,23 +152,15 @@ buckets/
 │   ├── main.rs              # Entry point, command dispatch
 │   ├── errors.rs            # Error types
 │   ├── world.rs             # Global state
+│   ├── postgres_db.rs       # Database connection and operations
 │   ├── commands/            # Command implementations
 │   │   ├── mod.rs          # BucketCommand trait
-│   │   ├── init.rs
-│   │   ├── create.rs
-│   │   └── ...
-│   ├── data/                # Core data structures
-│   │   ├── bucket.rs       # Bucket type
-│   │   └── commit.rs       # Commit type
-│   ├── utils/               # Utility functions
-│   │   ├── checks.rs       # Validation functions
-│   │   ├── security.rs     # Path security
-│   │   ├── compression.rs  # File compression
-│   │   └── ...
-│   └── postgres_db/         # Database layer
-├── tests/                   # Integration tests
-│   ├── common.rs           # Test utilities
-│   └── test_cli_*.rs       # Per-command tests
+│   │   ├── init.rs, create.rs, commit.rs, expect.rs, ...
+│   ├── data/                # Core data structures (Bucket, Commit)
+│   ├── utils/               # Utility functions (compression, security, embeddings)
+│   └── sql/migrations/      # PostgreSQL schema migrations (V1, V2, V3)
+├── tests/                   # Integration tests (test_cli_*.rs)
+│   └── common.rs           # Test fixtures (TestDatabase, RepoFixture)
 └── debian/                  # Debian packaging
 ```
 
@@ -162,10 +172,11 @@ A buckets repository has this structure:
 repo_name/
 ├── .buckets/
 │   ├── config              # Repository configuration (TOML)
-│   ├── buckets.db          # Database file
-│   └── storage/            # Compressed file storage
+│   └── database_type       # "PostgreSQL" marker file
 └── bucket_name/            # Individual buckets
-    └── .bucket_meta        # Bucket metadata
+    └── .b/
+        ├── info            # Bucket metadata (TOML: id, name, relative_bucket_path)
+        └── storage/        # Compressed file storage (content-addressable)
 ```
 
 ### Static Arguments
@@ -175,3 +186,7 @@ The `ARGS` static in [main.rs](src/main.rs:23) is initialized lazily using `once
 - Build scripts: `build-deb.sh` (clean build) and `build-deb-fast.sh` (incremental)
 - Package files in `debian/` directory
 - Makefile at `Makefile.deb` for package building
+
+### Diagnostics
+- `buckets doctor` - System diagnostics command that tests database connectivity, NTP server, and pgvector availability
+- Useful for troubleshooting setup issues

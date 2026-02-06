@@ -21,8 +21,8 @@ pub struct Bucket {
 }
 
 pub trait BucketTrait {
-    fn default(uuid: Uuid, name: &String, path: &PathBuf) -> Self;
-    fn from_meta_data(current_path: &PathBuf) -> Result<Bucket, BucketError>;
+    fn default(uuid: Uuid, name: &str, path: &Path) -> Self;
+    fn from_meta_data(current_path: &Path) -> Result<Bucket, BucketError>;
     fn write_bucket_info(&self) -> Result<(), io::Error>;
     #[cfg(test)]
     fn write_bucket_info_with_repo_path(&self, repo_path: &Path) -> Result<(), io::Error>;
@@ -35,7 +35,7 @@ pub trait BucketTrait {
 }
 
 impl BucketTrait for Bucket {
-    fn default(uuid: Uuid, name: &String, path: &PathBuf) -> Bucket {
+    fn default(uuid: Uuid, name: &str, path: &Path) -> Bucket {
         // Ensure the path is always relative by stripping any leading slash
         let relative_path = if path.is_absolute() {
             // If given an absolute path, try to make it relative to the repo root
@@ -59,10 +59,10 @@ impl BucketTrait for Bucket {
         }
     }
 
-    fn from_meta_data(current_path: &PathBuf) -> Result<Self, BucketError> {
-        debug!("Current path {}", current_path.as_path().display());
+    fn from_meta_data(current_path: &Path) -> Result<Self, BucketError> {
+        debug!("Current path {}", current_path.display());
         // find the top level of the bucket directory
-        let bucket_path: PathBuf = match Bucket::find_bucket(current_path.as_path()) {
+        let bucket_path: PathBuf = match Bucket::find_bucket(current_path) {
             Some(mut path) => {
                 path.pop();
                 path
@@ -86,7 +86,7 @@ impl BucketTrait for Bucket {
         // Use full_path for filesystem operations
         let full_path = self
             .full_path()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| io::Error::other(e.to_string()))?;
         let mut file = File::create(full_path.join(".b").join("info"))?;
         let serialized = to_string(self)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
@@ -162,10 +162,7 @@ impl BucketTrait for Bucket {
     }
 
     fn find_bucket(dir_path: &Path) -> Option<PathBuf> {
-        match find_directory_in_parents(dir_path, ".b") {
-            Some(path) => Some(path),
-            None => None,
-        }
+        find_directory_in_parents(dir_path, ".b")
     }
 
     fn get_full_bucket_path(&self) -> Result<PathBuf, BucketError> {
@@ -175,7 +172,7 @@ impl BucketTrait for Bucket {
 
     fn full_path(&self) -> Result<PathBuf, BucketError> {
         let current_dir = env::current_dir().map_err(BucketError::from)?;
-        let repo_path = find_bucket_repo(&current_dir.as_path()).ok_or(BucketError::NotInRepo)?;
+        let repo_path = find_bucket_repo(current_dir.as_path()).ok_or(BucketError::NotInRepo)?;
         let repo_root = repo_path.parent().ok_or(BucketError::NotInRepo)?;
 
         // Always treat relative_bucket_path as relative to repo root
@@ -228,7 +225,7 @@ impl BucketTrait for Bucket {
     }
 }
 
-pub fn read_bucket_info(path: &PathBuf) -> Result<Bucket, std::io::Error> {
+pub fn read_bucket_info(path: &Path) -> Result<Bucket, std::io::Error> {
     let info_path = path.join(".b").join("info");
     let mut file = File::open(&info_path).map_err(|e| {
         io::Error::new(
