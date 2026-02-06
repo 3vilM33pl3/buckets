@@ -12,7 +12,7 @@ use blake3::Hash;
 use log::{debug, error};
 use std::io;
 use std::io::{Error, ErrorKind};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use tokio_postgres::types::ToSql;
 use uuid::Uuid;
@@ -193,9 +193,9 @@ impl Commit {
     pub async fn process_files_async(
         &self,
         bucket_id: Uuid,
-        bucket_path: &PathBuf,
+        bucket_path: &Path,
         files: &[CommittedFile],
-        message: &String,
+        message: &str,
     ) -> Result<(), BucketError> {
         let db = get_database().await?;
 
@@ -213,7 +213,7 @@ impl Commit {
                 .await?;
 
             // Compress and store the file (no database operation)
-            file.compress_and_store(&bucket_path).map_err(|e| {
+            file.compress_and_store(bucket_path).map_err(|e| {
                 error!("Error compressing and storing file: {}", e);
                 e
             })?;
@@ -225,7 +225,7 @@ impl Commit {
         &self,
         db: &crate::postgres_db::DatabaseManager,
         bucket_id: Uuid,
-        bucket_path: &PathBuf,
+        bucket_path: &Path,
     ) -> Result<(), BucketError> {
         let check_params: Vec<&(dyn ToSql + Sync)> = vec![&bucket_id];
         let rows = db
@@ -286,11 +286,11 @@ impl Commit {
         &self,
         db: &crate::postgres_db::DatabaseManager,
         bucket_id: Uuid,
-        message: &String,
+        message: &str,
     ) -> Result<Uuid, BucketError> {
         debug!("CommitCommand: inserting commit into PostgreSQL database");
 
-        let params: Vec<&(dyn ToSql + Sync)> = vec![&bucket_id, message];
+        let params: Vec<&(dyn ToSql + Sync)> = vec![&bucket_id, &message];
 
         let rows = db.query(
             "INSERT INTO commits (id, bucket_id, message) VALUES (uuid_generate_v4(), $1::uuid, $2) RETURNING id",

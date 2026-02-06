@@ -23,9 +23,13 @@ impl BucketCommand for Config {
 
     fn execute(&self) -> Result<(), BucketError> {
         match &self.args.command {
-            ConfigSubcommand::Get(command) => self.get_value(&command.key, command.global, command.local),
+            ConfigSubcommand::Get(command) => {
+                self.get_value(&command.key, command.global, command.local)
+            }
             ConfigSubcommand::Set(command) => self.set_value(command),
-            ConfigSubcommand::Unset(command) => self.unset_value(&command.key, command.global, command.local),
+            ConfigSubcommand::Unset(command) => {
+                self.unset_value(&command.key, command.global, command.local)
+            }
             ConfigSubcommand::List(command) => self.list_values(command),
         }
     }
@@ -159,9 +163,8 @@ fn load_config_value_from_path(path: &PathBuf) -> Result<Value, BucketError> {
     }
 
     let content = fs::read_to_string(path)?;
-    toml::from_str(&content).map_err(|e| {
-        BucketError::InvalidData(format!("Failed to parse config: {}", e))
-    })
+    toml::from_str(&content)
+        .map_err(|e| BucketError::InvalidData(format!("Failed to parse config: {}", e)))
 }
 
 fn save_config_value(path: PathBuf, value: &Value) -> Result<(), BucketError> {
@@ -169,9 +172,8 @@ fn save_config_value(path: PathBuf, value: &Value) -> Result<(), BucketError> {
         fs::create_dir_all(parent)?;
     }
 
-    let content = toml::to_string_pretty(value).map_err(|e| {
-        BucketError::InvalidData(format!("Failed to serialize config: {}", e))
-    })?;
+    let content = toml::to_string_pretty(value)
+        .map_err(|e| BucketError::InvalidData(format!("Failed to serialize config: {}", e)))?;
     fs::write(path, content)?;
     Ok(())
 }

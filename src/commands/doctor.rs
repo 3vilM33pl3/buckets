@@ -210,6 +210,9 @@ impl Doctor {
         // Display schema validation results
         self.display_schema_results(&schema_result)?;
 
+        // Display extension validation results
+        self.display_extension_results(&schema_result)?;
+
         Ok(())
     }
 
@@ -264,6 +267,11 @@ impl Doctor {
             result["status"] = json!("failed");
         }
 
+        // Update overall status if extension validation failed
+        if schema_result["extensions"]["vector"]["status"].as_str() == Some("failed") {
+            result["status"] = json!("failed");
+        }
+
         Ok(result)
     }
 
@@ -302,7 +310,46 @@ impl Doctor {
         })?;
 
         // Validate database schema
-        self.validate_database_schema(&client).await
+        let mut full_result = self.validate_database_schema(&client).await?;
+
+        // Validate extensions
+        let extension_result = self.validate_extensions(&client).await?;
+        full_result["extensions"] = extension_result;
+
+        Ok(full_result)
+    }
+
+    fn display_extension_results(
+        &self,
+        schema_result: &serde_json::Value,
+    ) -> Result<(), BucketError> {
+        let empty_map = serde_json::Map::new();
+        let extensions = schema_result["extensions"]
+            .as_object()
+            .unwrap_or(&empty_map);
+
+        if extensions.is_empty() {
+            return Ok(());
+        }
+
+        println!();
+        println!("Database Extensions");
+        println!("-------------------");
+
+        let vector_installed = extensions["vector"]["installed"].as_bool().unwrap_or(false);
+        let vector_version = extensions["vector"]["version"].as_str().unwrap_or("N/A");
+
+        if vector_installed {
+            println!(
+                "✅ vector extension installed (version: {})",
+                vector_version
+            );
+        } else {
+            println!("❌ vector extension not installed");
+            println!("   Run 'buckets setup' to install it");
+        }
+
+        Ok(())
     }
 
     fn display_schema_results(&self, schema_result: &serde_json::Value) -> Result<(), BucketError> {
@@ -488,7 +535,7 @@ impl Doctor {
             "overall_status": "passed"
         });
 
-        let required_tables = vec!["buckets", "commits", "files"];
+        let required_tables = vec!["buckets", "commits", "files", "expectations", "pebbles"];
         let mut all_valid = true;
 
         for table_name in required_tables {
@@ -672,7 +719,56 @@ impl Doctor {
                 json!({"name": "file_path", "type": "text"}),
                 json!({"name": "hash", "type": "text"}),
             ],
+            "expectations" => vec![
+                json!({"name": "id", "type": "uuid"}),
+                json!({"name": "bucket_id", "type": "uuid"}),
+                json!({"name": "target_bucket_id", "type": "uuid"}),
+                json!({"name": "description", "type": "text"}),
+                json!({"name": "status", "type": "text"}),
+                json!({"name": "created_at", "type": "timestamp"}),
+                json!({"name": "embedding", "type": "user-defined"}),
+            ],
+            "pebbles" => vec![
+                json!({"name": "id", "type": "uuid"}),
+                json!({"name": "description", "type": "text"}),
+                json!({"name": "origin_bucket_id", "type": "uuid"}),
+                json!({"name": "current_bucket_id", "type": "uuid"}),
+                json!({"name": "original_pebble_id", "type": "uuid"}),
+                json!({"name": "created_via_expectation_id", "type": "uuid"}),
+                json!({"name": "status", "type": "text"}),
+                json!({"name": "created_at", "type": "timestamp"}),
+            ],
             _ => vec![],
         }
+    }
+
+    async fn validate_extensions(
+        &self,
+        client: &tokio_postgres::Client,
+    ) -> Result<serde_json::Value, BucketError> {
+        let query = "
+            SELECT extname, extversion 
+            FROM pg_extension 
+            WHERE extname = 'vector'
+        ";
+
+        let rows = client.query(query, &[]).await.map_err(|e| {
+            BucketError::from(format!("Failed to query extensions: {}", e).as_str())
+        })?;
+
+        let (installed, version) = if let Some(row) = rows.first() {
+            let version: String = row.get(1);
+            (true, version)
+        } else {
+            (false, "N/A".to_string())
+        };
+
+        Ok(json!({
+            "vector": {
+                "status": if installed { "passed" } else { "failed" },
+                "installed": installed,
+                "version": version
+            }
+        }))
     }
 }

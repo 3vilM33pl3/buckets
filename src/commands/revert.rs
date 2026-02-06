@@ -11,7 +11,7 @@ use log::{debug, error};
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tokio_postgres::types::ToSql;
 use uuid::Uuid;
 
@@ -60,7 +60,7 @@ impl Revert {
             let db = get_database().await?;
 
             let relative_path = PathBuf::from(&file_path)
-                .strip_prefix(&bucket_path)
+                .strip_prefix(bucket_path)
                 .unwrap_or(&PathBuf::from(&file_path))
                 .to_string_lossy()
                 .to_string();
@@ -150,7 +150,7 @@ impl Revert {
         Ok(())
     }
 
-    fn revert_all(&self, bucket: Bucket, bucket_path: &PathBuf) -> Result<(), BucketError> {
+    fn revert_all(&self, bucket: Bucket, bucket_path: &Path) -> Result<(), BucketError> {
         let (files_to_restore, commit_id_str) = RuntimeManager::block_on(async {
             let db = get_database().await?;
             let bucket_id = bucket.id;

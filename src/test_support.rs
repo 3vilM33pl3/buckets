@@ -1,5 +1,3 @@
-#![cfg(test)]
-
 pub mod docker {
     use once_cell::sync::Lazy;
     use std::path::{Path, PathBuf};
@@ -12,8 +10,8 @@ pub mod docker {
     use uuid::Uuid;
 
     static DOCKER: Lazy<Cli> = Lazy::new(|| Cli::default());
-    const POSTGRES_IMAGE: &str = "postgres";
-    const POSTGRES_TAG: &str = "16-alpine";
+    const POSTGRES_IMAGE: &str = "pgvector/pgvector";
+    const POSTGRES_TAG: &str = "pg16";
 
     #[derive(Debug)]
     pub struct TestDatabase {

@@ -1,6 +1,6 @@
 use std::io::Error;
 use std::io::ErrorKind;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::args::RollbackCommand;
 use crate::commands::commit::Commit;
@@ -40,12 +40,12 @@ impl BucketCommand for Rollback {
 
         match &self.args.path {
             None => rollback_all(&current_dir),
-            Some(path) => rollback_single_file(&current_dir, &path),
+            Some(path) => rollback_single_file(&current_dir, path),
         }
     }
 }
 
-fn rollback_single_file(bucket_path: &PathBuf, file: &PathBuf) -> Result<(), BucketError> {
+fn rollback_single_file(bucket_path: &Path, file: &PathBuf) -> Result<(), BucketError> {
     if !file.exists() {
         return Err(BucketError::from(Error::new(
             ErrorKind::NotFound,
@@ -58,10 +58,7 @@ fn rollback_single_file(bucket_path: &PathBuf, file: &PathBuf) -> Result<(), Buc
     let previous_commit = RuntimeManager::block_on(Commit::load_last_commit_async(bucket.id))
         .map_err(|err| {
             error!("Failed to load previous commit: {}", err);
-            BucketError::from(Error::new(
-                ErrorKind::Other,
-                "Failed to load previous commit.",
-            ))
+            BucketError::from(Error::other("Failed to load previous commit."))
         })?;
 
     match previous_commit {
@@ -94,9 +91,9 @@ fn rollback_single_file(bucket_path: &PathBuf, file: &PathBuf) -> Result<(), Buc
     }
 }
 
-fn rollback_all(bucket_path: &PathBuf) -> Result<(), BucketError> {
+fn rollback_all(bucket_path: &Path) -> Result<(), BucketError> {
     // Read the bucket's metadata
-    let bucket = Bucket::from_meta_data(&bucket_path)?;
+    let bucket = Bucket::from_meta_data(bucket_path)?;
     let bucket_files = bucket.list_files_with_metadata_in_bucket()?;
     if bucket_files.files.is_empty() {
         println!("No files in bucket");
@@ -106,10 +103,7 @@ fn rollback_all(bucket_path: &PathBuf) -> Result<(), BucketError> {
     let previous_commit = RuntimeManager::block_on(Commit::load_last_commit_async(bucket.id))
         .map_err(|err| {
             error!("Failed to load previous commit: {}", err);
-            BucketError::from(Error::new(
-                ErrorKind::Other,
-                "Failed to load previous commit.",
-            ))
+            BucketError::from(Error::other("Failed to load previous commit."))
         })?;
 
     match previous_commit {
@@ -120,9 +114,9 @@ fn rollback_all(bucket_path: &PathBuf) -> Result<(), BucketError> {
             )));
         }
         Some(previous_commit) => {
-            let changes = bucket_files.compare(&previous_commit).ok_or_else(|| {
-                BucketError::from(Error::new(ErrorKind::Other, "Failed to compare files."))
-            })?;
+            let changes = bucket_files
+                .compare(&previous_commit)
+                .ok_or_else(|| BucketError::from(Error::other("Failed to compare files.")))?;
 
             if changes
                 .iter()
@@ -138,7 +132,7 @@ fn rollback_all(bucket_path: &PathBuf) -> Result<(), BucketError> {
                 .iter()
                 .filter(|change| change.status == CommitStatus::Modified)
                 .for_each(|change| {
-                    if let Err(e) = change.restore(&bucket_path) {
+                    if let Err(e) = change.restore(bucket_path) {
                         error!("Failed to restore file: {}", e);
                     }
                 });

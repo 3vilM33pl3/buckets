@@ -3,10 +3,9 @@ use crate::commands::BucketCommand;
 use crate::errors::BucketError;
 use clap::CommandFactory;
 use clap_complete::{generate, Shell};
+use log::info;
 use std::io;
 use std::path::PathBuf;
-use log::info;
-use dirs;
 
 pub struct Completions {
     args: CompletionsCommand,
@@ -33,13 +32,13 @@ impl BucketCommand for Completions {
 
         if self.args.install {
             let path = self.get_install_path(shell)?;
-             if let Some(parent) = path.parent() {
+            if let Some(parent) = path.parent() {
                 std::fs::create_dir_all(parent)?;
             }
             let mut file = std::fs::File::create(&path)?;
             generate(shell, &mut cmd, bin_name, &mut file);
             info!("Completion script installed to {:?}", path);
-            eprintln!("Completion script installed to {:?}", path); 
+            eprintln!("Completion script installed to {:?}", path);
         } else if let Some(path) = &self.args.output {
             let mut file = std::fs::File::create(path)?;
             generate(shell, &mut cmd, bin_name, &mut file);
@@ -79,4 +78,3 @@ impl Completions {
         }
     }
 }
-

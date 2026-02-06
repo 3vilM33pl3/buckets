@@ -18,9 +18,9 @@ mod tests {
         let Some(fixture) = repo_fixture_or_skip() else {
             return;
         };
-        let temp_dir = fixture.repo_dir.clone();
+        let _temp_dir = fixture.repo_dir.clone();
         let mut cmd = assert_cmd::Command::cargo_bin("buckets").expect("failed to run command");
-        cmd.current_dir(temp_dir.as_path())
+        cmd.current_dir(fixture.bucket_dir.as_path())
             .arg("finalize")
             .assert()
             .success();

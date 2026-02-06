@@ -53,6 +53,15 @@
         ```
         
 
+        buckets finalize [bucket name]
+        ```
+        
+4. **Semantic Deduplication**
+    - When you create an expectation using `buckets expect`, the system automatically generates a vector embedding of your description using a specialized AI model (`all-MiniLM-L6-v2`).
+    - It then compares this embedding against all existing expectations to find semantically similar ones.
+    - If a high similarity (>85%) is found, you will be warned to prevent duplicate work.
+    - **Note**: The first time you run this, it will download the model (~90MB), which may take a few moments. Subsequent runs will be fast.
+
 ---
 
 ## Example Workflow (Expanded)

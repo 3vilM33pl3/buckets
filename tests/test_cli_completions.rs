@@ -14,4 +14,3 @@ mod tests {
             .stdout(contains("#compdef buckets"));
     }
 }
-

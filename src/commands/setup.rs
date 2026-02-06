@@ -43,6 +43,7 @@ impl BucketCommand for Setup {
         let items = vec![
             "Configure PostgreSQL",
             "Configure NTP Server",
+            "Install PostgreSQL Extensions (pgvector)",
             "Test Connection",
             "Save & Exit",
             "Cancel",
@@ -68,6 +69,18 @@ impl BucketCommand for Setup {
                     config = self.configure_ntp_server(config)?;
                 }
                 Some(2) => {
+                    if let Err(e) = self.install_extensions(&config) {
+                        eprintln!("\n❌ Extension installation failed: {}", e);
+                    }
+                    // Pause to let user read output
+                    if Input::<String>::new()
+                        .with_prompt("Press Enter to continue")
+                        .allow_empty(true)
+                        .interact_text()
+                        .is_ok()
+                    {}
+                }
+                Some(3) => {
                     if let Err(e) = self.test_database_connection(&config) {
                         eprintln!("\n❌ Connection failed: {}", e);
                     } else {
@@ -75,13 +88,14 @@ impl BucketCommand for Setup {
                         // test_database_connection prints success message
                     }
                     // Pause to let user read output
-                    if let Ok(_) = Input::<String>::new()
+                    if Input::<String>::new()
                         .with_prompt("Press Enter to continue")
                         .allow_empty(true)
                         .interact_text()
+                        .is_ok()
                     {}
                 }
-                Some(3) => {
+                Some(4) => {
                     config.save()?;
                     println!("\n✅ Global configuration saved successfully!");
                     println!(
@@ -90,7 +104,7 @@ impl BucketCommand for Setup {
                     );
                     break;
                 }
-                Some(4) => {
+                Some(5) => {
                     println!("\n❌ Configuration cancelled. Changes were not saved.");
                     break;
                 }
@@ -130,6 +144,50 @@ impl Setup {
 
         config.ntp_server = ntp_server;
         Ok(config)
+    }
+
+    fn install_extensions(&self, config: &GlobalConfig) -> Result<(), BucketError> {
+        println!("\nInstalling PostgreSQL Extensions...");
+
+        if let Some(ref conn_str) = config.postgresql_connection {
+            RuntimeManager::block_on(async { self.install_pgvector(conn_str).await })?;
+            println!("✅ Extension installation completed!");
+        } else {
+            println!("⚠️ No PostgreSQL connection string configured.");
+        }
+
+        Ok(())
+    }
+
+    async fn install_pgvector(&self, connection_string: &str) -> Result<(), BucketError> {
+        let db_config = DatabaseConfig::from_url(connection_string)?;
+
+        let mut cfg = Config::new();
+        cfg.host = Some(db_config.host);
+        cfg.port = Some(db_config.port);
+        cfg.user = Some(db_config.username);
+        cfg.password = db_config.password;
+        cfg.dbname = Some(db_config.database);
+        cfg.connect_timeout = Some(Duration::from_secs(10));
+
+        let pool = cfg.create_pool(Some(Runtime::Tokio1), NoTls).map_err(|e| {
+            BucketError::from(format!("Failed to create connection pool: {}", e).as_str())
+        })?;
+
+        let client = pool.get().await.map_err(|e| {
+            BucketError::from(format!("Failed to connect to PostgreSQL database: {}", e).as_str())
+        })?;
+
+        println!("   Enabling 'vector' extension...");
+        client
+            .execute("CREATE EXTENSION IF NOT EXISTS vector", &[])
+            .await
+            .map_err(|e| {
+                BucketError::from(format!("Failed to enable vector extension: {}", e).as_str())
+            })?;
+        println!("   ✅ 'vector' extension enabled");
+
+        Ok(())
     }
 
     fn test_database_connection(&self, config: &GlobalConfig) -> Result<(), BucketError> {

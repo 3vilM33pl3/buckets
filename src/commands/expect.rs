@@ -5,9 +5,11 @@ use crate::data::expectation::Expectation;
 use crate::data::pebble::Pebble;
 use crate::errors::BucketError;
 use crate::postgres_db::get_database;
+use crate::utils::embeddings::EmbeddingGenerator;
 use crate::utils::runtime::RuntimeManager;
 use crate::CURRENT_DIR;
-use log::info;
+use dialoguer::console::style;
+use log::{info, warn};
 use uuid::Uuid;
 
 pub struct Expect {
@@ -66,12 +68,46 @@ impl BucketCommand for Expect {
                 None
             };
 
+            // 2.5. Generate Embedding & Check for Duplicates
+            let embedding = match EmbeddingGenerator::generate(description) {
+                Ok(vec) => Some(vec),
+                Err(e) => {
+                    warn!("Failed to generate embedding: {}", e);
+                    None
+                }
+            };
+
+            if let Some(vec) = &embedding {
+                match Expectation::find_similar(&db, vec, 3, 0.85).await {
+                    Ok(founds) => {
+                        if !founds.is_empty() {
+                            println!(
+                                "{}",
+                                style("Warning: Similar expectations found:")
+                                    .yellow()
+                                    .bold()
+                            );
+                            for (exp, score) in founds {
+                                println!(
+                                    "  - \"{}\" (Similarity: {:.1}%)",
+                                    style(exp.description).cyan(),
+                                    score * 100.0
+                                );
+                            }
+                            println!("{}", style("creating anyway...").dim());
+                        }
+                    }
+                    Err(e) => warn!("Failed to check for duplicates: {}", e),
+                }
+            }
+
             // 3. Create Expectation Record
             let expectation = Expectation::create(
                 &db,
                 consumer_bucket_id,
                 producer_bucket_id,
                 description.clone(),
+                embedding,
             )
             .await?;
 

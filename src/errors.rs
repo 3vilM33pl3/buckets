@@ -35,12 +35,20 @@ pub enum BucketError {
     SecurityError(String),
     #[error("Path validation error: {0}")]
     PathValidationError(String),
+    #[error("Embedding Error: {0}")]
+    EmbeddingError(String),
     #[error("Dialog Error: {0}")]
     DialogError(#[from] dialoguer::Error),
 }
 
 impl From<&str> for BucketError {
     fn from(error: &str) -> Self {
+        BucketError::IoError(io::Error::other(error))
+    }
+}
+
+impl From<String> for BucketError {
+    fn from(error: String) -> Self {
         BucketError::IoError(io::Error::other(error))
     }
 }
@@ -142,6 +150,12 @@ mod tests {
         let display_str = format!("{}", bucket_error);
         assert!(display_str.contains("IO Error:"));
         assert!(display_str.contains("access denied"));
+    }
+
+    #[test]
+    fn test_embedding_error_display() {
+        let error = BucketError::EmbeddingError("model not found".to_string());
+        assert_eq!(format!("{}", error), "Embedding Error: model not found");
     }
 
     #[test]

@@ -9,7 +9,7 @@ use std::{fs, io};
 use walkdir::{DirEntry, WalkDir};
 
 #[allow(dead_code)]
-pub fn delete_and_create_tmp_dir(bucket_path: &PathBuf) -> Result<PathBuf, BucketError> {
+pub fn delete_and_create_tmp_dir(bucket_path: &Path) -> Result<PathBuf, BucketError> {
     let tmp_bucket_path = bucket_path.join(".b").join("tmp");
     fs::remove_dir_all(&tmp_bucket_path).unwrap_or_default();
     fs::create_dir_all(&tmp_bucket_path)?;
@@ -20,8 +20,8 @@ pub(crate) fn find_files_excluding_top_level_b(dir: &Path) -> Vec<PathBuf> {
     WalkDir::new(dir)
         .into_iter()
         .filter_map(Result::ok)
-        .filter(|entry| is_not_in_dir(entry, &dir, ".b"))
-        .filter_map(|entry| make_relative_path(entry.path(), &dir))
+        .filter(|entry| is_not_in_dir(entry, dir, ".b"))
+        .filter_map(|entry| make_relative_path(entry.path(), dir))
         .collect()
 }
 
@@ -99,21 +99,14 @@ pub fn find_directory_in_parents(start_path: &Path, target_dir_name: &str) -> Op
 }
 
 pub fn find_bucket_path(dir_path: &Path) -> Option<PathBuf> {
-    match find_directory_in_parents(dir_path, ".b") {
-        Some(path) => Some(path),
-        None => None,
-    }
-    .map(|mut path| {
+    find_directory_in_parents(dir_path, ".b").map(|mut path| {
         path.pop();
         path
     })
 }
 
 pub fn find_bucket_repo(dir_path: &Path) -> Option<PathBuf> {
-    match find_directory_in_parents(dir_path, ".buckets") {
-        Some(path) => Some(path),
-        None => None,
-    }
+    find_directory_in_parents(dir_path, ".buckets")
 }
 
 #[cfg(test)]

@@ -12,10 +12,10 @@ pub mod tests {
     use tokio_postgres::NoTls;
     use uuid::Uuid;
 
-    static DOCKER: Lazy<Cli> = Lazy::new(|| Cli::default());
+    static DOCKER: Lazy<Cli> = Lazy::new(Cli::default);
 
-    const POSTGRES_IMAGE: &str = "postgres";
-    const POSTGRES_TAG: &str = "16-alpine";
+    const POSTGRES_IMAGE: &str = "pgvector/pgvector";
+    const POSTGRES_TAG: &str = "pg16";
 
     #[allow(dead_code)]
     pub fn get_test_dir() -> PathBuf {
