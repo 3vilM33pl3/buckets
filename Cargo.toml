@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "buckets-tui"]
+members = [".", "buckets-tui", "buckets-server"]
 
 [package]
 name = "buckets"
