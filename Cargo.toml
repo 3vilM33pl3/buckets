@@ -1,7 +1,18 @@
+[workspace]
+members = [".", "buckets-tui"]
+
 [package]
 name = "buckets"
 version = "0.4.1"
 edition = "2021"
+
+[lib]
+name = "buckets"
+path = "src/lib.rs"
+
+[[bin]]
+name = "buckets"
+path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4.5.40", features = ["derive"] }

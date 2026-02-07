@@ -119,7 +119,7 @@ impl BucketCommand for Commit {
             "Executing commit command ########################################################## "
         );
 
-        let world = World::new(&self.args.shared)?;
+        let world = World::new(self.args.shared.verbose)?;
 
         let bucket = match &world.bucket {
             Some(bucket) => bucket,

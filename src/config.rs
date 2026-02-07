@@ -1,18 +1,18 @@
 #[derive(serde::Serialize)]
-pub(crate) struct Config {
-    pub(crate) network: NetworkConfig,
+pub struct Config {
+    pub network: NetworkConfig,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) database: Option<DatabaseConfig>,
+    pub database: Option<DatabaseConfig>,
 }
 
 #[derive(serde::Serialize)]
-pub(crate) struct NetworkConfig {
-    pub(crate) ntp_server: String,
-    pub(crate) ip_check: String,
-    pub(crate) url_check: String,
+pub struct NetworkConfig {
+    pub ntp_server: String,
+    pub ip_check: String,
+    pub url_check: String,
 }
 
 #[derive(serde::Serialize)]
-pub(crate) struct DatabaseConfig {
-    pub(crate) postgresql_connection: String,
+pub struct DatabaseConfig {
+    pub postgresql_connection: String,
 }

@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use crate::{
-    args::SharedArguments,
     data::bucket::{Bucket, BucketTrait},
     errors::BucketError,
     utils::{checks, utils::find_bucket_repo},
@@ -27,7 +26,7 @@ pub struct World {
 }
 
 impl World {
-    pub fn new(args: &SharedArguments) -> Result<Self, BucketError> {
+    pub fn new(verbose: bool) -> Result<Self, BucketError> {
         let work_dir = CURRENT_DIR.with(|dir| dir.clone());
 
         if !checks::is_valid_bucket_repo(&work_dir) {
@@ -42,8 +41,6 @@ impl World {
         let repo_db_path = repo_root.join(".buckets").join("buckets.db");
 
         let bucket = Bucket::from_meta_data(&work_dir).ok();
-
-        let verbose = args.verbose;
 
         Ok(World {
             work_dir,

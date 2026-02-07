@@ -28,7 +28,7 @@ fn get_string_with_fallback(value: &Value, nested: &[&str], flat: &str) -> Optio
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct RepositoryConfig {
+pub struct RepositoryConfig {
     pub ntp_server: String,
     pub ip_check: String,
     pub url_check: String,
@@ -36,7 +36,7 @@ pub(crate) struct RepositoryConfig {
 }
 
 impl RepositoryConfig {
-    pub(crate) fn from_file(path: PathBuf) -> Result<Self, std::io::Error> {
+    pub fn from_file(path: PathBuf) -> Result<Self, std::io::Error> {
         Self::from_file_with_global_config(path, true)
     }
 
@@ -123,29 +123,31 @@ impl RepositoryConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::BucketCommand;
     use std::fs;
     use tempfile::tempdir;
+
+    /// Helper to write a default config file (same as Init::create_config_file_no_global)
+    fn write_default_config(buckets_dir: &std::path::Path) {
+        let config = crate::config::Config {
+            network: crate::config::NetworkConfig {
+                ntp_server: "pool.ntp.org".to_string(),
+                ip_check: "8.8.8.8".to_string(),
+                url_check: "api.ipify.org".to_string(),
+            },
+            database: None,
+        };
+        let toml_content = toml::to_string(&config).expect("Failed to serialize config");
+        fs::create_dir_all(buckets_dir).expect("Failed to create .buckets dir");
+        let config_path = buckets_dir.join("config");
+        fs::write(config_path, toml_content).expect("Failed to write config");
+    }
 
     #[test]
     fn test_from_file() {
         let temp_dir = tempdir().expect("Failed to create temporary directory");
         let buckets_dir = temp_dir.path().join(".buckets");
-        fs::create_dir(&buckets_dir).expect("Failed to create .buckets directory");
 
-        // Create and write to the file
-        let init_cmd = crate::commands::init::Init::new(&crate::args::InitCommand {
-            shared: crate::args::SharedArguments::default(),
-            repo_name: "test".to_string(),
-            external_host: Some("localhost".to_string()),
-            external_port: Some(5432),
-            external_database: Some("buckets_test".to_string()),
-            external_username: Some("test_user".to_string()),
-            external_password: Some("test_password".to_string()),
-        });
-        init_cmd
-            .create_config_file_no_global(&buckets_dir.as_path())
-            .expect("Failed to create config file");
+        write_default_config(&buckets_dir);
 
         // Read the file
         let config = RepositoryConfig::from_file_no_global(temp_dir.path().to_path_buf())
@@ -245,21 +247,8 @@ postgresql_connection = "postgresql://test:test@localhost:5432/test"
     fn test_from_file_nested_directory() -> std::io::Result<()> {
         let temp_dir = tempdir().expect("Failed to create temporary directory");
         let buckets_dir = temp_dir.path().join(".buckets");
-        fs::create_dir(&buckets_dir)?;
 
-        // Create the config file
-        let init_cmd = crate::commands::init::Init::new(&crate::args::InitCommand {
-            shared: crate::args::SharedArguments::default(),
-            repo_name: "test".to_string(),
-            external_host: Some("localhost".to_string()),
-            external_port: Some(5432),
-            external_database: Some("buckets_test".to_string()),
-            external_username: Some("test_user".to_string()),
-            external_password: Some("test_password".to_string()),
-        });
-        init_cmd
-            .create_config_file_no_global(&buckets_dir.as_path())
-            .expect("Failed to create config file");
+        write_default_config(&buckets_dir);
 
         // Create nested directory and test from there
         let nested_dir = temp_dir.path().join("nested").join("directory");
@@ -286,13 +275,13 @@ postgresql_connection = "postgresql://test:test@localhost:5432/test"
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub(crate) struct GlobalConfig {
+pub struct GlobalConfig {
     pub ntp_server: String,
     pub postgresql_connection: Option<String>,
 }
 
 impl GlobalConfig {
-    pub(crate) fn config_path() -> Result<PathBuf, BucketError> {
+    pub fn config_path() -> Result<PathBuf, BucketError> {
         let home_dir = dirs::home_dir().ok_or_else(|| {
             BucketError::IoError(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
@@ -302,7 +291,7 @@ impl GlobalConfig {
         Ok(home_dir.join(".buckets_config.toml"))
     }
 
-    pub(crate) fn load() -> Result<Self, BucketError> {
+    pub fn load() -> Result<Self, BucketError> {
         let config_path = Self::config_path()?;
 
         if !config_path.exists() {
@@ -321,7 +310,7 @@ impl GlobalConfig {
         })
     }
 
-    pub(crate) fn save(&self) -> Result<(), BucketError> {
+    pub fn save(&self) -> Result<(), BucketError> {
         let config_path = Self::config_path()?;
 
         // Create parent directory if it doesn't exist
