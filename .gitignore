@@ -25,6 +25,11 @@ manual_test_run/
 test_repo_from_project_dir/
 test_repo_no_db_init/
 
+# Android build artifacts
+buckets-android/.gradle/
+buckets-android/app/build/
+buckets-android/local.properties
+
 # AI Context
 .claude/
 .linear_mcp.sh
