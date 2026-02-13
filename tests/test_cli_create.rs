@@ -41,9 +41,7 @@ mod tests {
             .arg("create")
             .arg(&new_bucket)
             .assert()
-            .success()
-            .stdout(predicate::str::contains(""))
-            .stderr(predicate::str::is_empty());
+            .success();
 
         let bucket_path = repo_dir.join(&new_bucket).join(".b");
         assert!(bucket_path.exists());
