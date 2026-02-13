@@ -6,9 +6,8 @@ use crate::utils::config::{GlobalConfig, RepositoryConfig};
 use crate::utils::runtime::RuntimeManager;
 use chrono::Utc;
 use deadpool_postgres::{Config, Runtime};
-use ntp::request;
 use serde_json::json;
-use std::net::ToSocketAddrs;
+use std::net::{ToSocketAddrs, UdpSocket};
 use std::time::{Duration, Instant};
 use tokio_postgres::NoTls;
 
@@ -432,8 +431,8 @@ impl Doctor {
                 )
             })?;
 
-        // Query NTP server
-        let _result = request(addr).map_err(|e| {
+        // Query NTP server with a raw SNTP request
+        ntp_query(addr).map_err(|e| {
             BucketError::from(format!("Failed to query NTP server: {}", e).as_str())
         })?;
 
@@ -441,9 +440,6 @@ impl Doctor {
 
         println!("✅ NTP server reachable");
         println!("   Response time: {}ms", duration.as_millis());
-
-        // Calculate basic info (NTP packet doesn't have offset method in this crate)
-        // We can calculate basic offset from transmit and receive times
         println!("   NTP query successful");
 
         Ok(())
@@ -468,8 +464,8 @@ impl Doctor {
                 )
             })?;
 
-        // Query NTP server
-        let _result = request(addr).map_err(|e| {
+        // Query NTP server with a raw SNTP request
+        ntp_query(addr).map_err(|e| {
             BucketError::from(format!("Failed to query NTP server: {}", e).as_str())
         })?;
 
@@ -747,8 +743,8 @@ impl Doctor {
         client: &tokio_postgres::Client,
     ) -> Result<serde_json::Value, BucketError> {
         let query = "
-            SELECT extname, extversion 
-            FROM pg_extension 
+            SELECT extname, extversion
+            FROM pg_extension
             WHERE extname = 'vector'
         ";
 
@@ -771,4 +767,26 @@ impl Doctor {
             }
         }))
     }
+}
+
+/// Send a minimal SNTPv4 request and validate the response.
+fn ntp_query(addr: std::net::SocketAddr) -> Result<(), std::io::Error> {
+    let socket = UdpSocket::bind("0.0.0.0:0")?;
+    socket.set_read_timeout(Some(Duration::from_secs(5)))?;
+
+    // 48-byte NTP packet: LI=0, VN=4, Mode=3 (client) → first byte = 0x23
+    let mut request = [0u8; 48];
+    request[0] = 0x23;
+    socket.send_to(&request, addr)?;
+
+    let mut response = [0u8; 48];
+    let (n, _) = socket.recv_from(&mut response)?;
+    if n < 48 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "NTP response too short",
+        ));
+    }
+
+    Ok(())
 }

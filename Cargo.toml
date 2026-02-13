@@ -30,7 +30,7 @@ candle-transformers = "0.7.1"
 tokenizers = { version = "0.19.1", default-features = false, features = ["onig"] }
 hf-hub = "0.3.2"
 deadpool-postgres = "0.11.0"
-refinery = { version = "0.8.14", features = ["tokio-postgres"] }
+refinery = { version = "0.9.0", features = ["tokio-postgres"] }
 tempfile = "3.20.0"
 assert_cmd = "2.0.17"
 toml = "0.8.23"
@@ -46,7 +46,6 @@ thiserror = "2.0.12"
 chrono = { version = "0.4.41", features = ["serde"] }
 arrow = "55.1.0"
 dirs = "5.0"
-ntp = "0.5.0"
 async-trait = "0.1.83"
 dialoguer = "0.11"
 
