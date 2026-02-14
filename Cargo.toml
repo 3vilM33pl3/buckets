@@ -24,9 +24,9 @@ postgres = "0.19.9"
 tokio = { version = "1.0", features = ["rt", "rt-multi-thread", "macros"] }
 tokio-postgres = { version = "0.7.10", features = ["with-uuid-1", "with-chrono-0_4"] }
 pgvector = { version = "0.4", features = ["postgres"] }
-candle-core = "0.7.1"
-candle-nn = "0.7.1"
-candle-transformers = "0.7.1"
+candle-core = "0.8.4"
+candle-nn = "0.8.4"
+candle-transformers = "0.8.4"
 tokenizers = { version = "0.19.1", default-features = false, features = ["onig"] }
 hf-hub = "0.3.2"
 deadpool-postgres = "0.11.0"
