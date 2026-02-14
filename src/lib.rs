@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#![cfg_attr(test, allow(clippy::unwrap_used))]
 
 //! Buckets library - shared types and database access for the buckets CLI and TUI.
 

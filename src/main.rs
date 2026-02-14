@@ -1,3 +1,5 @@
+#![cfg_attr(test, allow(clippy::unwrap_used))]
+
 use crate::args::{CliArguments, Command};
 use crate::commands::BucketCommand;
 use crate::errors::BucketError;
