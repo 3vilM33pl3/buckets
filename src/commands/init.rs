@@ -354,19 +354,20 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_checks_directory_already_exists() {
-        let current_dir = std::env::current_dir().expect("Failed to get current directory");
-        let test_repo_name = "temp_test_existing_repo";
-        let existing_dir = current_dir.join(test_repo_name);
+        let temp_dir = tempfile::tempdir().expect("Failed to create temporary directory");
+        let original_dir = std::env::current_dir().expect("Failed to get current directory");
+        std::env::set_current_dir(temp_dir.path()).expect("Failed to change to temp directory");
 
-        // Create a directory that already exists but is not a bucket repo
+        let test_repo_name = "temp_test_existing_repo";
+        let existing_dir = temp_dir.path().join(test_repo_name);
         fs::create_dir_all(&existing_dir).expect("Failed to create directory");
 
         let init = create_test_init_command(test_repo_name);
         let result = init.checks(test_repo_name);
 
-        // Clean up the test directory
-        fs::remove_dir_all(&existing_dir).expect("Failed to remove test directory");
+        std::env::set_current_dir(&original_dir).ok();
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -379,25 +380,20 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_checks_file_already_exists() {
-        let current_dir = std::env::current_dir().expect("Failed to get current directory");
-        let test_file_name = "temp_test_existing_file_repo";
-        let existing_file = current_dir.join(test_file_name);
+        let temp_dir = tempfile::tempdir().expect("Failed to create temporary directory");
+        let original_dir = std::env::current_dir().expect("Failed to get current directory");
+        std::env::set_current_dir(temp_dir.path()).expect("Failed to change to temp directory");
 
-        // Create a file with the same name as the repo
+        let test_file_name = "temp_test_existing_file_repo";
+        let existing_file = temp_dir.path().join(test_file_name);
         fs::write(&existing_file, "test content").expect("Failed to create file");
 
         let init = create_test_init_command(test_file_name);
         let result = init.checks(test_file_name);
 
-        // Clean up the test file while tolerating cases where the command under
-        // test already removed it (some checks may canonicalize paths outside
-        // of this test's working directory when other tests run in parallel).
-        if let Err(err) = fs::remove_file(&existing_file) {
-            if err.kind() != std::io::ErrorKind::NotFound {
-                panic!("Failed to remove test file: {err}");
-            }
-        }
+        std::env::set_current_dir(&original_dir).ok();
 
         assert!(result.is_err());
         match result.unwrap_err() {
