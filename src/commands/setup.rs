@@ -35,11 +35,11 @@ impl BucketCommand for Setup {
             return Ok(());
         }
 
-        // Check if we are in a non-interactive environment (e.g. CI)
-        // If so, fall back to non-interactive mode or error out if crucial info is missing
-        // For now, we assume interactive unless testing
-
         let mut config = GlobalConfig::load().unwrap_or_default();
+
+        if self.args.test_connection {
+            return self.test_database_connection(&config);
+        }
         let items = vec![
             "Configure PostgreSQL",
             "Configure NTP Server",
