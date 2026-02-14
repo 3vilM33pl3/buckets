@@ -51,9 +51,14 @@ impl DatabaseConfig {
             (auth.to_string(), None)
         };
 
-        let (host_port, database) = rest
+        let (host_port, db_and_params) = rest
             .split_once('/')
             .ok_or_else(|| BucketError::from("Invalid PostgreSQL URL"))?;
+
+        // Strip query parameters (e.g. ?sslmode=disable)
+        let database = db_and_params
+            .split_once('?')
+            .map_or(db_and_params, |(db, _)| db);
 
         let (host, port) = if let Some((h, p)) = host_port.split_once(':') {
             (h.to_string(), p.parse().unwrap_or(5432))
@@ -290,5 +295,56 @@ async fn initialize_database_from_env() -> Result<(), BucketError> {
             BucketError::DatabaseAlreadyInitialized => Ok(()),
             other => Err(other),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_from_url_basic() {
+        let config =
+            DatabaseConfig::from_url("postgresql://user:pass@localhost:5432/mydb").unwrap();
+        assert_eq!(config.host, "localhost");
+        assert_eq!(config.port, 5432);
+        assert_eq!(config.username, "user");
+        assert_eq!(config.password, Some("pass".to_string()));
+        assert_eq!(config.database, "mydb");
+    }
+
+    #[test]
+    fn test_from_url_strips_query_params() {
+        let config = DatabaseConfig::from_url(
+            "postgresql://olivier:secret@10.22.6.42:5432/buckets?sslmode=disable",
+        )
+        .unwrap();
+        assert_eq!(config.host, "10.22.6.42");
+        assert_eq!(config.port, 5432);
+        assert_eq!(config.username, "olivier");
+        assert_eq!(config.database, "buckets");
+    }
+
+    #[test]
+    fn test_from_url_multiple_query_params() {
+        let config = DatabaseConfig::from_url(
+            "postgresql://u:p@host:5432/db?sslmode=disable&connect_timeout=10",
+        )
+        .unwrap();
+        assert_eq!(config.database, "db");
+    }
+
+    #[test]
+    fn test_from_url_no_query_params() {
+        let config =
+            DatabaseConfig::from_url("postgresql://u:p@host:5432/db").unwrap();
+        assert_eq!(config.database, "db");
+    }
+
+    #[test]
+    fn test_from_url_postgres_scheme() {
+        let config =
+            DatabaseConfig::from_url("postgres://u:p@host:5432/db").unwrap();
+        assert_eq!(config.database, "db");
     }
 }
