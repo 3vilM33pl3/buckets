@@ -171,8 +171,7 @@ A buckets repository has this structure:
 ```
 repo_name/
 ├── .buckets/
-│   ├── config              # Repository configuration (TOML)
-│   └── database_type       # "PostgreSQL" marker file
+│   └── config              # Repository configuration (TOML, includes database_type)
 └── bucket_name/            # Individual buckets
     └── .b/
         ├── info            # Bucket metadata (TOML: id, name, relative_bucket_path)

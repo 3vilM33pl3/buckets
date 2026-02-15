@@ -33,12 +33,11 @@ pub fn find_directory_in_parents(start_path: &Path, target_dir_name: &str) -> Op
 
 /// Checks if the given directory is a valid bucket repository.
 ///
-/// A valid bucket repository must contain a `.buckets` directory and a valid database configuration.
-/// The database configuration is validated as follows:
-/// - The `.buckets` directory must contain either:
-///   - a `database_type` file (indicating a file-based database), or
-///   - a `postgres` directory (indicating a PostgreSQL-based database).
-///     At least one of these must be present for the repository to be considered valid.
+/// A valid bucket repository must contain a `.buckets` directory with a valid config file
+/// and a database type indicator. The database type can come from:
+/// - a `database_type` field in `.buckets/config` (current approach), or
+/// - a legacy `database_type` file in `.buckets/` (backwards compat), or
+/// - a legacy `postgres` directory in `.buckets/` (backwards compat).
 pub fn is_valid_bucket_repo(dir_path: &Path) -> bool {
     debug!("{:?}", dir_path);
     // Find the .buckets directory
@@ -53,17 +52,28 @@ pub fn is_valid_bucket_repo(dir_path: &Path) -> bool {
                 return false;
             }
 
-            // Check for either database type marker or PostgreSQL directory structure
+            // Check for database type: config field, legacy file, or postgres directory
             let db_type_path = path.join("database_type");
             let postgres_path = path.join("postgres");
 
-            if !db_type_path.exists() && !postgres_path.exists() {
-                debug!("Neither database_type file nor postgres directory found");
-                return false;
+            if db_type_path.exists() || postgres_path.exists() {
+                debug!("Valid bucket repository structure found (legacy marker)");
+                return true;
             }
 
-            debug!("Valid bucket repository structure found");
-            true
+            // Check if config contains database_type field
+            let config_path = path.join("config");
+            if let Ok(content) = std::fs::read_to_string(&config_path) {
+                if let Ok(value) = content.parse::<toml::Value>() {
+                    if value.get("database_type").is_some() {
+                        debug!("Valid bucket repository structure found (config database_type)");
+                        return true;
+                    }
+                }
+            }
+
+            debug!("No database type indicator found");
+            false
         }
         None => false,
     }
@@ -241,11 +251,10 @@ mod tests {
         let temp_dir = tempdir().expect("Failed to create temporary directory");
         let buckets_dir = temp_dir.path().join(".buckets");
         let config_path = buckets_dir.join("config");
-        let db_type_path = buckets_dir.join("database_type");
 
         fs::create_dir_all(&buckets_dir).expect("Failed to create .buckets directory");
-        fs::File::create(&config_path).expect("Failed to create config file");
-        fs::write(&db_type_path, "embedded").expect("Failed to create database_type file");
+        fs::write(&config_path, "database_type = \"PostgreSQL\"\n")
+            .expect("Failed to create config file");
 
         assert!(is_valid_bucket_repo(temp_dir.path()));
     }

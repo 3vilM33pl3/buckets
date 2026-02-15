@@ -46,8 +46,11 @@ mod tests {
         let repo_dir = temp_dir.join(format!("bootstrap_missing_{}", Uuid::new_v4().simple()));
         let buckets_dir = repo_dir.join(".buckets");
         fs::create_dir_all(&buckets_dir).expect("failed to create .buckets");
-        fs::write(buckets_dir.join("database_type"), "PostgreSQL")
-            .expect("failed to write database_type");
+        fs::write(
+            buckets_dir.join("config"),
+            "database_type = \"PostgreSQL\"\n",
+        )
+        .expect("failed to write config");
 
         // Do NOT write db_config.toml.
         // Fallback to global config (which is empty due to mocked HOME).
@@ -80,8 +83,11 @@ mod tests {
         let repo_dir = temp_dir.join(format!("bootstrap_invalid_{}", Uuid::new_v4().simple()));
         let buckets_dir = repo_dir.join(".buckets");
         fs::create_dir_all(&buckets_dir).expect("failed to create .buckets");
-        fs::write(buckets_dir.join("database_type"), "PostgreSQL")
-            .expect("failed to write database_type");
+        fs::write(
+            buckets_dir.join("config"),
+            "database_type = \"PostgreSQL\"\n",
+        )
+        .expect("failed to write config");
 
         let Some(database) = test_database_or_skip() else {
             return;

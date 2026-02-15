@@ -1,5 +1,6 @@
 #[derive(serde::Serialize)]
 pub struct Config {
+    pub database_type: String,
     pub network: NetworkConfig,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub database: Option<DatabaseConfig>,

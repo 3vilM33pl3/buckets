@@ -469,9 +469,6 @@ mod tests {
         }
 
         let repo_dir = temp_dir.as_path().join("test_repo");
-        let buckets_dir = repo_dir.join(".buckets");
-        let db_type_file = buckets_dir.join("database_type");
-        std::fs::write(&db_type_file, "PostgreSQL").expect("Failed to write database_type file");
 
         let bucket_dir = create_bucket_for_tests(&repo_dir, "test_bucket", db.connection_string())
             .expect("Failed to create test bucket");

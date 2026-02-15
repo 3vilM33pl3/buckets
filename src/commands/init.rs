@@ -83,8 +83,6 @@ impl Init {
 
         fs::create_dir_all(&repo_buckets_path)?;
         self.create_config_file(&repo_buckets_path)?;
-        let db_type_file = repo_buckets_path.join("database_type");
-        fs::write(&db_type_file, "PostgreSQL")?;
 
         // Initialize PostgreSQL database
         self.initialize_postgresql(&repo_path)?;
@@ -97,6 +95,7 @@ impl Init {
 
         // Start with default configuration
         let mut config = Config {
+            database_type: "PostgreSQL".to_string(),
             network: crate::config::NetworkConfig {
                 ntp_server: "pool.ntp.org".to_string(),
                 ip_check: "8.8.8.8".to_string(),
@@ -136,6 +135,7 @@ impl Init {
 
         // Create default configuration without global inheritance
         let config = Config {
+            database_type: "PostgreSQL".to_string(),
             network: crate::config::NetworkConfig {
                 ntp_server: "pool.ntp.org".to_string(),
                 ip_check: "8.8.8.8".to_string(),
@@ -426,17 +426,13 @@ mod tests {
         // Create a directory that looks like a bucket repo
         fs::create_dir_all(&buckets_dir).expect("Failed to create .buckets directory");
 
-        // Create config file to make it look like a valid repo
+        // Create config file with database_type to make it look like a valid repo
         let config_file = buckets_dir.join("config");
-        fs::write(&config_file, "ntp_server = \"pool.ntp.org\"").expect("Failed to create config");
-
-        // Create PostgreSQL directory structure to make it look like a valid repo
-        let postgres_dir = buckets_dir.join("postgres");
-        fs::create_dir_all(&postgres_dir).expect("Failed to create postgres directory");
-
-        // Create a database_type file to indicate PostgreSQL
-        let db_type_file = buckets_dir.join("database_type");
-        fs::write(&db_type_file, "PostgreSQL").expect("Failed to create database_type file");
+        fs::write(
+            &config_file,
+            "database_type = \"PostgreSQL\"\nntp_server = \"pool.ntp.org\"\n",
+        )
+        .expect("Failed to create config");
 
         let init = create_test_init_command(test_repo_name);
         let result = init.checks(test_repo_name);
@@ -487,11 +483,9 @@ mod tests {
         let config_file = buckets_path.join("config");
         assert!(config_file.exists());
 
-        let db_type_file = buckets_path.join("database_type");
-        assert!(db_type_file.exists());
-        let db_type_content =
-            fs::read_to_string(db_type_file).expect("Failed to read database_type file");
-        assert_eq!(db_type_content.trim(), "postgresql");
+        let config_content =
+            fs::read_to_string(&config_file).expect("Failed to read config file");
+        assert!(config_content.contains("database_type = \"PostgreSQL\""));
     }
 
     #[test]

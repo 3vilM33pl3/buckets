@@ -164,17 +164,6 @@ pub mod tests {
                 ));
             }
 
-            let db_type_file = buckets_dir.join("database_type");
-            if !db_type_file.exists() {
-                std::fs::write(&db_type_file, "PostgreSQL").map_err(|e| {
-                    format!(
-                        "Failed to write database_type file at {}: {}",
-                        db_type_file.display(),
-                        e
-                    )
-                })?;
-            }
-
             let bucket_dir = provision_bucket(&repo_dir, &bucket_name, db.connection_string())?;
 
             Ok(Self {

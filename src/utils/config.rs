@@ -27,8 +27,14 @@ fn get_string_with_fallback(value: &Value, nested: &[&str], flat: &str) -> Optio
     get_string_at_path(value, nested).or_else(|| get_string_at_path(value, &[flat]))
 }
 
+fn default_database_type() -> String {
+    "PostgreSQL".to_string()
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RepositoryConfig {
+    #[serde(default = "default_database_type")]
+    pub database_type: String,
     pub ntp_server: String,
     pub ip_check: String,
     pub url_check: String,
@@ -51,6 +57,8 @@ impl RepositoryConfig {
         let config_path = buckets_repo_path.join("config");
         let value = load_toml_value(&config_path)?;
         let mut config = RepositoryConfig {
+            database_type: get_string_at_path(&value, &["database_type"])
+                .unwrap_or_else(|| "PostgreSQL".to_string()),
             ntp_server: get_string_with_fallback(&value, &["network", "ntp_server"], "ntp_server")
                 .unwrap_or_else(|| "pool.ntp.org".to_string()),
             ip_check: get_string_with_fallback(&value, &["network", "ip_check"], "ip_check")
@@ -94,6 +102,7 @@ impl RepositoryConfig {
     /// Create default config with option to use global config or not
     fn default_with_global_config(use_global: bool) -> Self {
         let mut config = RepositoryConfig {
+            database_type: "PostgreSQL".to_string(),
             ntp_server: "pool.ntp.org".to_string(),
             ip_check: "8.8.8.8".to_string(),
             url_check: "api.ipify.org".to_string(),
@@ -129,6 +138,7 @@ mod tests {
     /// Helper to write a default config file (same as Init::create_config_file_no_global)
     fn write_default_config(buckets_dir: &std::path::Path) {
         let config = crate::config::Config {
+            database_type: "PostgreSQL".to_string(),
             network: crate::config::NetworkConfig {
                 ntp_server: "pool.ntp.org".to_string(),
                 ip_check: "8.8.8.8".to_string(),

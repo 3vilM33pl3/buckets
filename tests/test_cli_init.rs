@@ -42,10 +42,9 @@ mod tests {
         assert!(repo_config_file.exists());
         assert!(repo_config_file.is_file());
 
-        let db_type_file = repo_dot_buckets_dir.join("database_type");
-        assert!(db_type_file.exists());
-        let contents = std::fs::read_to_string(db_type_file).expect("Failed to read database_type");
-        assert_eq!(contents.trim(), "PostgreSQL");
+        let config_contents = std::fs::read_to_string(repo_dot_buckets_dir.join("config"))
+            .expect("Failed to read config");
+        assert!(config_contents.contains("database_type = \"PostgreSQL\""));
     }
 
     fn test_database_or_skip() -> Option<TestDatabase> {
