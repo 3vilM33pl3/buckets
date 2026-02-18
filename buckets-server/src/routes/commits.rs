@@ -9,16 +9,12 @@ use crate::db;
 use crate::error::ApiError;
 use crate::models::{CommitRow, FileRow};
 
-async fn list_commits_for_bucket(
-    Path(id): Path<Uuid>,
-) -> Result<Json<Vec<CommitRow>>, ApiError> {
+async fn list_commits_for_bucket(Path(id): Path<Uuid>) -> Result<Json<Vec<CommitRow>>, ApiError> {
     let commits = db::fetch_commits(id).await?;
     Ok(Json(commits))
 }
 
-async fn list_files_for_commit(
-    Path(id): Path<Uuid>,
-) -> Result<Json<Vec<FileRow>>, ApiError> {
+async fn list_files_for_commit(Path(id): Path<Uuid>) -> Result<Json<Vec<FileRow>>, ApiError> {
     let files = db::fetch_files(id).await?;
     Ok(Json(files))
 }

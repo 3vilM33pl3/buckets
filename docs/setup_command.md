@@ -165,6 +165,11 @@ ntp_server = "time.google.com"
 
 [database]
 postgresql_connection = "postgresql://user:pass@localhost:5432/buckets"
+
+[database.tls]
+ca_cert = "/etc/buckets/certs/root_ca.crt"
+client_cert = "/etc/buckets/certs/buckets_cli.crt"
+client_key = "/etc/buckets/certs/buckets_cli.key"
 ```
 
 ### File Structure
@@ -173,6 +178,9 @@ postgresql_connection = "postgresql://user:pass@localhost:5432/buckets"
 |-------|------|-------------|----------|
 | `network.ntp_server` | String | NTP server hostname or IP | Yes |
 | `database.postgresql_connection` | String | PostgreSQL connection string | No |
+| `database.tls.ca_cert` | String | CA certificate path for server verification | No |
+| `database.tls.client_cert` | String | Client certificate path for mTLS | No |
+| `database.tls.client_key` | String | Client private key path for mTLS | No |
 
 ## Integration with Repositories
 
@@ -395,6 +403,11 @@ ntp_server = "time.google.com"
 
 [database]
 postgresql_connection = "postgresql://buckets:secret@db.example.com:5432/buckets_prod"
+
+[database.tls]
+ca_cert = "/etc/buckets/certs/root_ca.crt"
+client_cert = "/etc/buckets/certs/buckets_cli.crt"
+client_key = "/etc/buckets/certs/buckets_cli.key"
 ```
 
 **Corporate Environment:**

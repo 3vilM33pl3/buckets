@@ -3,12 +3,36 @@ use deadpool_postgres::{Config, Pool, Runtime};
 use log::info;
 use once_cell::sync::Lazy;
 use refinery::embed_migrations;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::sync::{Mutex, MutexGuard};
 use tokio_postgres::NoTls;
 
 // Embed migrations
 embed_migrations!("src/sql/migrations");
+
+/// TLS configuration for PostgreSQL connections
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct TlsConfig {
+    /// Path to the CA certificate PEM file (enables server-verified TLS)
+    pub ca_cert: Option<String>,
+    /// Path to the client certificate PEM file (enables mTLS when combined with client_key)
+    pub client_cert: Option<String>,
+    /// Path to the client private key PEM file
+    pub client_key: Option<String>,
+}
+
+impl TlsConfig {
+    /// Returns true if any TLS fields are configured
+    pub fn is_enabled(&self) -> bool {
+        self.ca_cert.is_some()
+    }
+
+    /// Returns true if full mutual TLS is configured (CA + client cert + client key)
+    pub fn is_mtls(&self) -> bool {
+        self.ca_cert.is_some() && self.client_cert.is_some() && self.client_key.is_some()
+    }
+}
 
 /// Configuration for database connection
 #[derive(Debug, Clone)]
@@ -18,6 +42,7 @@ pub struct DatabaseConfig {
     pub database: String,
     pub username: String,
     pub password: Option<String>,
+    pub tls: Option<TlsConfig>,
 }
 
 impl DatabaseConfig {
@@ -72,6 +97,7 @@ impl DatabaseConfig {
             database: database.to_string(),
             username,
             password,
+            tls: None,
         })
     }
 
@@ -86,6 +112,107 @@ impl DatabaseConfig {
             conn.push_str(&format!(" password={}", pwd));
         }
         conn
+    }
+}
+
+/// Build a rustls ClientConfig from TLS certificate paths
+fn build_rustls_config(tls: &TlsConfig) -> Result<rustls::ClientConfig, BucketError> {
+    // Install the ring crypto provider (idempotent — ignores AlreadyInstalled error)
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
+    let ca_path = tls
+        .ca_cert
+        .as_ref()
+        .ok_or_else(|| BucketError::from("TLS enabled but ca_cert path is missing"))?;
+
+    // Load CA certificates
+    let ca_pem = std::fs::read(ca_path).map_err(|e| {
+        BucketError::from(format!("Failed to read CA certificate '{}': {}", ca_path, e).as_str())
+    })?;
+    let mut root_store = rustls::RootCertStore::empty();
+    let ca_certs = rustls_pemfile::certs(&mut &ca_pem[..])
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| {
+            BucketError::from(format!("Failed to parse CA certificate: {}", e).as_str())
+        })?;
+    for cert in ca_certs {
+        root_store.add(cert).map_err(|e| {
+            BucketError::from(format!("Failed to add CA certificate to root store: {}", e).as_str())
+        })?;
+    }
+
+    let config = if tls.is_mtls() {
+        let cert_path = tls
+            .client_cert
+            .as_ref()
+            .ok_or_else(|| BucketError::from("mTLS enabled but client_cert path is missing"))?;
+        let key_path = tls
+            .client_key
+            .as_ref()
+            .ok_or_else(|| BucketError::from("mTLS enabled but client_key path is missing"))?;
+
+        // Load client certificate chain
+        let cert_pem = std::fs::read(cert_path).map_err(|e| {
+            BucketError::from(
+                format!("Failed to read client certificate '{}': {}", cert_path, e).as_str(),
+            )
+        })?;
+        let client_certs = rustls_pemfile::certs(&mut &cert_pem[..])
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| {
+                BucketError::from(format!("Failed to parse client certificate: {}", e).as_str())
+            })?;
+
+        // Load client private key
+        let key_pem = std::fs::read(key_path).map_err(|e| {
+            BucketError::from(format!("Failed to read client key '{}': {}", key_path, e).as_str())
+        })?;
+        let client_key = rustls_pemfile::private_key(&mut &key_pem[..])
+            .map_err(|e| BucketError::from(format!("Failed to parse client key: {}", e).as_str()))?
+            .ok_or_else(|| BucketError::from("No private key found in client key file"))?;
+
+        rustls::ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_client_auth_cert(client_certs, client_key)
+            .map_err(|e| {
+                BucketError::from(format!("Failed to build mTLS client config: {}", e).as_str())
+            })?
+    } else {
+        rustls::ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth()
+    };
+
+    Ok(config)
+}
+
+/// Create a connection pool from a DatabaseConfig, using TLS if configured
+pub fn create_connection_pool(db_config: &DatabaseConfig) -> Result<Pool, BucketError> {
+    let mut cfg = Config::new();
+    cfg.host = Some(db_config.host.clone());
+    cfg.port = Some(db_config.port);
+    cfg.user = Some(db_config.username.clone());
+    cfg.password = db_config.password.clone();
+    cfg.dbname = Some(db_config.database.clone());
+    cfg.connect_timeout = Some(Duration::from_secs(10));
+
+    let tls_enabled = db_config.tls.as_ref().is_some_and(|t| t.is_enabled());
+
+    if tls_enabled {
+        let tls = db_config
+            .tls
+            .as_ref()
+            .ok_or_else(|| BucketError::from("TLS config disappeared unexpectedly"))?;
+        let rustls_config = build_rustls_config(tls)?;
+        let tls_connector = tokio_postgres_rustls::MakeRustlsConnect::new(rustls_config);
+        cfg.create_pool(Some(Runtime::Tokio1), tls_connector)
+            .map_err(|e| {
+                BucketError::from(format!("Failed to create TLS connection pool: {}", e).as_str())
+            })
+    } else {
+        cfg.create_pool(Some(Runtime::Tokio1), NoTls).map_err(|e| {
+            BucketError::from(format!("Failed to create connection pool: {}", e).as_str())
+        })
     }
 }
 
@@ -127,17 +254,7 @@ impl DatabaseManager {
 
     /// Create connection pool
     async fn create_pool(&mut self) -> Result<(), BucketError> {
-        let mut cfg = Config::new();
-        cfg.host = Some(self.config.host.clone());
-        cfg.port = Some(self.config.port);
-        cfg.user = Some(self.config.username.clone());
-        cfg.password = self.config.password.clone();
-        cfg.dbname = Some(self.config.database.clone());
-        cfg.connect_timeout = Some(Duration::from_secs(10));
-
-        let pool = cfg.create_pool(Some(Runtime::Tokio1), NoTls).map_err(|e| {
-            BucketError::from(format!("Failed to create connection pool: {}", e).as_str())
-        })?;
+        let pool = create_connection_pool(&self.config)?;
 
         // Test connection
         let _ = pool.get().await.map_err(|e| {
@@ -336,15 +453,13 @@ mod tests {
 
     #[test]
     fn test_from_url_no_query_params() {
-        let config =
-            DatabaseConfig::from_url("postgresql://u:p@host:5432/db").unwrap();
+        let config = DatabaseConfig::from_url("postgresql://u:p@host:5432/db").unwrap();
         assert_eq!(config.database, "db");
     }
 
     #[test]
     fn test_from_url_postgres_scheme() {
-        let config =
-            DatabaseConfig::from_url("postgres://u:p@host:5432/db").unwrap();
+        let config = DatabaseConfig::from_url("postgres://u:p@host:5432/db").unwrap();
         assert_eq!(config.database, "db");
     }
 }

@@ -14,11 +14,11 @@ struct SearchParams {
     q: String,
 }
 
-async fn search(
-    Query(params): Query<SearchParams>,
-) -> Result<Json<Vec<SemanticResult>>, ApiError> {
+async fn search(Query(params): Query<SearchParams>) -> Result<Json<Vec<SemanticResult>>, ApiError> {
     if params.q.is_empty() {
-        return Err(ApiError::BadRequest("Query parameter 'q' cannot be empty".to_string()));
+        return Err(ApiError::BadRequest(
+            "Query parameter 'q' cannot be empty".to_string(),
+        ));
     }
     let results = db::semantic_search(&params.q).await?;
     Ok(Json(results))

@@ -105,6 +105,21 @@ This interactive command allows you to configure:
 
 See [Setup Command Documentation](docs/setup_command.md) for detailed usage.
 
+### buckets-server database TLS/mTLS environment
+
+`buckets-server` always requires `DATABASE_URL` and can optionally use certificate-based TLS:
+
+- `DATABASE_URL=postgresql://buckets_server@10.22.6.42:5432/buckets`
+- `BUCKETS_DB_TLS_CA_CERT_PATH=/etc/buckets/certs/root_ca.crt`
+- `BUCKETS_DB_TLS_CLIENT_CERT_PATH=/etc/buckets/certs/buckets_server.crt`
+- `BUCKETS_DB_TLS_CLIENT_KEY_PATH=/etc/buckets/certs/buckets_server.key`
+
+Notes:
+
+- Set only `BUCKETS_DB_TLS_CA_CERT_PATH` for server-verified TLS.
+- Set all three TLS variables for mTLS.
+- If only one of client cert/key is set, `buckets-server` exits with a validation error.
+
 ### Repository Management
 
 #### `buckets init <repo_name>`

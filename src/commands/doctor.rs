@@ -1,15 +1,13 @@
 use crate::args::DoctorCommand;
 use crate::commands::BucketCommand;
 use crate::errors::BucketError;
-use crate::postgres_db::DatabaseConfig;
+use crate::postgres_db::{create_connection_pool, DatabaseConfig};
 use crate::utils::config::{GlobalConfig, RepositoryConfig};
 use crate::utils::runtime::RuntimeManager;
 use chrono::Utc;
-use deadpool_postgres::{Config, Runtime};
 use serde_json::json;
 use std::net::{ToSocketAddrs, UdpSocket};
 use std::time::{Duration, Instant};
-use tokio_postgres::NoTls;
 
 pub struct Doctor {
     args: DoctorCommand,
@@ -139,67 +137,72 @@ impl Doctor {
         Ok(())
     }
 
-    fn test_database_connection(&self) -> Result<(), BucketError> {
-        println!("Database Connection Test");
-        println!("------------------------");
-
-        let connection_string = if self.args.use_repo {
-            // Try to get repository config
+    /// Resolve connection config (connection string + TLS) from repo or global config
+    fn resolve_db_config(&self) -> Result<(DatabaseConfig, String), BucketError> {
+        if self.args.use_repo {
             let current_dir = std::env::current_dir().map_err(|e| {
                 BucketError::from(format!("Failed to get current directory: {}", e).as_str())
             })?;
 
             match RepositoryConfig::from_file(current_dir) {
-                Ok(config) => match config.postgresql_connection {
-                    Some(conn) => {
-                        println!("Using repository configuration");
-                        conn
+                Ok(config) => {
+                    let conn = config.postgresql_connection.ok_or_else(|| {
+                        BucketError::from("No repository PostgreSQL configuration found")
+                    })?;
+                    let mut db_config = DatabaseConfig::from_url(&conn)?;
+                    // TLS from global config (repo config doesn't carry TLS directly)
+                    if let Ok(global) = GlobalConfig::load() {
+                        db_config.tls = global.tls;
                     }
-                    None => {
-                        println!("❌ No PostgreSQL connection configured in repository");
-                        return Err(BucketError::from(
-                            "No repository PostgreSQL configuration found",
-                        ));
-                    }
-                },
-                Err(_) => {
-                    println!("❌ Not in a Buckets repository or no configuration found");
-                    return Err(BucketError::from("Cannot find repository configuration"));
+                    Ok((db_config, conn))
                 }
+                Err(_) => Err(BucketError::from("Cannot find repository configuration")),
             }
         } else {
-            // Use global config
             match GlobalConfig::load() {
-                Ok(config) => match config.postgresql_connection {
-                    Some(conn) => {
-                        println!("Using global configuration");
-                        conn
-                    }
-                    None => {
-                        println!("❌ No PostgreSQL connection configured globally");
-                        println!("   Run 'buckets setup' to configure a database connection");
-                        return Err(BucketError::from(
-                            "No global PostgreSQL configuration found",
-                        ));
-                    }
-                },
-                Err(_) => {
-                    println!("❌ No global configuration found");
-                    println!("   Run 'buckets setup' to create global configuration");
-                    return Err(BucketError::from("No global configuration found"));
+                Ok(global) => {
+                    let conn = global.postgresql_connection.clone().ok_or_else(|| {
+                        BucketError::from("No global PostgreSQL configuration found")
+                    })?;
+                    let mut db_config = DatabaseConfig::from_url(&conn)?;
+                    db_config.tls = global.tls;
+                    Ok((db_config, conn))
                 }
+                Err(_) => Err(BucketError::from("No global configuration found")),
             }
+        }
+    }
+
+    fn tls_status_string(db_config: &DatabaseConfig) -> &'static str {
+        match &db_config.tls {
+            Some(tls) if tls.is_mtls() => "mTLS",
+            Some(tls) if tls.is_enabled() => "server-verified",
+            _ => "disabled",
+        }
+    }
+
+    fn test_database_connection(&self) -> Result<(), BucketError> {
+        println!("Database Connection Test");
+        println!("------------------------");
+
+        let (db_config, connection_string) = self.resolve_db_config()?;
+
+        let source = if self.args.use_repo {
+            "repository"
+        } else {
+            "global"
         };
+        println!("Using {} configuration", source);
 
         // Mask password in display
         let display_conn = self.mask_password(&connection_string);
         println!("Testing connection: {}", display_conn);
+        println!("TLS: {}", Self::tls_status_string(&db_config));
 
         let start = Instant::now();
 
         let schema_result = RuntimeManager::block_on(async {
-            self.test_postgresql_connection_and_schema(&connection_string)
-                .await
+            self.test_postgresql_connection_and_schema(&db_config).await
         })?;
 
         let duration = start.elapsed();
@@ -216,37 +219,12 @@ impl Doctor {
     }
 
     fn test_database_connection_json(&self) -> Result<serde_json::Value, BucketError> {
-        let connection_string = if self.args.use_repo {
-            // Try to get repository config
-            let current_dir = std::env::current_dir().map_err(|e| {
-                BucketError::from(format!("Failed to get current directory: {}", e).as_str())
-            })?;
-
-            match RepositoryConfig::from_file(current_dir) {
-                Ok(config) => config.postgresql_connection.ok_or_else(|| {
-                    BucketError::from("No repository PostgreSQL configuration found")
-                })?,
-                Err(_) => {
-                    return Err(BucketError::from("Cannot find repository configuration"));
-                }
-            }
-        } else {
-            // Use global config
-            match GlobalConfig::load() {
-                Ok(config) => config
-                    .postgresql_connection
-                    .ok_or_else(|| BucketError::from("No global PostgreSQL configuration found"))?,
-                Err(_) => {
-                    return Err(BucketError::from("No global configuration found"));
-                }
-            }
-        };
+        let (db_config, connection_string) = self.resolve_db_config()?;
 
         let start = Instant::now();
 
         let schema_result = RuntimeManager::block_on(async {
-            self.test_postgresql_connection_and_schema(&connection_string)
-                .await
+            self.test_postgresql_connection_and_schema(&db_config).await
         })?;
 
         let duration = start.elapsed();
@@ -257,16 +235,14 @@ impl Doctor {
             "config_source": if self.args.use_repo { "repository" } else { "global" },
             "connection_time_ms": duration.as_millis(),
             "test_timestamp": Utc::now().to_rfc3339(),
+            "tls": Self::tls_status_string(&db_config),
             "schema_validation": schema_result
         });
-
-        // Update overall status if schema validation failed
 
         if schema_result["overall_status"].as_str() == Some("failed") {
             result["status"] = json!("failed");
         }
 
-        // Update overall status if extension validation failed
         if schema_result["extensions"]["vector"]["status"].as_str() == Some("failed") {
             result["status"] = json!("failed");
         }
@@ -276,27 +252,9 @@ impl Doctor {
 
     async fn test_postgresql_connection_and_schema(
         &self,
-        connection_string: &str,
+        db_config: &DatabaseConfig,
     ) -> Result<serde_json::Value, BucketError> {
-        // Parse connection string into database config
-        let db_config = DatabaseConfig::from_url(connection_string)?;
-
-        // Create connection configuration
-        let mut cfg = Config::new();
-
-        cfg.host = Some(db_config.host);
-        cfg.port = Some(db_config.port);
-        cfg.user = Some(db_config.username);
-        cfg.password = db_config.password;
-        cfg.dbname = Some(db_config.database);
-
-        // Set connection timeout
-        cfg.connect_timeout = Some(Duration::from_secs(10));
-
-        // Create pool and test connection
-        let pool = cfg.create_pool(Some(Runtime::Tokio1), NoTls).map_err(|e| {
-            BucketError::from(format!("Failed to create connection pool: {}", e).as_str())
-        })?;
+        let pool = create_connection_pool(db_config)?;
 
         // Test the connection
         let client = pool.get().await.map_err(|e| {

@@ -268,8 +268,7 @@ pub async fn semantic_search(query: &str) -> Result<Vec<SemanticResult>, BucketE
         buckets::utils::embeddings::EmbeddingGenerator::generate(&query_owned)
     })
     .await
-    .map_err(|e| BucketError::EmbeddingError(format!("Task join error: {e}")))?
-    ?;
+    .map_err(|e| BucketError::EmbeddingError(format!("Task join error: {e}")))??;
 
     let db = get_database().await?;
     let results =

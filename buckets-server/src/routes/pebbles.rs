@@ -14,9 +14,7 @@ async fn list_pebbles() -> Result<Json<Vec<PebbleRow>>, ApiError> {
     Ok(Json(pebbles))
 }
 
-async fn list_pebbles_for_bucket(
-    Path(id): Path<Uuid>,
-) -> Result<Json<Vec<PebbleRow>>, ApiError> {
+async fn list_pebbles_for_bucket(Path(id): Path<Uuid>) -> Result<Json<Vec<PebbleRow>>, ApiError> {
     let pebbles = db::fetch_pebbles_for_bucket(id).await?;
     Ok(Json(pebbles))
 }

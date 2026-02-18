@@ -1,4 +1,5 @@
 use crate::errors::BucketError;
+use crate::postgres_db::TlsConfig;
 use crate::utils::checks::find_directory_in_parents;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
@@ -288,6 +289,8 @@ postgresql_connection = "postgresql://test:test@localhost:5432/test"
 pub struct GlobalConfig {
     pub ntp_server: String,
     pub postgresql_connection: Option<String>,
+    #[serde(skip)]
+    pub tls: Option<TlsConfig>,
 }
 
 impl GlobalConfig {
@@ -309,6 +312,10 @@ impl GlobalConfig {
         }
 
         let value = load_toml_value(&config_path)?;
+
+        // Parse [database.tls] section
+        let tls = Self::parse_tls_from_value(&value);
+
         Ok(Self {
             ntp_server: get_string_with_fallback(&value, &["network", "ntp_server"], "ntp_server")
                 .unwrap_or_else(|| "pool.ntp.org".to_string()),
@@ -317,7 +324,24 @@ impl GlobalConfig {
                 &["database", "postgresql_connection"],
                 "postgresql_connection",
             ),
+            tls,
         })
+    }
+
+    fn parse_tls_from_value(value: &Value) -> Option<TlsConfig> {
+        let ca_cert = get_string_at_path(value, &["database", "tls", "ca_cert"]);
+        let client_cert = get_string_at_path(value, &["database", "tls", "client_cert"]);
+        let client_key = get_string_at_path(value, &["database", "tls", "client_key"]);
+
+        if ca_cert.is_some() || client_cert.is_some() || client_key.is_some() {
+            Some(TlsConfig {
+                ca_cert,
+                client_cert,
+                client_key,
+            })
+        } else {
+            None
+        }
     }
 
     pub fn save(&self) -> Result<(), BucketError> {
@@ -348,6 +372,7 @@ impl Default for GlobalConfig {
         Self {
             ntp_server: "pool.ntp.org".to_string(),
             postgresql_connection: None,
+            tls: None,
         }
     }
 }
@@ -370,6 +395,23 @@ impl GlobalConfig {
                 Value::String(connection.clone()),
             );
         }
+
+        if let Some(tls) = &self.tls {
+            let mut tls_table = toml::map::Map::new();
+            if let Some(ca) = &tls.ca_cert {
+                tls_table.insert("ca_cert".to_string(), Value::String(ca.clone()));
+            }
+            if let Some(cert) = &tls.client_cert {
+                tls_table.insert("client_cert".to_string(), Value::String(cert.clone()));
+            }
+            if let Some(key) = &tls.client_key {
+                tls_table.insert("client_key".to_string(), Value::String(key.clone()));
+            }
+            if !tls_table.is_empty() {
+                database.insert("tls".to_string(), Value::Table(tls_table));
+            }
+        }
+
         if !database.is_empty() {
             root.insert("database".to_string(), Value::Table(database));
         }

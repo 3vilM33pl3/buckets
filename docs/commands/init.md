@@ -91,11 +91,26 @@ DATABASE_URL="postgresql://username:password@host:port/database"
 # Local PostgreSQL with authentication
 DATABASE_URL="postgresql://buckets_user:secret123@localhost:5432/buckets_db"
 
+# Local PostgreSQL with certificate-authenticated role (no password in URL)
+DATABASE_URL="postgresql://buckets_cli@db.example.com:5432/buckets_db"
+
 # Remote PostgreSQL
 DATABASE_URL="postgresql://user:pass@db.example.com:5432/my_buckets"
 
 # When using DATABASE_URL, no --external-* options are needed
 buckets init my-project
+```
+
+### mTLS configuration (optional)
+
+`buckets init` reads TLS settings from global config (`~/.buckets_config.toml`) when present.
+To enable mutual TLS, configure:
+
+```toml
+[database.tls]
+ca_cert = "/etc/buckets/certs/root_ca.crt"
+client_cert = "/etc/buckets/certs/buckets_cli.crt"
+client_key = "/etc/buckets/certs/buckets_cli.key"
 ```
 
 ## Examples

@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use once_cell::sync::Lazy;
 
 use crate::errors::BucketError;
-use crate::postgres_db::{init_database, DatabaseConfig};
+use crate::postgres_db::{init_database, DatabaseConfig, TlsConfig};
 use crate::utils::config::GlobalConfig;
 use crate::utils::utils::find_bucket_repo;
 use crate::CURRENT_DIR;
@@ -38,9 +38,13 @@ fn perform_bootstrap() -> Result<(), BucketError> {
     let current_dir = CURRENT_DIR.with(|dir| dir.clone());
     let buckets_dir = find_bucket_repo(&current_dir).ok_or(BucketError::NotInRepo)?;
 
+    // Load TLS config: try repo db_config.toml first, then global config
+    let tls_config = load_tls_config(&buckets_dir);
+
     // 1. Try DATABASE_URL first
     if let Ok(url) = std::env::var("DATABASE_URL") {
-        let config = DatabaseConfig::from_url(&url)?;
+        let mut config = DatabaseConfig::from_url(&url)?;
+        config.tls = tls_config.clone();
         return initialize_runtime_and_db(
             config,
             "environment variable",
@@ -49,9 +53,14 @@ fn perform_bootstrap() -> Result<(), BucketError> {
     }
 
     // 2. Try repository configuration (db_config.toml)
-    if let Ok(config) =
+    // TLS from db_config.toml is already parsed by get_database_config,
+    // but overlay global TLS if repo config doesn't have its own
+    if let Ok(mut config) =
         crate::database::get_database_config(buckets_dir.parent().unwrap_or(&buckets_dir))
     {
+        if config.tls.is_none() {
+            config.tls = tls_config.clone();
+        }
         return initialize_runtime_and_db(
             config,
             "repository configuration",
@@ -73,7 +82,8 @@ fn perform_bootstrap() -> Result<(), BucketError> {
     })?;
 
     if let Some(connection) = global_config.postgresql_connection {
-        let config = DatabaseConfig::from_url(&connection)?;
+        let mut config = DatabaseConfig::from_url(&connection)?;
+        config.tls = tls_config;
         return initialize_runtime_and_db(config, "global configuration", &global_path);
     }
 
@@ -81,6 +91,25 @@ fn perform_bootstrap() -> Result<(), BucketError> {
         ErrorKind::NotFound,
         "No PostgreSQL connection found. Please set DATABASE_URL, run 'buckets init' with database options, or configure globally with 'buckets setup'.".to_string(),
     )))
+}
+
+/// Load TLS config from repo db_config.toml, falling back to global config
+fn load_tls_config(buckets_dir: &Path) -> Option<TlsConfig> {
+    // Try repo-level db_config.toml first
+    if let Ok(repo_config) =
+        crate::database::get_database_config(buckets_dir.parent().unwrap_or(buckets_dir))
+    {
+        if repo_config.tls.is_some() {
+            return repo_config.tls;
+        }
+    }
+
+    // Fall back to global config
+    if let Ok(global_config) = GlobalConfig::load() {
+        return global_config.tls;
+    }
+
+    None
 }
 
 fn initialize_runtime_and_db(

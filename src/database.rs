@@ -1,5 +1,5 @@
 use crate::errors::BucketError;
-use crate::postgres_db::{init_database, DatabaseConfig};
+use crate::postgres_db::{init_database, DatabaseConfig, TlsConfig};
 use std::fs;
 use std::path::Path;
 
@@ -72,12 +72,42 @@ fn parse_database_config(content: &str) -> Result<DatabaseConfig, BucketError> {
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
+    // Parse optional [tls] section
+    let tls = {
+        let ca_cert = config
+            .get("tls")
+            .and_then(|v| v.get("ca_cert"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let client_cert = config
+            .get("tls")
+            .and_then(|v| v.get("client_cert"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let client_key = config
+            .get("tls")
+            .and_then(|v| v.get("client_key"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        if ca_cert.is_some() || client_cert.is_some() || client_key.is_some() {
+            Some(TlsConfig {
+                ca_cert,
+                client_cert,
+                client_key,
+            })
+        } else {
+            None
+        }
+    };
+
     Ok(DatabaseConfig {
         host,
         port,
         database,
         username,
         password,
+        tls,
     })
 }
 
@@ -94,6 +124,21 @@ pub fn save_database_config(repo_path: &Path, config: &DatabaseConfig) -> Result
     content.push_str(&format!("username = \"{}\"\n", config.username));
     if let Some(pwd) = &config.password {
         content.push_str(&format!("password = \"{}\"\n", pwd));
+    }
+
+    if let Some(tls) = &config.tls {
+        if tls.is_enabled() {
+            content.push_str("\n[tls]\n");
+            if let Some(ca) = &tls.ca_cert {
+                content.push_str(&format!("ca_cert = \"{}\"\n", ca));
+            }
+            if let Some(cert) = &tls.client_cert {
+                content.push_str(&format!("client_cert = \"{}\"\n", cert));
+            }
+            if let Some(key) = &tls.client_key {
+                content.push_str(&format!("client_key = \"{}\"\n", key));
+            }
+        }
     }
 
     fs::write(config_file, content)?;

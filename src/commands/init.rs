@@ -110,6 +110,7 @@ impl Init {
             if let Some(connection) = global_config.postgresql_connection {
                 config.database = Some(crate::config::DatabaseConfig {
                     postgresql_connection: connection,
+                    tls: global_config.tls,
                 });
             }
         }
@@ -211,6 +212,11 @@ impl Init {
 
     /// Get database configuration from various sources in priority order
     fn get_database_config(&self) -> Result<DatabaseConfig, BucketError> {
+        // Load global TLS config to overlay onto any connection source
+        let global_tls = crate::utils::config::GlobalConfig::load()
+            .ok()
+            .and_then(|g| g.tls);
+
         // 1. If command line arguments are provided, use them
         if self.args.external_host.is_some() && self.args.external_username.is_some() {
             return Ok(DatabaseConfig {
@@ -231,18 +237,23 @@ impl Init {
                     .clone()
                     .expect("external username must be provided when host is set"),
                 password: self.args.external_password.clone(),
+                tls: global_tls,
             });
         }
 
         // 2. Try DATABASE_URL environment variable
         if let Ok(database_url) = std::env::var("DATABASE_URL") {
-            return DatabaseConfig::from_url(&database_url);
+            let mut config = DatabaseConfig::from_url(&database_url)?;
+            config.tls = global_tls;
+            return Ok(config);
         }
 
         // 3. Try global configuration
         if let Ok(global_config) = crate::utils::config::GlobalConfig::load() {
             if let Some(connection_string) = global_config.postgresql_connection {
-                return DatabaseConfig::from_url(&connection_string);
+                let mut config = DatabaseConfig::from_url(&connection_string)?;
+                config.tls = global_tls;
+                return Ok(config);
             }
         }
 
@@ -483,8 +494,7 @@ mod tests {
         let config_file = buckets_path.join("config");
         assert!(config_file.exists());
 
-        let config_content =
-            fs::read_to_string(&config_file).expect("Failed to read config file");
+        let config_content = fs::read_to_string(&config_file).expect("Failed to read config file");
         assert!(config_content.contains("database_type = \"PostgreSQL\""));
     }
 
