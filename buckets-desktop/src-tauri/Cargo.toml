@@ -1,0 +1,43 @@
+[package]
+name = "buckets-desktop"
+version = "0.1.0"
+edition = "2021"
+description = "Desktop app for buckets: pipeline board, image diffs and file locks"
+license = "MIT OR Apache-2.0"
+
+# Kept out of the root workspace so `cargo build` at the repo root does not
+# need the WebKitGTK system libraries. Build from this folder.
+[workspace]
+
+[lib]
+name = "buckets_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+buckets = { path = "../.." }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["serde", "v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+tokio-postgres = { version = "0.7.10", features = ["with-uuid-1", "with-chrono-0_4"] }
+toml = "0.8"
+dirs = "5"
+log = "0.4"
+env_logger = "0.11"
+zstd = "0.13"
+base64 = "0.22"
+blake3 = "1"
+similar = "2"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "tga", "tiff", "bmp", "webp", "exr", "hdr", "gif"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints.clippy]
+unwrap_used = "deny"
