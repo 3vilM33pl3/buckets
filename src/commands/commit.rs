@@ -372,7 +372,7 @@ mod tests {
 
         // Need to setup a proper test environment
         let temp_dir = tempdir().expect("invalid temp dir").keep();
-        let mut cmd1 = assert_cmd::Command::cargo_bin("buckets").expect("invalid command");
+        let mut cmd1 = crate::test_support::buckets_command();
         let init_output = cmd1
             .env("DATABASE_URL", db.connection_string())
             .current_dir(temp_dir.as_path())
