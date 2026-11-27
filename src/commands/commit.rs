@@ -94,12 +94,12 @@ impl BucketCommand for Commit {
         let unsafe_names: Vec<&str> = changes
             .iter()
             .map(|c| c.name.as_str())
-            .filter(|n| !crate::utils::object_store::is_safe_relative(n))
+            .filter(|n| !crate::utils::object_store::is_safe_relative(n) || n.contains('\\'))
             .collect();
         if !unsafe_names.is_empty() {
             return Err(BucketError::from(
                 format!(
-                    "These file names can't be committed because they would point outside the bucket on some systems: {}",
+                    "These file names can't be committed because they would point outside the bucket or change meaning on some systems (no `..`, `:` or `\\`): {}",
                     unsafe_names.join(", ")
                 )
                 .as_str(),

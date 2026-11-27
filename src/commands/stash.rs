@@ -148,6 +148,9 @@ fn save(
 
     // 0. Check every file we will restore or remove stays inside the bucket,
     // before anything is recorded or changed.
+    if let Some(bad) = changes.iter().find(|c| !is_safe_relative(&c.name)) {
+        return Err(BucketError::from(unsafe_path_error(&bad.name)));
+    }
     for change in &changes {
         check_no_symlinked_parent(&bucket_path.join(&change.name), bucket_path)?;
     }

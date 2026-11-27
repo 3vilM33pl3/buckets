@@ -349,13 +349,36 @@ pub fn pull_bucket(
     {
         return Err(BucketError::from(unsafe_path_error(&bad.name)));
     }
-    let target: BTreeMap<String, String> = resolved
-        .data
-        .files
-        .iter()
-        .map(|f| (portable(&f.name), f.hash.to_hex().to_string()))
-        .collect();
-    let local_files: BTreeMap<String, String> = scan_bucket(bucket_path)?
+    // Two stored names that differ only in separator (`a/b` and a literal
+    // `a\b`) would land on the same file, so refuse rather than pick one.
+    let mut target: BTreeMap<String, String> = BTreeMap::new();
+    for f in &resolved.data.files {
+        if target
+            .insert(portable(&f.name), f.hash.to_hex().to_string())
+            .is_some()
+        {
+            return Err(BucketError::from(
+                format!(
+                    "The commit lists '{}' twice once '\\' is read as '/'; it can't be pulled safely",
+                    portable(&f.name)
+                )
+                .as_str(),
+            ));
+        }
+    }
+    let scanned = scan_bucket(bucket_path)?;
+    // On this system `\` is part of a name, which a manifest would read as a
+    // folder separator; ask for a rename instead of guessing.
+    if let Some(f) = scanned.iter().find(|f| f.path.contains('\\')) {
+        return Err(BucketError::from(
+            format!(
+                "'{}' has a backslash in its name, which other systems read as a folder separator. Rename it before pulling.",
+                f.path
+            )
+            .as_str(),
+        ));
+    }
+    let local_files: BTreeMap<String, String> = scanned
         .into_iter()
         .map(|f| (f.path, f.hash.to_hex().to_string()))
         .collect();

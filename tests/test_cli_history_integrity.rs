@@ -504,5 +504,27 @@ mod tests {
         buckets(&b, &["commit", "escape"])
             .failure()
             .stderr(predicates::str::contains("outside the bucket"));
+        // A literal backslash would turn into a folder on other systems.
+        fs::remove_file(b.join("..\\outside.txt")).unwrap();
+        fs::write(b.join("assets\\model.blend"), "x").unwrap();
+        buckets(&b, &["commit", "backslash"])
+            .failure()
+            .stderr(predicates::str::contains("change meaning"));
+    }
+
+    #[test]
+    #[serial]
+    fn stash_refuses_names_that_escape_the_bucket() {
+        let Some(fx) = fixture_or_skip() else { return };
+        let b = fx.bucket_dir.clone();
+        fs::write(b.join("keep.txt"), "v1").unwrap();
+        buckets(&b, &["commit", "first"]).success();
+        fs::write(b.join("..\\outside.txt"), "x").unwrap();
+        buckets(&b, &["stash"])
+            .failure()
+            .stderr(predicates::str::contains("leave the bucket"));
+        // Nothing was recorded or removed.
+        assert!(b.join("..\\outside.txt").exists());
+        assert!(!b.join(".b").join("stash.json").exists());
     }
 }
