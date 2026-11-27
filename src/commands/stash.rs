@@ -17,7 +17,7 @@ use crate::commands::BucketCommand;
 use crate::data::bucket::{Bucket, BucketTrait};
 use crate::data::commit::CommitStatus;
 use crate::errors::BucketError;
-use crate::utils::object_store::{write_atomically, ObjectStore};
+use crate::utils::object_store::{remove_file_and_prune, write_atomically, ObjectStore};
 use crate::utils::runtime::RuntimeManager;
 use crate::utils::utils::find_bucket_path;
 use crate::CURRENT_DIR;
@@ -171,17 +171,21 @@ fn save(
     stashes.push(entry.clone());
     save_stashes(bucket_path, &stashes)?;
 
-    // 2. Put the working tree back to the last commit.
+    // 2. Put the working tree back to the last commit. Remove added files
+    // first, so a path that changed between file and directory can be restored.
     for change in &changes {
-        let full = bucket_path.join(&change.name);
+        if !matches!(
+            change.status,
+            CommitStatus::Modified | CommitStatus::Deleted
+        ) {
+            remove_file_and_prune(&bucket_path.join(&change.name), bucket_path)?;
+        }
+    }
+    for change in &changes {
         match change.status {
             CommitStatus::Modified => change.restore_version(bucket_path, &change.previous_hash)?,
             CommitStatus::Deleted => change.restore_version(bucket_path, &change.hash)?,
-            _ => {
-                if full.exists() {
-                    fs::remove_file(&full)?;
-                }
-            }
+            _ => {}
         }
     }
 
@@ -215,15 +219,13 @@ fn pop(bucket: &Bucket, bucket_path: &Path, force: bool, json: bool) -> Result<(
     }
 
     let store = ObjectStore::for_path(bucket_path).ok_or(BucketError::NotInRepo)?;
+    // Removals first, then restores, for the same reason as in `save`.
+    for file in entry.files.iter().filter(|f| f.hash.is_none()) {
+        remove_file_and_prune(&bucket_path.join(&file.path), bucket_path)?;
+    }
     for file in &entry.files {
-        let full = bucket_path.join(&file.path);
-        match &file.hash {
-            Some(hash) => store.restore(hash, &full, Some(bucket_path))?,
-            None => {
-                if full.exists() {
-                    fs::remove_file(&full)?;
-                }
-            }
+        if let Some(hash) = &file.hash {
+            store.restore(hash, &bucket_path.join(&file.path), Some(bucket_path))?;
         }
     }
     stashes.pop();

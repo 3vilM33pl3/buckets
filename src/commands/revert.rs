@@ -5,6 +5,7 @@ use crate::data::commit::Commit as CommitData;
 use crate::data::manifest::load_commit_async;
 use crate::errors::BucketError;
 use crate::utils::checks;
+use crate::utils::object_store::{remove_file_and_prune, ObjectStore};
 use crate::utils::runtime::RuntimeManager;
 use crate::utils::utils::{find_bucket_path, find_files_excluding_top_level_b};
 use crate::CURRENT_DIR;
@@ -121,16 +122,27 @@ impl Revert {
 
         // An empty manifest is a valid target (every file was deleted): the
         // deletion pass below then empties the working tree.
-        // Restore every file first, so a missing object aborts before anything is deleted.
+        // Check every object is available first, so nothing is deleted when one is missing.
+        let store = ObjectStore::for_path(bucket_path)
+            .unwrap_or_else(|| ObjectStore::at(bucket_path.join(".b").join("objects")));
         for file in &commit.files {
-            debug!("Restoring {} ({})", file.name, file.hash);
-            file.restore_version(bucket_path, &file.hash).map_err(|e| {
-                error!("Failed to revert file {}: {}", file.name, e);
-                BucketError::from(e)
-            })?;
+            if store
+                .locate(&file.hash.to_hex(), Some(bucket_path))
+                .is_none()
+            {
+                return Err(BucketError::from(
+                    format!(
+                        "Object for {} ({}) is missing; nothing was changed",
+                        file.name,
+                        file.hash.to_hex()
+                    )
+                    .as_str(),
+                ));
+            }
         }
 
-        // Then delete files that are not part of the target commit.
+        // Delete files that are not part of the target commit first, so a
+        // file that became a directory (or the reverse) can be restored.
         let target_files_set: HashSet<PathBuf> = commit
             .files
             .iter()
@@ -140,10 +152,16 @@ impl Revert {
             if !target_files_set.contains(&file) {
                 let full_path = bucket_path.join(&file);
                 debug!("Deleting {}", full_path.display());
-                if full_path.is_file() || full_path.is_symlink() {
-                    std::fs::remove_file(&full_path)?;
-                }
+                remove_file_and_prune(&full_path, bucket_path)?;
             }
+        }
+
+        for file in &commit.files {
+            debug!("Restoring {} ({})", file.name, file.hash);
+            file.restore_version(bucket_path, &file.hash).map_err(|e| {
+                error!("Failed to revert file {}: {}", file.name, e);
+                BucketError::from(e)
+            })?;
         }
 
         println!("Reverted entire bucket to commit {}", commit_id_str);

@@ -201,6 +201,22 @@ impl<R: io::Read> io::Read for HashingReader<R> {
     }
 }
 
+/// Delete a working file, then remove any parent directories (below `root`)
+/// left empty, so a later restore can put a file where that directory was.
+pub fn remove_file_and_prune(file: &Path, root: &Path) -> io::Result<()> {
+    if file.is_file() || file.is_symlink() {
+        fs::remove_file(file)?;
+    }
+    let mut dir = file.parent();
+    while let Some(d) = dir {
+        if d == root || !d.starts_with(root) || fs::remove_dir(d).is_err() {
+            break;
+        }
+        dir = d.parent();
+    }
+    Ok(())
+}
+
 /// Write a file via a temporary sibling, fsync it, then rename it over `dest`.
 pub fn write_atomically<F>(dest: &Path, write: F) -> io::Result<()>
 where

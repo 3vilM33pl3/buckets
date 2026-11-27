@@ -21,7 +21,7 @@ use crate::data::bucket::{read_bucket_info, Bucket, BucketTrait};
 use crate::data::manifest::{known_hashes_by_path, load_commit_with_store, referenced_hashes};
 use crate::errors::BucketError;
 use crate::postgres_db::get_database;
-use crate::utils::object_store::{write_atomically, ObjectStore};
+use crate::utils::object_store::{remove_file_and_prune, write_atomically, ObjectStore};
 use crate::utils::runtime::RuntimeManager;
 use crate::utils::scan::scan_bucket;
 use crate::utils::utils::{find_bucket_path, find_bucket_repo};
@@ -304,16 +304,6 @@ impl BucketCommand for Pull {
 }
 
 /// Remove directories left empty by deleting `file`, up to (not including) `root`.
-fn prune_empty_parents(file: &Path, root: &Path) {
-    let mut dir = file.parent();
-    while let Some(d) = dir {
-        if d == root || !d.starts_with(root) || fs::remove_dir(d).is_err() {
-            break;
-        }
-        dir = d.parent();
-    }
-}
-
 /// Bring one bucket's working files up to its latest commit.
 pub fn pull_bucket(
     repo_root: &Path,
@@ -400,8 +390,7 @@ pub fn pull_bucket(
         }
         if force || is_known(path, hash) {
             let full = bucket_path.join(path);
-            fs::remove_file(&full)?;
-            prune_empty_parents(&full, bucket_path);
+            remove_file_and_prune(&full, bucket_path)?;
             summary.removed.push(path.clone());
         } else {
             summary.conflicts.push(path.clone());

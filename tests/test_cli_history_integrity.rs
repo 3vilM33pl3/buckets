@@ -352,4 +352,64 @@ mod tests {
         assert_eq!(pulled[0]["conflicts"], serde_json::json!([]));
         assert_eq!(fs::read_to_string(b.join("asset")).unwrap(), "flat again");
     }
+
+    #[test]
+    #[serial]
+    fn revert_handles_file_to_directory_changes() {
+        let Some(fx) = fixture_or_skip() else { return };
+        let b = fx.bucket_dir.clone();
+        fs::create_dir_all(b.join("asset")).unwrap();
+        fs::write(b.join("asset").join("model.blend"), "nested").unwrap();
+        let nested = json(&b, &["commit", "nested", "--json"])["commit_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        fs::remove_dir_all(b.join("asset")).unwrap();
+        fs::write(b.join("asset"), "flat").unwrap();
+        let flat = json(&b, &["commit", "flat", "--json"])["commit_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        buckets(&b, &["revert", "--commit", &nested]).success();
+        assert_eq!(
+            fs::read_to_string(b.join("asset").join("model.blend")).unwrap(),
+            "nested"
+        );
+        buckets(&b, &["revert", "--commit", &flat]).success();
+        assert_eq!(fs::read_to_string(b.join("asset")).unwrap(), "flat");
+    }
+
+    #[test]
+    #[serial]
+    fn stash_handles_file_to_directory_changes() {
+        let Some(fx) = fixture_or_skip() else { return };
+        let b = fx.bucket_dir.clone();
+        fs::write(b.join("asset"), "flat").unwrap();
+        buckets(&b, &["commit", "flat"]).success();
+
+        // File replaced by a directory, stashed and popped.
+        fs::remove_file(b.join("asset")).unwrap();
+        fs::create_dir_all(b.join("asset")).unwrap();
+        fs::write(b.join("asset").join("model.blend"), "nested").unwrap();
+        buckets(&b, &["stash", "save"]).success();
+        assert_eq!(fs::read_to_string(b.join("asset")).unwrap(), "flat");
+        buckets(&b, &["stash", "pop"]).success();
+        assert_eq!(
+            fs::read_to_string(b.join("asset").join("model.blend")).unwrap(),
+            "nested"
+        );
+
+        // Commit the directory, then replace it by a file and stash that.
+        buckets(&b, &["commit", "nested"]).success();
+        fs::remove_dir_all(b.join("asset")).unwrap();
+        fs::write(b.join("asset"), "flat again").unwrap();
+        buckets(&b, &["stash", "save"]).success();
+        assert_eq!(
+            fs::read_to_string(b.join("asset").join("model.blend")).unwrap(),
+            "nested"
+        );
+        buckets(&b, &["stash", "pop"]).success();
+        assert_eq!(fs::read_to_string(b.join("asset")).unwrap(), "flat again");
+    }
 }
