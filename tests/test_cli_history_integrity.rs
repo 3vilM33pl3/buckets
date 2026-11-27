@@ -130,6 +130,11 @@ mod tests {
         buckets(&b, &["rollback", "--path", "model.blend"]).success();
         assert_eq!(fs::read_to_string(b.join("model.blend")).unwrap(), "v2");
 
+        // Single-file rollback of a deleted file.
+        fs::remove_file(b.join("tex.png")).unwrap();
+        buckets(&b, &["rollback", "--path", "tex.png"]).success();
+        assert_eq!(fs::read_to_string(b.join("tex.png")).unwrap(), "t1");
+
         // Rollback of everything brings back deleted files too.
         fs::remove_file(b.join("tex.png")).unwrap();
         fs::write(b.join("model.blend"), "scratch").unwrap();

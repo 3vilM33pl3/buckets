@@ -1,4 +1,4 @@
-use crate::utils::checks::validate_path;
+use crate::utils::checks::validate_restore_path;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
@@ -148,7 +148,7 @@ pub struct RevertCommand {
 
 #[derive(Args, Clone)]
 pub struct RollbackCommand {
-    #[clap(short, long, value_name = "PATH", value_parser = validate_path)]
+    #[clap(short, long, value_name = "PATH", value_parser = validate_restore_path)]
     pub path: Option<PathBuf>,
 
     #[clap(flatten)]

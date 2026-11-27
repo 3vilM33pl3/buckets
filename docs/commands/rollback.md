@@ -50,7 +50,7 @@ When executed without arguments, the command:
 When executed with a file path, the command:
 
 1. **Validates File**:
-   - Checks that the file exists
+   - Accepts a file that was deleted locally, as long as the last commit has it
    - Verifies the file path is valid UTF-8
    
 2. **Compares with Last Commit**:
@@ -68,7 +68,7 @@ The command will fail with an error if:
 - Not executed within a buckets repository
 - Not executed within a valid bucket directory
 - No previous commit exists to rollback to
-- The specified file doesn't exist (when using `--path`)
+- The specified file is neither on disk nor in the last commit (when using `--path`)
 - The specified file path contains invalid UTF-8 characters
 - The specified file wasn't found in the previous commit
 - File restoration fails due to I/O errors
@@ -123,7 +123,7 @@ Error: No previous commit found.
 ## Technical Details
 
 The rollback process uses the following logic:
-1. For single file rollback: Verifies the file exists and matches a file in the last commit (by name and hash)
+1. For single file rollback: Looks the file up in the last commit by name (it may be missing locally) and restores it unless it already matches
 2. For full rollback: Uses `CommitStatus::Modified` to identify which files need restoration
 3. Files are restored using the `CommittedFile::restore()` method which handles decompression and file placement
 4. The command continues processing even if individual file restorations fail (errors are logged but don't stop the operation)

@@ -143,6 +143,38 @@ pub fn validate_path(path: &str) -> Result<PathBuf, String> {
     }
 }
 
+/// Like [`validate_path`], but a file that no longer exists is accepted, so a
+/// deleted file can be named for restoring. The missing path is resolved
+/// lexically against the current directory; whether it may be restored is
+/// decided later against the commit manifest and the bucket's path checks.
+pub fn validate_restore_path(path: &str) -> Result<PathBuf, String> {
+    let path_buf = PathBuf::from(path);
+    let absolute = if path_buf.is_relative() {
+        CURRENT_DIR.with(|current_dir| current_dir.join(&path_buf))
+    } else {
+        path_buf
+    };
+    if std::fs::symlink_metadata(&absolute).is_ok() {
+        return validate_path(path);
+    }
+    if path.contains('\0') {
+        return Err("Path contains a null byte.".to_string());
+    }
+    let mut resolved = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                if !resolved.pop() {
+                    return Err(format!("The path '{}' is not valid.", path));
+                }
+            }
+            other => resolved.push(other.as_os_str()),
+        }
+    }
+    Ok(resolved)
+}
+
 use crate::utils::utils::find_bucket_path;
 use crate::CURRENT_DIR;
 #[cfg(test)]
@@ -152,6 +184,15 @@ use tempfile::tempdir;
 mod tests {
     use super::*;
     use std::fs::{create_dir_all, File};
+
+    #[test]
+    fn restore_paths_may_be_missing() {
+        let temp_dir = tempdir().expect("tempdir");
+        let missing = temp_dir.path().join("gone").join("..").join("deleted.txt");
+        let resolved = validate_restore_path(missing.to_str().expect("utf8")).expect("accepted");
+        assert_eq!(resolved, temp_dir.path().join("deleted.txt"));
+        assert!(validate_path(missing.to_str().expect("utf8")).is_err());
+    }
 
     #[test]
     fn test_find_directory_in_parents() {
