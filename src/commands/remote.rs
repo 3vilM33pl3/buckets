@@ -323,6 +323,16 @@ pub fn pull_bucket(
         let known = known_hashes_by_path(&db, bucket.id).await?;
         Ok::<_, BucketError>((resolved, known))
     })?;
+    // Commits made on Windows by older versions may use `\` separators.
+    let portable = |p: &str| p.replace('\\', "/");
+    let mut known_portable: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (path, hashes) in known {
+        known_portable
+            .entry(portable(&path))
+            .or_default()
+            .extend(hashes);
+    }
+    let known = known_portable;
     let Some(resolved) = resolved else {
         return Ok(summary);
     };
@@ -332,7 +342,7 @@ pub fn pull_bucket(
         .data
         .files
         .iter()
-        .map(|f| (f.name.clone(), f.hash.to_hex().to_string()))
+        .map(|f| (portable(&f.name), f.hash.to_hex().to_string()))
         .collect();
     let local_files: BTreeMap<String, String> = scan_bucket(bucket_path)?
         .into_iter()
@@ -402,13 +412,18 @@ pub fn pull_bucket(
         }
         let dest = bucket_path.join(path);
         // Something still in the way (a kept local file where a directory must
-        // go, or a non-empty directory where a file must go) is a conflict.
-        let blocked_by_file = Path::new(path)
+        // go, or a non-empty directory where a file must go) is a conflict. A
+        // symlinked parent is one too: writing through it could land outside
+        // the bucket.
+        let blocked_by_ancestor = Path::new(path)
             .ancestors()
             .skip(1)
             .filter(|a| !a.as_os_str().is_empty())
-            .any(|a| bucket_path.join(a).is_file());
-        if blocked_by_file || dest.is_dir() {
+            .any(|a| match fs::symlink_metadata(bucket_path.join(a)) {
+                Ok(meta) => !meta.is_dir() || meta.file_type().is_symlink(),
+                Err(_) => false,
+            });
+        if blocked_by_ancestor || dest.is_dir() {
             summary.conflicts.push(path.clone());
             continue;
         }

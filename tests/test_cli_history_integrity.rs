@@ -412,4 +412,27 @@ mod tests {
         buckets(&b, &["stash", "pop"]).success();
         assert_eq!(fs::read_to_string(b.join("asset")).unwrap(), "flat again");
     }
+
+    #[cfg(unix)]
+    #[test]
+    #[serial]
+    fn pull_never_writes_through_a_symlinked_directory() {
+        let Some(fx) = fixture_or_skip() else { return };
+        let b = fx.bucket_dir.clone();
+        fs::create_dir_all(b.join("assets")).unwrap();
+        fs::write(b.join("assets").join("model.blend"), "v1").unwrap();
+        buckets(&b, &["commit", "v1"]).success();
+
+        // Replace the directory with a symlink to a directory outside the bucket.
+        let outside = tempfile::tempdir().unwrap();
+        fs::write(outside.path().join("model.blend"), "not yours").unwrap();
+        fs::remove_dir_all(b.join("assets")).unwrap();
+        std::os::unix::fs::symlink(outside.path(), b.join("assets")).unwrap();
+
+        buckets(&b, &["pull", "--force"]).failure();
+        assert_eq!(
+            fs::read_to_string(outside.path().join("model.blend")).unwrap(),
+            "not yours"
+        );
+    }
 }

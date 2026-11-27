@@ -100,6 +100,16 @@ pub fn hash_file_fast(path: &Path) -> io::Result<Hash> {
     Ok(hasher.finalize())
 }
 
+/// Bucket-relative path with `/` separators on every platform, so manifests
+/// written on one OS compare equal to scans on another.
+pub fn portable_path(relative: &Path) -> String {
+    relative
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 /// Scan every file in the bucket (excluding `.b`) and return path, hash and size,
 /// sorted by path. Uses and refreshes the `.b/index.json` cache.
 pub fn scan_bucket(bucket_path: &Path) -> io::Result<Vec<ScannedFile>> {
@@ -128,7 +138,7 @@ pub fn scan_bucket_with_stats(bucket_path: &Path) -> io::Result<(Vec<ScannedFile
             Ok(meta) if meta.is_file() => meta,
             _ => continue,
         };
-        let path = relative.to_string_lossy().into_owned();
+        let path = portable_path(&relative);
         let size = meta.len();
         let mtime = mtime_ns(&meta);
 
@@ -242,6 +252,12 @@ fn hash_in_parallel(jobs: &[(usize, PathBuf, String, u64, u128)]) -> io::Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn portable_paths_use_forward_slashes() {
+        let p: PathBuf = ["assets", "chars", "hero.blend"].iter().collect();
+        assert_eq!(portable_path(&p), "assets/chars/hero.blend");
+    }
     use tempfile::tempdir;
 
     fn make_bucket() -> tempfile::TempDir {

@@ -133,24 +133,29 @@ impl FileLock {
         force: bool,
     ) -> Result<Option<String>, BucketError> {
         let path = normalize_path(file_path)?;
-        let Some(lock) = Self::get(db, bucket_id, &path).await? else {
-            return Ok(None);
-        };
-        if lock.owner != owner && !force {
-            return Err(BucketError::from(
+        // Ownership is checked in the DELETE itself, so a lock someone else
+        // took in the meantime is never removed without --force.
+        let rows = db
+            .query(
+                "DELETE FROM locks
+                 WHERE bucket_id = $1 AND file_path = $2 AND ($4 OR owner = $3)
+                 RETURNING owner",
+                &[&bucket_id, &path, &owner, &force],
+            )
+            .await?;
+        if let Some(row) = rows.first() {
+            return Ok(Some(row.get(0)));
+        }
+        match Self::get(db, bucket_id, &path).await? {
+            None => Ok(None),
+            Some(lock) => Err(BucketError::from(
                 format!(
                     "'{}' is locked by {}. Use --force to break the lock.",
                     path, lock.owner
                 )
                 .as_str(),
-            ));
+            )),
         }
-        db.execute(
-            "DELETE FROM locks WHERE bucket_id = $1 AND file_path = $2",
-            &[&bucket_id, &path],
-        )
-        .await?;
-        Ok(Some(lock.owner))
     }
 
     pub async fn get(
