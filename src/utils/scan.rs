@@ -24,7 +24,7 @@ use crate::utils::object_store::write_atomically;
 use crate::utils::utils::find_files_excluding_top_level_b;
 
 const INDEX_FILE: &str = "index.json";
-const INDEX_VERSION: u32 = 1;
+const INDEX_VERSION: u32 = 2;
 const READ_BUFFER: usize = 1 << 20;
 /// Entries whose mtime is this close to the previous scan are re-hashed.
 pub const RACY_WINDOW_NS: u128 = 2_000_000_000;
@@ -48,6 +48,9 @@ struct IndexFile {
 struct IndexEntry {
     size: u64,
     mtime_ns: u128,
+    /// Inode, device and change time (ctime) on Unix; creation time elsewhere.
+    /// Catches a same-size replacement that kept the old modification time.
+    identity: String,
     hash: String,
 }
 
@@ -75,6 +78,27 @@ fn mtime_ns(meta: &fs::Metadata) -> u128 {
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
         .map(|d| d.as_nanos())
         .unwrap_or(0)
+}
+
+#[cfg(unix)]
+fn identity(meta: &fs::Metadata) -> String {
+    use std::os::unix::fs::MetadataExt;
+    format!(
+        "{}:{}:{}.{}",
+        meta.dev(),
+        meta.ino(),
+        meta.ctime(),
+        meta.ctime_nsec()
+    )
+}
+
+#[cfg(not(unix))]
+fn identity(meta: &fs::Metadata) -> String {
+    meta.created()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos().to_string())
+        .unwrap_or_default()
 }
 
 fn load_index(bucket_path: &Path) -> IndexFile {
@@ -126,7 +150,7 @@ pub fn scan_bucket_with_stats(bucket_path: &Path) -> io::Result<(Vec<ScannedFile
 
     let mut results: Vec<Option<ScannedFile>> = Vec::new();
     let mut new_entries: BTreeMap<String, IndexEntry> = BTreeMap::new();
-    let mut to_hash: Vec<(usize, PathBuf, String, u64, u128)> = Vec::new();
+    let mut to_hash: Vec<(usize, PathBuf, String, u64, (u128, String))> = Vec::new();
 
     let mut relative_paths = find_files_excluding_top_level_b(bucket_path);
     relative_paths.sort();
@@ -141,10 +165,12 @@ pub fn scan_bucket_with_stats(bucket_path: &Path) -> io::Result<(Vec<ScannedFile
         let path = portable_path(&relative);
         let size = meta.len();
         let mtime = mtime_ns(&meta);
+        let ident = identity(&meta);
 
         let cached = index.entries.get(&path).and_then(|entry| {
             let fresh = entry.size == size
                 && entry.mtime_ns == mtime
+                && entry.identity == ident
                 && mtime.saturating_add(RACY_WINDOW_NS) < index.written_at_ns;
             if fresh {
                 Hash::from_hex(&entry.hash).ok()
@@ -160,13 +186,14 @@ pub fn scan_bucket_with_stats(bucket_path: &Path) -> io::Result<(Vec<ScannedFile
                     IndexEntry {
                         size,
                         mtime_ns: mtime,
+                        identity: ident,
                         hash: hash.to_hex().to_string(),
                     },
                 );
                 results.push(Some(ScannedFile { path, hash, size }));
             }
             None => {
-                to_hash.push((results.len(), full, path, size, mtime));
+                to_hash.push((results.len(), full, path, size, (mtime, ident)));
                 results.push(None);
             }
         }
@@ -174,12 +201,13 @@ pub fn scan_bucket_with_stats(bucket_path: &Path) -> io::Result<(Vec<ScannedFile
 
     let hashed_count = to_hash.len();
     let hashed = hash_in_parallel(&to_hash)?;
-    for ((slot, _, path, size, mtime), hash) in to_hash.into_iter().zip(hashed) {
+    for ((slot, _, path, size, (mtime, ident)), hash) in to_hash.into_iter().zip(hashed) {
         new_entries.insert(
             path.clone(),
             IndexEntry {
                 size,
                 mtime_ns: mtime,
+                identity: ident,
                 hash: hash.to_hex().to_string(),
             },
         );
@@ -207,7 +235,9 @@ pub fn scan_bucket_with_stats(bucket_path: &Path) -> io::Result<(Vec<ScannedFile
     Ok((files, stats))
 }
 
-fn hash_in_parallel(jobs: &[(usize, PathBuf, String, u64, u128)]) -> io::Result<Vec<Hash>> {
+fn hash_in_parallel(
+    jobs: &[(usize, PathBuf, String, u64, (u128, String))],
+) -> io::Result<Vec<Hash>> {
     if jobs.is_empty() {
         return Ok(Vec::new());
     }
@@ -321,6 +351,30 @@ mod tests {
         scan_bucket(dir.path()).unwrap();
         // Same size, written immediately after the scan: must not be trusted.
         fs::write(dir.path().join("new.txt"), "bbbb").unwrap();
+        let files = scan_bucket(dir.path()).unwrap();
+        assert_eq!(files[0].hash, blake3::hash(b"bbbb"));
+    }
+
+    #[test]
+    fn replaced_file_with_same_size_and_mtime_is_rehashed() {
+        let dir = make_bucket();
+        let file = dir.path().join("asset.bin");
+        let old = SystemTime::now() - std::time::Duration::from_secs(60);
+        let write_backdated = |content: &str| {
+            fs::write(&file, content).unwrap();
+            File::options()
+                .write(true)
+                .open(&file)
+                .unwrap()
+                .set_modified(old)
+                .unwrap();
+        };
+        write_backdated("aaaa");
+        scan_bucket(dir.path()).unwrap();
+        // Same size, same mtime, different content: ctime has moved on.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        fs::remove_file(&file).unwrap();
+        write_backdated("bbbb");
         let files = scan_bucket(dir.path()).unwrap();
         assert_eq!(files[0].hash, blake3::hash(b"bbbb"));
     }

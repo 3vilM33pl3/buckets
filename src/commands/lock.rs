@@ -43,7 +43,43 @@ pub(crate) fn bucket_relative(bucket_path: &Path, file: &str) -> Result<String, 
     let relative = resolved
         .strip_prefix(bucket_path)
         .map_err(|_| BucketError::from(format!("'{}' is outside the bucket", file).as_str()))?;
-    normalize_path(&relative.to_string_lossy())
+    let normalized = normalize_path(&relative.to_string_lossy())?;
+    Ok(existing_spelling(bucket_path, &normalized))
+}
+
+/// On case-insensitive filesystems `model.blend` and `Model.blend` are the same
+/// file, but the scanner reports the spelling stored on disk. Use that spelling
+/// for existing files so a lock always matches what commit compares against.
+fn existing_spelling(bucket_path: &Path, normalized: &str) -> String {
+    if std::fs::symlink_metadata(bucket_path.join(normalized)).is_err() {
+        return normalized.to_string();
+    }
+    let mut dir = bucket_path.to_path_buf();
+    let mut parts = Vec::new();
+    for part in normalized.split('/') {
+        let actual = std::fs::read_dir(&dir)
+            .ok()
+            .and_then(|entries| {
+                let names: Vec<String> = entries
+                    .filter_map(Result::ok)
+                    .map(|e| e.file_name().to_string_lossy().into_owned())
+                    .collect();
+                if names.iter().any(|n| n == part) {
+                    return Some(part.to_string());
+                }
+                let mut folded = names
+                    .into_iter()
+                    .filter(|n| n.to_lowercase() == part.to_lowercase());
+                match (folded.next(), folded.next()) {
+                    (Some(only), None) => Some(only),
+                    _ => None,
+                }
+            })
+            .unwrap_or_else(|| part.to_string());
+        dir.push(&actual);
+        parts.push(actual);
+    }
+    parts.join("/")
 }
 
 #[derive(Serialize)]
@@ -213,5 +249,35 @@ impl BucketCommand for Locks {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::existing_spelling;
+    use std::fs;
+
+    #[test]
+    fn existing_files_keep_their_spelling_on_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("Maps")).unwrap();
+        fs::write(dir.path().join("Maps").join("L_Island.umap"), "m").unwrap();
+        // Exact spelling and files that do not exist are left alone.
+        assert_eq!(
+            existing_spelling(dir.path(), "Maps/L_Island.umap"),
+            "Maps/L_Island.umap"
+        );
+        assert_eq!(
+            existing_spelling(dir.path(), "new/file.txt"),
+            "new/file.txt"
+        );
+        // A different case only resolves where the filesystem treats it as the
+        // same file (macOS, Windows); on case-sensitive Linux it does not exist.
+        let other = existing_spelling(dir.path(), "maps/l_island.umap");
+        if dir.path().join("maps").exists() {
+            assert_eq!(other, "Maps/L_Island.umap");
+        } else {
+            assert_eq!(other, "maps/l_island.umap");
+        }
     }
 }
