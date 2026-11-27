@@ -12,7 +12,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use serde::Deserialize;
-use serde_json::Value;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
@@ -236,7 +235,7 @@ fn action_args(root: &Path, action: Action) -> Result<(PathBuf, Vec<String>), St
 }
 
 #[tauri::command]
-async fn run_action(state: State<'_, AppState>, action: Action) -> Result<Value, String> {
+async fn run_action(state: State<'_, AppState>, action: Action) -> Result<cli::Output, String> {
     let root = state.root()?;
     let settings = state.settings();
     blocking(move || {

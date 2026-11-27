@@ -394,6 +394,8 @@ select.input { appearance: none; -webkit-appearance: none; padding-right: 30px; 
 .toast.ok svg { color: var(--new); }
 .toast.err { border-color: color-mix(in srgb, var(--del) 50%, var(--border-strong)); }
 .toast.err svg { color: var(--del); }
+.toast.warn { border-color: color-mix(in srgb, var(--lock) 50%, var(--border-strong)); white-space: pre-line; }
+.toast.warn svg { color: var(--lock); }
 
 @keyframes fade { from { opacity: 0; } }
 @keyframes pop { from { opacity: 0; transform: translateY(4px) scale(0.985); } }

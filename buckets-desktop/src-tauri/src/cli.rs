@@ -63,14 +63,22 @@ pub fn info(configured: Option<&Path>) -> CliInfo {
     }
 }
 
-/// Run `buckets <args> --json` in `cwd`. Returns the parsed JSON (or the raw
-/// text, for the few commands that print plain text).
+/// What a successful CLI call returned: the parsed JSON (or the raw text, for
+/// the few commands that print plain text) and any warnings it printed to
+/// stderr, such as similar expectations found by the duplicate check.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Output {
+    pub result: Value,
+    pub warnings: Vec<String>,
+}
+
+/// Run `buckets <args> --json` in `cwd`.
 pub fn run(
     cli: &Path,
     cwd: &Path,
     args: &[String],
     similarity_check: bool,
-) -> Result<Value, String> {
+) -> Result<Output, String> {
     let mut command = Command::new(cli);
     command
         .args(args)
@@ -91,7 +99,25 @@ pub fn run(
         let message = if stderr.is_empty() { stdout } else { stderr };
         return Err(clean_error(&message));
     }
-    Ok(serde_json::from_str(&stdout).unwrap_or(Value::String(stdout)))
+    Ok(Output {
+        result: serde_json::from_str(&stdout).unwrap_or(Value::String(stdout)),
+        warnings: warnings(&stderr),
+    })
+}
+
+/// Warnings a successful command printed to stderr. Log lines (env_logger's
+/// `[... WARN ...]` prefixes) are left out; the rest is kept as written.
+fn warnings(stderr: &str) -> Vec<String> {
+    if stderr.trim().is_empty() {
+        return Vec::new();
+    }
+    let text = clean_error(stderr);
+    let lines: Vec<&str> = text.lines().filter(|l| !l.starts_with('[')).collect();
+    if lines.is_empty() {
+        Vec::new()
+    } else {
+        vec![lines.join("\n")]
+    }
 }
 
 /// Strip log prefixes and ANSI colour codes from CLI errors.
@@ -124,7 +150,17 @@ fn clean_error(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::clean_error;
+    use super::{clean_error, warnings};
+
+    #[test]
+    fn keeps_similarity_warnings_and_drops_log_lines() {
+        let err = "[2026-11-27T10:00:00Z WARN buckets] slow\n\u{1b}[33mWarning: Similar expectations found:\u{1b}[0m\n  - \"Rig\" (Similarity: 91.0%)";
+        assert_eq!(
+            warnings(err),
+            vec!["Warning: Similar expectations found:\n- \"Rig\" (Similarity: 91.0%)".to_string()]
+        );
+        assert!(warnings("  ").is_empty());
+    }
 
     #[test]
     fn strips_ansi_and_blank_lines() {
