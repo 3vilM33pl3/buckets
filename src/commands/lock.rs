@@ -20,19 +20,30 @@ fn current_bucket() -> Result<(Bucket, PathBuf), BucketError> {
 
 /// Turn a user-supplied path (relative to the current directory, or already
 /// relative to the bucket) into the bucket-relative form stored in locks.
-pub(crate) fn bucket_relative(bucket_path: &Path, file: &str) -> String {
+/// `.` and `..` are resolved, and paths outside the bucket are refused.
+pub(crate) fn bucket_relative(bucket_path: &Path, file: &str) -> Result<String, BucketError> {
     let current_dir = CURRENT_DIR.with(|dir| dir.clone());
     let candidate = PathBuf::from(file);
     let absolute = if candidate.is_absolute() {
-        candidate.clone()
+        candidate
     } else {
         current_dir.join(&candidate)
     };
-    let relative = absolute
+    // Resolve `.`/`..` lexically before comparing with the bucket root.
+    let mut resolved = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            std::path::Component::ParentDir => {
+                resolved.pop();
+            }
+            std::path::Component::CurDir => {}
+            other => resolved.push(other),
+        }
+    }
+    let relative = resolved
         .strip_prefix(bucket_path)
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|_| file.to_string());
-    normalize_path(&relative)
+        .map_err(|_| BucketError::from(format!("'{}' is outside the bucket", file).as_str()))?;
+    normalize_path(&relative.to_string_lossy())
 }
 
 #[derive(Serialize)]
@@ -74,7 +85,7 @@ impl BucketCommand for Lock {
             .files
             .iter()
             .map(|f| bucket_relative(&bucket_path, f))
-            .collect();
+            .collect::<Result<_, _>>()?;
 
         let results = RuntimeManager::block_on(async {
             let db = get_database().await?;
@@ -139,7 +150,7 @@ impl BucketCommand for Unlock {
             .files
             .iter()
             .map(|f| bucket_relative(&bucket_path, f))
-            .collect();
+            .collect::<Result<_, _>>()?;
 
         let results = RuntimeManager::block_on(async {
             let db = get_database().await?;

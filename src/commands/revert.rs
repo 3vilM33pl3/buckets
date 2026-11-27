@@ -119,11 +119,8 @@ impl Revert {
     fn revert_all(&self, bucket: Bucket, bucket_path: &Path) -> Result<(), BucketError> {
         let (commit, commit_id_str) = self.load_target(&bucket)?;
 
-        if commit.files.is_empty() {
-            println!("No files found in commit {}", commit_id_str);
-            return Ok(());
-        }
-
+        // An empty manifest is a valid target (every file was deleted): the
+        // deletion pass below then empties the working tree.
         // Restore every file first, so a missing object aborts before anything is deleted.
         for file in &commit.files {
             debug!("Restoring {} ({})", file.name, file.hash);

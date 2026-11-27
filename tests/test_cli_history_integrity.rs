@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used)]
+
 mod common;
 
 /// End-to-end checks for commit history, rollback, revert, locks, stash and
@@ -256,5 +258,98 @@ mod tests {
         );
         buckets(&b, &["pull", "--force"]).success();
         assert_eq!(fs::read_to_string(b.join("a.uasset")).unwrap(), "a2");
+    }
+
+    #[test]
+    #[serial]
+    fn lock_paths_with_dot_dot_still_block_other_owners() {
+        let Some(fx) = fixture_or_skip() else { return };
+        let b = fx.bucket_dir.clone();
+        fs::create_dir_all(b.join("subdir")).unwrap();
+        fs::write(b.join("model.blend"), "m1").unwrap();
+        buckets(&b, &["commit", "base"]).success();
+
+        let mut lock = assert_cmd::Command::cargo_bin("buckets").unwrap();
+        lock.current_dir(&b)
+            .env("BUCKETS_USER", "agent-a")
+            .args(["lock", "subdir/../model.blend"])
+            .assert()
+            .success();
+        assert_eq!(
+            json(&b, &["locks", "--json"])[0]["file_path"],
+            "model.blend"
+        );
+
+        fs::write(b.join("model.blend"), "m2").unwrap();
+        buckets(&b, &["commit", "not mine"])
+            .failure()
+            .stderr(predicates::str::contains("locked by someone else"));
+        buckets(&b, &["lock", "../outside.txt"]).failure();
+    }
+
+    #[test]
+    #[serial]
+    fn revert_to_an_empty_commit_removes_files() {
+        let Some(fx) = fixture_or_skip() else { return };
+        let b = fx.bucket_dir.clone();
+        fs::write(b.join("a.txt"), "a1").unwrap();
+        buckets(&b, &["commit", "one"]).success();
+        fs::remove_file(b.join("a.txt")).unwrap();
+        let empty = json(&b, &["commit", "empty", "--json"])["commit_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        fs::write(b.join("a.txt"), "a2").unwrap();
+        buckets(&b, &["commit", "back"]).success();
+
+        buckets(&b, &["revert", "--commit", &empty]).success();
+        assert!(!b.join("a.txt").exists());
+    }
+
+    #[test]
+    #[serial]
+    fn pull_handles_file_to_directory_changes() {
+        let Some(fx) = fixture_or_skip() else { return };
+        let b = fx.bucket_dir.clone();
+        let remote = tempfile::tempdir().unwrap();
+        buckets(
+            &fx.repo_dir,
+            &["remote", "set", remote.path().to_str().unwrap()],
+        )
+        .success();
+
+        // Commit one: `asset` is a file.
+        fs::write(b.join("asset"), "flat").unwrap();
+        buckets(&b, &["commit", "flat"]).success();
+        buckets(&fx.repo_dir, &["push"]).success();
+
+        // Commit two: `asset` becomes a directory.
+        fs::remove_file(b.join("asset")).unwrap();
+        fs::create_dir_all(b.join("asset")).unwrap();
+        fs::write(b.join("asset").join("model.blend"), "nested").unwrap();
+        buckets(&b, &["commit", "nested"]).success();
+        buckets(&fx.repo_dir, &["push"]).success();
+
+        // Old checkout with the file: pull turns it into the directory.
+        fs::remove_dir_all(b.join("asset")).unwrap();
+        fs::write(b.join("asset"), "flat").unwrap();
+        let pulled = json(&b, &["pull", "--json"]);
+        assert_eq!(pulled[0]["conflicts"], serde_json::json!([]));
+        assert_eq!(
+            fs::read_to_string(b.join("asset").join("model.blend")).unwrap(),
+            "nested"
+        );
+
+        // And back: directory becomes a file again.
+        fs::remove_dir_all(b.join("asset")).unwrap();
+        fs::write(b.join("asset"), "flat again").unwrap();
+        buckets(&b, &["commit", "flat again"]).success();
+        buckets(&fx.repo_dir, &["push"]).success();
+        fs::remove_file(b.join("asset")).unwrap();
+        fs::create_dir_all(b.join("asset")).unwrap();
+        fs::write(b.join("asset").join("model.blend"), "nested").unwrap();
+        let pulled = json(&b, &["pull", "--json"]);
+        assert_eq!(pulled[0]["conflicts"], serde_json::json!([]));
+        assert_eq!(fs::read_to_string(b.join("asset")).unwrap(), "flat again");
     }
 }

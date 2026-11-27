@@ -303,6 +303,17 @@ impl BucketCommand for Pull {
     }
 }
 
+/// Remove directories left empty by deleting `file`, up to (not including) `root`.
+fn prune_empty_parents(file: &Path, root: &Path) {
+    let mut dir = file.parent();
+    while let Some(d) = dir {
+        if d == root || !d.starts_with(root) || fs::remove_dir(d).is_err() {
+            break;
+        }
+        dir = d.parent();
+    }
+}
+
 /// Bring one bucket's working files up to its latest commit.
 pub fn pull_bucket(
     repo_root: &Path,
@@ -380,26 +391,41 @@ pub fn pull_bucket(
         summary.objects_fetched += 1;
     }
 
-    for (path, hash) in &target {
-        if summary.conflicts.contains(path) || local_files.get(path) == Some(hash) {
-            continue;
-        }
-        local.restore(hash, &bucket_path.join(path), Some(bucket_path))?;
-        summary.updated.push(path.clone());
-    }
-
-    // Files deleted in the latest commit go too, unless they carry local edits.
+    // Remove files deleted in the latest commit first, so a path that turns
+    // from a file into a directory (or back) can be restored afterwards.
     // Files this bucket never committed are untracked and always left alone.
     for (path, hash) in &local_files {
         if target.contains_key(path) || !known.contains_key(path) {
             continue;
         }
         if force || is_known(path, hash) {
-            fs::remove_file(bucket_path.join(path))?;
+            let full = bucket_path.join(path);
+            fs::remove_file(&full)?;
+            prune_empty_parents(&full, bucket_path);
             summary.removed.push(path.clone());
         } else {
             summary.conflicts.push(path.clone());
         }
+    }
+
+    for (path, hash) in &target {
+        if summary.conflicts.contains(path) || local_files.get(path) == Some(hash) {
+            continue;
+        }
+        let dest = bucket_path.join(path);
+        // Something still in the way (a kept local file where a directory must
+        // go, or a non-empty directory where a file must go) is a conflict.
+        let blocked_by_file = Path::new(path)
+            .ancestors()
+            .skip(1)
+            .filter(|a| !a.as_os_str().is_empty())
+            .any(|a| bucket_path.join(a).is_file());
+        if blocked_by_file || dest.is_dir() {
+            summary.conflicts.push(path.clone());
+            continue;
+        }
+        local.restore(hash, &dest, Some(bucket_path))?;
+        summary.updated.push(path.clone());
     }
     Ok(summary)
 }

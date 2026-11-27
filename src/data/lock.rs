@@ -50,13 +50,36 @@ pub fn current_owner() -> String {
     format!("{}@{}", user, host)
 }
 
-/// Normalise a path to the form stored in the database (forward slashes, no `./`).
-pub fn normalize_path(path: &str) -> String {
-    let normalized = path.replace('\\', "/");
-    normalized
-        .trim_start_matches("./")
-        .trim_start_matches('/')
-        .to_string()
+/// Normalise a bucket-relative path to the form stored in the database and
+/// reported by the scanner: forward slashes, `.` and `..` resolved.
+/// Returns an error for paths that leave the bucket.
+pub fn normalize_path(path: &str) -> Result<String, BucketError> {
+    let mut parts: Vec<&str> = Vec::new();
+    let unified = path.replace('\\', "/");
+    for part in unified.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                if parts.pop().is_none() {
+                    return Err(BucketError::from(
+                        format!("'{}' is outside the bucket", path).as_str(),
+                    ));
+                }
+            }
+            other => parts.push(other),
+        }
+    }
+    if parts.is_empty() {
+        return Err(BucketError::from(
+            format!("'{}' does not name a file", path).as_str(),
+        ));
+    }
+    Ok(parts.join("/"))
+}
+
+/// Normalise a scanner path for comparison; scanner paths are always clean.
+fn normalize_scanned(path: &str) -> String {
+    normalize_path(path).unwrap_or_else(|_| path.replace('\\', "/"))
 }
 
 impl FileLock {
@@ -66,7 +89,7 @@ impl FileLock {
         file_path: &str,
         owner: &str,
     ) -> Result<LockOutcome, BucketError> {
-        let path = normalize_path(file_path);
+        let path = normalize_path(file_path)?;
         let inserted = db
             .execute(
                 "INSERT INTO locks (bucket_id, file_path, owner) VALUES ($1, $2, $3)
@@ -109,7 +132,7 @@ impl FileLock {
         owner: &str,
         force: bool,
     ) -> Result<Option<String>, BucketError> {
-        let path = normalize_path(file_path);
+        let path = normalize_path(file_path)?;
         let Some(lock) = Self::get(db, bucket_id, &path).await? else {
             return Ok(None);
         };
@@ -135,7 +158,7 @@ impl FileLock {
         bucket_id: Uuid,
         file_path: &str,
     ) -> Result<Option<FileLock>, BucketError> {
-        let path = normalize_path(file_path);
+        let path = normalize_path(file_path)?;
         let rows = db
             .query(
                 "SELECT bucket_id, file_path, owner, created_at FROM locks
@@ -179,7 +202,11 @@ pub fn blocked_by_locks<'a>(
     locks
         .iter()
         .filter(|lock| lock.owner != owner)
-        .filter(|lock| changed.iter().any(|c| normalize_path(c) == lock.file_path))
+        .filter(|lock| {
+            changed
+                .iter()
+                .any(|c| normalize_scanned(c) == lock.file_path)
+        })
         .collect()
 }
 
@@ -199,8 +226,19 @@ mod tests {
 
     #[test]
     fn normalizes_paths() {
-        assert_eq!(normalize_path("./maps/L_Island.umap"), "maps/L_Island.umap");
-        assert_eq!(normalize_path("maps\\a.uasset"), "maps/a.uasset");
+        assert_eq!(
+            normalize_path("./maps/L_Island.umap").unwrap(),
+            "maps/L_Island.umap"
+        );
+        assert_eq!(normalize_path("maps\\a.uasset").unwrap(), "maps/a.uasset");
+        assert_eq!(
+            normalize_path("subdir/../model.blend").unwrap(),
+            "model.blend"
+        );
+        assert_eq!(normalize_path("a/./b//c.png").unwrap(), "a/b/c.png");
+        assert!(normalize_path("../outside.txt").is_err());
+        assert!(normalize_path("a/../..").is_err());
+        assert!(normalize_path(".").is_err());
     }
 
     #[test]
