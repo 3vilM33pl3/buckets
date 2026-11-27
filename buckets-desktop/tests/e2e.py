@@ -196,6 +196,14 @@ try:
     click('.nav-item[data-view="activity"]')
     wait_for(".timeline-item")
     shot("activity")
+    # Opening an older commit from another bucket shows that commit.
+    oldest = retry(lambda: d.find_elements(By.CSS_SELECTOR, ".timeline-item")[-1])
+    wanted = retry(lambda: oldest.find_element(By.CSS_SELECTOR, ".msg").get_attribute("textContent"))
+    retry(oldest.click)
+    end = time.time() + 15
+    while time.time() < end and wanted not in (d.execute_script("return document.querySelector('.commit-item.on .msg')?.textContent") or ""):
+        time.sleep(0.2)
+    assert wanted in d.execute_script("return document.querySelector('.commit-item.on .msg')?.textContent"), wanted
 
     # Light theme.
     click('[data-act="settings"]')

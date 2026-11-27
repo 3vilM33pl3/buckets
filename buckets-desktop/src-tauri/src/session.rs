@@ -27,6 +27,9 @@ pub struct Settings {
     pub similarity_check: bool,
     /// `dark`, `light` or `system`.
     pub theme: String,
+    /// Repository chosen in the app, opened on the next start ahead of the
+    /// launch arguments and BUCKETS_REPO, then cleared.
+    pub open_next: Option<PathBuf>,
 }
 
 impl Default for Settings {
@@ -36,6 +39,7 @@ impl Default for Settings {
             cli_path: None,
             similarity_check: false,
             theme: "dark".to_string(),
+            open_next: None,
         }
     }
 }

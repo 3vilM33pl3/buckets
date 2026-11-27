@@ -43,7 +43,15 @@ function isolate(dataUrl, channel) {
  * Show one file. `left` / `right` are { source, label, sub } or null when that
  * side does not exist (a new or deleted file).
  */
+// Only one image viewer is live at a time; this tears down its window
+// listeners and resize observer.
+let disposeActive = null;
+export function disposeViewer() {
+  if (disposeActive) { const d = disposeActive; disposeActive = null; d(); }
+}
+
 export async function showFile(el, { bucketId, path, status, left, right, actions = '' }) {
+  disposeViewer();
   const token = Symbol('view');
   el._token = token;
   el.innerHTML = `<div class="viewer"><div class="viewer-head">${title(path, status)}</div><div class="loading"><div class="spinner"></div>Loading preview…</div></div>`;
@@ -97,6 +105,7 @@ function wireOpen(ctx) {
 // ---------------- images ----------------
 
 function renderImage(ctx) {
+  disposeViewer();
   const { data } = ctx;
   const both = !!(data.left && data.right);
   const modes = both
@@ -222,7 +231,11 @@ function renderImage(ctx) {
 
   const ro = new ResizeObserver(() => (st.fitted ? fit() : null));
   ro.observe(area);
-  const cleanup = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); ro.disconnect(); document.removeEventListener('keydown', keys); };
+  const cleanup = () => {
+    window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); ro.disconnect(); document.removeEventListener('keydown', keys);
+    if (disposeActive === cleanup) disposeActive = null;
+  };
+  disposeActive = cleanup;
   const keys = (e) => {
     if (!document.body.contains(area)) return cleanup();
     if (e.target.closest('input, textarea, select') || e.ctrlKey || e.metaKey || e.altKey) return;

@@ -1,6 +1,6 @@
 import { api, working, object } from './api.js';
 import { icon } from './icons.js';
-import { showFile } from './viewer.js';
+import { showFile, disposeViewer } from './viewer.js';
 import {
   esc, ago, clock, dayLabel, bytes, stageColor, avatar, splitPath, kindColor, kindIcon,
   statusGlyph, toast, modal, confirmBox, menu, fileKind,
@@ -127,6 +127,7 @@ function render(opts = {}) {
   const viewerHost = document.getElementById('viewer');
   const keep = opts.keepViewer && viewerHost && viewerHost.dataset.key === viewerKey();
   const saved = keep ? viewerHost : null;
+  if (!saved) disposeViewer();
   const scroll = [...document.querySelectorAll('[data-scroll]')].map((el) => [el.dataset.scroll, el.scrollTop, el.scrollLeft]);
 
   root.innerHTML = `<div class="app">${topbar()}${sidebar()}<main class="main">${mainView()}</main></div>`;
@@ -651,14 +652,15 @@ async function settingsDialog() {
 
 // ---------------- events ----------------
 
-async function openBucket(id, tab) {
+async function openBucket(id, tab, commitId = null) {
   const switching = S.bucketId !== id;
   S.view = 'bucket'; S.bucketId = id;
   if (tab) S.tab = tab;
   if (switching) { S.files = null; S.history = null; S.selected = null; S.filter = ''; S.checked.clear(); S.commitId = null; S.commitChanges = null; }
+  if (commitId) { S.commitId = commitId; S.commitChanges = null; S.selected = null; }
   render();
   try {
-    await loadBucket(!switching);
+    await loadBucket(!switching || !!commitId);
     if (S.tab === 'history') await loadCommit();
     render();
   } catch (e) { toast(String(e), 'err'); }
@@ -709,7 +711,7 @@ root.addEventListener('click', async (e) => {
       S.commitId = id; S.selected = null; S.commitChanges = null; render();
       await loadCommit().catch((err) => toast(String(err), 'err')); render(); break;
     case 'goto-commit':
-      S.commitId = id; await openBucket(el.dataset.bucket, 'history'); break;
+      await openBucket(el.dataset.bucket, 'history', id); break;
     case 'goto-file':
       await openBucket(el.dataset.bucket, 'files'); S.selected = el.dataset.path; render(); break;
     case 'unlock-row': {

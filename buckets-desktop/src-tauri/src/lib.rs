@@ -299,10 +299,14 @@ async fn open_repository(app: AppHandle, path: String) -> Result<(), String> {
     {
         let mut settings = state.settings.lock().map_err(|e| e.to_string())?;
         settings.remember(&root);
+        let same = state.session.as_ref().map(|s| s.root == root).unwrap_or(false);
+        // Launch arguments and BUCKETS_REPO survive the restart, so record the
+        // choice as a one-shot override that startup reads first.
+        settings.open_next = (!same).then(|| root.clone());
         settings.save()?;
-    }
-    if state.session.as_ref().map(|s| s.root == root).unwrap_or(false) {
-        return Ok(());
+        if same {
+            return Ok(());
+        }
     }
     app.restart();
 }
@@ -331,7 +335,13 @@ fn update_settings(state: State<'_, AppState>, patch: SettingsPatch) -> Result<S
     Ok(settings.clone())
 }
 
-fn startup_repository(settings: &Settings) -> Option<PathBuf> {
+fn startup_repository(settings: &mut Settings) -> Option<PathBuf> {
+    if let Some(next) = settings.open_next.take() {
+        let _ = settings.save();
+        if let Some(root) = repo_root_for(&next) {
+            return Some(root);
+        }
+    }
     let from_args = std::env::args()
         .skip(1)
         .filter(|a| !a.starts_with('-'))
@@ -348,7 +358,7 @@ pub fn run() {
     let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).try_init();
 
     let mut settings = Settings::load();
-    let (session, error) = match startup_repository(&settings) {
+    let (session, error) = match startup_repository(&mut settings) {
         Some(root) => match Session::open(&root) {
             Ok(session) => {
                 settings.remember(&root);
