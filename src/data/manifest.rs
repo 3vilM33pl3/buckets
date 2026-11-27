@@ -101,6 +101,26 @@ impl CommitStore for DatabaseManager {
 
 const ZERO_HASH: [u8; 32] = [0u8; 32];
 
+/// Lay one commit's rows over `files`. Commits made on Windows by older
+/// versions stored `\\` separators; keys are normalised to `/` so they match
+/// what the scanner reports now. If one commit holds both `a/b` and a
+/// literal `a\\b` (possible on Linux before such names were refused), the
+/// `/` spelling wins; the other file then shows up locally as a name that
+/// commit and pull refuse until it is renamed, so nothing is overwritten.
+fn overlay(files: &mut BTreeMap<String, CommitFileRow>, rows: Vec<CommitFileRow>) {
+    let mut batch: BTreeMap<String, CommitFileRow> = BTreeMap::new();
+    for mut row in rows {
+        let native = !row.file_path.contains('\\');
+        let key = row.file_path.replace('\\', "/");
+        if batch.contains_key(&key) && !native {
+            continue;
+        }
+        row.file_path = key.clone();
+        batch.insert(key, row);
+    }
+    files.extend(batch);
+}
+
 /// Resolve a commit (the latest when `commit_id` is `None`) to its full file list.
 pub async fn load_commit_with_store<S: CommitStore + ?Sized>(
     store: &S,
@@ -127,17 +147,13 @@ pub async fn load_commit_with_store<S: CommitStore + ?Sized>(
     let mut files: BTreeMap<String, CommitFileRow> = BTreeMap::new();
     let first_overlay = match start {
         Some(index) => {
-            for row in store.files_for_commit(commits[index].id).await? {
-                files.insert(row.file_path.clone(), row);
-            }
+            overlay(&mut files, store.files_for_commit(commits[index].id).await?);
             index + 1
         }
         None => 0,
     };
     for commit in &commits[first_overlay..=target] {
-        for row in store.files_for_commit(commit.id).await? {
-            files.insert(row.file_path.clone(), row);
-        }
+        overlay(&mut files, store.files_for_commit(commit.id).await?);
     }
 
     let zero = Hash::from(ZERO_HASH);
@@ -274,6 +290,34 @@ mod tests {
             .iter()
             .map(|f| (f.name.clone(), f.hash))
             .collect()
+    }
+
+    #[tokio::test]
+    async fn legacy_windows_separators_are_normalised() {
+        let mut store = MockStore::default();
+        store.add(true, &[("assets\\model.blend", "1")]);
+        let resolved = load_commit_with_store(&store, Uuid::nil(), None)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            names(&resolved),
+            vec![("assets/model.blend".to_string(), blake3::hash(b"1"))]
+        );
+
+        // The `/` spelling wins over a literal backslash in the same commit.
+        for rows in [[("a/b", "1"), ("a\\b", "2")], [("a\\b", "2"), ("a/b", "1")]] {
+            let mut clash = MockStore::default();
+            clash.add(true, &rows);
+            let resolved = load_commit_with_store(&clash, Uuid::nil(), None)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                names(&resolved),
+                vec![("a/b".to_string(), blake3::hash(b"1"))]
+            );
+        }
     }
 
     #[tokio::test]
