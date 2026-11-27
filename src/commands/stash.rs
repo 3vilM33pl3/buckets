@@ -154,6 +154,31 @@ fn save(
     for change in &changes {
         check_no_symlinked_parent(&bucket_path.join(&change.name), bucket_path)?;
     }
+    // The committed versions we reset to must be available locally (another
+    // machine may have committed without this one pulling the objects yet).
+    let missing: Vec<&str> = changes
+        .iter()
+        .filter(|c| {
+            let reset_to = match c.status {
+                CommitStatus::Modified => &c.previous_hash,
+                CommitStatus::Deleted => &c.hash,
+                _ => return false,
+            };
+            store
+                .locate(&reset_to.to_hex(), Some(bucket_path))
+                .is_none()
+        })
+        .map(|c| c.name.as_str())
+        .collect();
+    if !missing.is_empty() {
+        return Err(BucketError::from(
+            format!(
+                "Can't stash: the committed version of these files isn't available locally (run `buckets pull` first): {}",
+                missing.join(", ")
+            )
+            .as_str(),
+        ));
+    }
 
     // 1. Save the changed contents.
     let mut files = Vec::new();

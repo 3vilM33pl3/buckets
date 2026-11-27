@@ -215,6 +215,26 @@ mod tests {
 
     #[test]
     #[serial]
+    fn stash_changes_nothing_when_committed_objects_are_missing() {
+        let Some(fx) = fixture_or_skip() else { return };
+        let b = fx.bucket_dir.clone();
+        fs::write(b.join("keep.txt"), "k1").unwrap();
+        buckets(&b, &["commit", "base"]).success();
+        // As if another machine committed and this one never pulled the objects.
+        fs::remove_dir_all(fx.repo_dir.join(".buckets").join("objects")).unwrap();
+        let _ = fs::remove_dir_all(b.join(".b").join("storage"));
+        fs::write(b.join("keep.txt"), "k2").unwrap();
+        fs::write(b.join("new.txt"), "n1").unwrap();
+        buckets(&b, &["stash"])
+            .failure()
+            .stderr(predicates::str::contains("buckets pull"));
+        assert_eq!(fs::read_to_string(b.join("keep.txt")).unwrap(), "k2");
+        assert_eq!(fs::read_to_string(b.join("new.txt")).unwrap(), "n1");
+        assert!(!b.join(".b").join("stash.json").exists());
+    }
+
+    #[test]
+    #[serial]
     fn push_and_pull_share_objects_through_a_remote_directory() {
         let Some(fx) = fixture_or_skip() else { return };
         let b = fx.bucket_dir.clone();
