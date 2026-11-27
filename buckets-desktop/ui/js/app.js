@@ -108,8 +108,9 @@ async function act(action, okText) {
   if (S.busy) return null;
   S.busy = true; document.body.style.cursor = 'progress';
   try {
-    const result = await api.action(action);
+    const { result, warnings } = await api.action(action);
     if (okText) toast(typeof okText === 'function' ? okText(result) : okText);
+    for (const w of warnings || []) toast(w, 'warn', 12000);
     await refresh({ quiet: true });
     return result ?? true;
   } catch (e) {
@@ -532,11 +533,17 @@ function lockSummary(r, verb) {
 }
 
 async function commit() {
-  const message = (S.draft[S.bucketId] || '').trim();
+  // The user can switch bucket while the CLI runs, so keep the one committed.
+  const bucketId = S.bucketId;
+  const message = (S.draft[bucketId] || '').trim();
   if (!message) return;
-  const res = await act({ type: 'commit', bucketId: S.bucketId, message },
-    (r) => (r && r.files != null ? `Committed ${r.new.length + r.modified.length + r.deleted.length} change(s) to ${nameOf(S.bucketId)}` : 'Committed'));
-  if (res) { S.draft[S.bucketId] = ''; S.selected = null; render(); }
+  const res = await act({ type: 'commit', bucketId, message },
+    (r) => (r && r.files != null ? `Committed ${r.new.length + r.modified.length + r.deleted.length} change(s) to ${nameOf(bucketId)}` : 'Committed'));
+  if (res) {
+    S.draft[bucketId] = '';
+    if (S.bucketId === bucketId) S.selected = null;
+    render();
+  }
 }
 
 // ---------------- activity ----------------

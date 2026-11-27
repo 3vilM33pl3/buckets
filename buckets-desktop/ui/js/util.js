@@ -77,9 +77,9 @@ export function toast(message, kind = 'ok', ms = 4200) {
   const host = document.getElementById('toasts');
   const el = document.createElement('div');
   el.className = `toast ${kind}`;
-  el.innerHTML = `${icon(kind === 'err' ? 'alert' : 'checkCircle')}<div class="grow">${esc(message)}</div>`;
+  el.innerHTML = `${icon(kind === 'ok' ? 'checkCircle' : 'alert')}<div class="grow">${esc(message)}</div>`;
   host.appendChild(el);
-  setTimeout(() => el.remove(), kind === 'err' ? Math.max(ms, 9000) : ms);
+  setTimeout(() => el.remove(), kind === 'ok' ? ms : Math.max(ms, 9000));
   el.addEventListener('click', () => el.remove());
 }
 
