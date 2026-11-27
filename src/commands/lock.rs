@@ -44,7 +44,39 @@ pub(crate) fn bucket_relative(bucket_path: &Path, file: &str) -> Result<String, 
         .strip_prefix(bucket_path)
         .map_err(|_| BucketError::from(format!("'{}' is outside the bucket", file).as_str()))?;
     let normalized = normalize_path(&relative.to_string_lossy())?;
+    reject_symlink_alias(bucket_path, &normalized, file)?;
     Ok(existing_spelling(bucket_path, &normalized))
+}
+
+/// The scanner never follows symlinks, so a lock taken through one (a linked
+/// folder `alias -> assets`, or a linked file) would never match the path
+/// commit compares against. Refuse it and point at the real path instead.
+fn reject_symlink_alias(
+    bucket_path: &Path,
+    normalized: &str,
+    file: &str,
+) -> Result<(), BucketError> {
+    let mut current = bucket_path.to_path_buf();
+    for part in normalized.split('/') {
+        current.push(part);
+        let Ok(meta) = std::fs::symlink_metadata(&current) else {
+            return Ok(());
+        };
+        if meta.file_type().is_symlink() {
+            return Err(BucketError::from(
+                format!(
+                    "'{}' goes through a symlink ({}); lock the file by its real path",
+                    file,
+                    current
+                        .strip_prefix(bucket_path)
+                        .unwrap_or(&current)
+                        .display()
+                )
+                .as_str(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// On case-insensitive filesystems `model.blend` and `Model.blend` are the same
@@ -254,8 +286,28 @@ impl BucketCommand for Locks {
 
 #[cfg(test)]
 mod tests {
-    use super::existing_spelling;
+    use super::{existing_spelling, reject_symlink_alias};
     use std::fs;
+
+    #[cfg(unix)]
+    #[test]
+    fn locks_through_symlinks_are_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("assets")).unwrap();
+        fs::write(dir.path().join("assets").join("model.blend"), "m").unwrap();
+        std::os::unix::fs::symlink(dir.path().join("assets"), dir.path().join("alias")).unwrap();
+        std::os::unix::fs::symlink(
+            dir.path().join("assets").join("model.blend"),
+            dir.path().join("link.blend"),
+        )
+        .unwrap();
+        assert!(
+            reject_symlink_alias(dir.path(), "alias/model.blend", "alias/model.blend").is_err()
+        );
+        assert!(reject_symlink_alias(dir.path(), "link.blend", "link.blend").is_err());
+        assert!(reject_symlink_alias(dir.path(), "assets/model.blend", "x").is_ok());
+        assert!(reject_symlink_alias(dir.path(), "new/file.txt", "x").is_ok());
+    }
 
     #[test]
     fn existing_files_keep_their_spelling_on_disk() {

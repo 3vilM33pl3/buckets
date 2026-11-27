@@ -286,6 +286,13 @@ where
 
     let result = (|| {
         let file = File::create(&tmp)?;
+        // Replacing a file keeps its permissions (an executable stays
+        // executable). Writers that need stricter ones set them in `write`.
+        if let Ok(meta) = fs::symlink_metadata(dest) {
+            if meta.is_file() {
+                file.set_permissions(meta.permissions())?;
+            }
+        }
         let mut writer = BufWriter::with_capacity(1 << 20, file);
         write(&mut writer)?;
         writer.flush()?;
@@ -391,6 +398,19 @@ mod tests {
 
         let good = blake3::hash(b"now different").to_hex().to_string();
         assert!(store.put_file_verified(&src, &good).unwrap());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomic_write_keeps_existing_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempdir().unwrap();
+        let dest = dir.path().join("run.sh");
+        write_atomically(&dest, |w| w.write_all(b"1")).unwrap();
+        fs::set_permissions(&dest, fs::Permissions::from_mode(0o755)).unwrap();
+        write_atomically(&dest, |w| w.write_all(b"2")).unwrap();
+        let mode = fs::metadata(&dest).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o755, "replacing a file keeps its mode");
     }
 
     #[test]

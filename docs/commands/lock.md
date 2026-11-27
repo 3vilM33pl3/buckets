@@ -11,7 +11,7 @@ buckets unlock --force <file>...  # release someone else's lock
 buckets locks [--json]            # list locks in the current bucket
 ```
 Run these inside a bucket. Paths may be relative to the current directory;
-`.` and `..` are resolved, and paths outside the bucket are refused.
+`.` and `..` are resolved, and paths outside the bucket are refused. Paths that go through a symlink (a linked folder or file) are refused too, because commit never follows symlinks: lock the file by its real path.
 
 ## Behaviour
 - Locks are stored in PostgreSQL (`locks` table, one row per bucket and file),
