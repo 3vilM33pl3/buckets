@@ -1,14 +1,13 @@
 use crate::data::commit::{Commit, CommitStatus, CommittedFile};
 use crate::errors::BucketError;
 use crate::utils::checks::{find_directory_in_parents, is_valid_bucket_info};
-use crate::utils::utils::{find_bucket_repo, find_files_excluding_top_level_b, hash_file};
+use crate::utils::utils::find_bucket_repo;
 use blake3::Hash;
 use log::debug;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use std::{env, io};
 use toml::to_string;
 use uuid::Uuid;
@@ -181,39 +180,20 @@ impl BucketTrait for Bucket {
     }
 
     fn list_files_with_metadata_in_bucket(&self) -> io::Result<Commit> {
-        let mut files = Vec::new();
         let bucket_path = self
             .full_path()
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-
-        for entry in find_files_excluding_top_level_b(bucket_path.as_path()) {
-            let relative_path = entry.as_path();
-            let absolute_path = bucket_path.join(relative_path);
-
-            if absolute_path.is_file() {
-                match hash_file(&absolute_path) {
-                    Ok(hash) => {
-                        //println!("BLAKE3 hash: {}", hash);
-                        files.push(CommittedFile {
-                            id: Default::default(),
-                            name: relative_path.to_string_lossy().into_owned(),
-                            hash,
-                            previous_hash: Hash::from_str(
-                                "0000000000000000000000000000000000000000000000000000000000000000",
-                            )
-                            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
-                            status: CommitStatus::New,
-                        });
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to hash file: {}", e);
-                        return Err(e);
-                    }
-                }
-            } else {
-                debug!("Skipping non-file: {:?}", entry.as_path());
-            }
-        }
+        let zero = Hash::from([0u8; 32]);
+        let files = crate::utils::scan::scan_bucket(&bucket_path)?
+            .into_iter()
+            .map(|scanned| CommittedFile {
+                id: Default::default(),
+                name: scanned.path,
+                hash: scanned.hash,
+                previous_hash: zero,
+                status: CommitStatus::New,
+            })
+            .collect();
 
         Ok(Commit {
             bucket: "".to_string(),

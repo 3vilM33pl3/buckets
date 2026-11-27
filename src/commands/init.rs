@@ -204,7 +204,8 @@ impl Init {
         // 3. Global configuration
         let config = self.get_database_config()?;
 
-        // Save the database configuration
+        // Save the database configuration. The password itself is written to
+        // the user's credentials file, not into the repository.
         save_database_config(repo_path, &config)?;
 
         RuntimeManager::block_on(initialize_database_with_config_async(config))

@@ -10,7 +10,8 @@ use crate::data::commit::CommitStatus;
 use crate::errors::BucketError;
 use crate::utils::checks;
 use crate::utils::runtime::RuntimeManager;
-use crate::utils::utils::{find_bucket_path, hash_file};
+use crate::utils::scan::hash_file_fast;
+use crate::utils::utils::find_bucket_path;
 use crate::CURRENT_DIR;
 use log::error;
 
@@ -46,99 +47,121 @@ impl BucketCommand for Rollback {
 }
 
 fn rollback_single_file(bucket_path: &Path, file: &PathBuf) -> Result<(), BucketError> {
-    if !file.exists() {
-        return Err(BucketError::from(Error::new(
-            ErrorKind::NotFound,
-            "File not found.",
-        )));
+    let bucket_root = find_bucket_path(bucket_path).ok_or(BucketError::NotAValidBucket)?;
+    let bucket = Bucket::from_meta_data(&bucket_root)?;
+
+    // Accept paths relative to the current directory or to the bucket root.
+    let absolute = if file.is_absolute() {
+        file.clone()
+    } else {
+        bucket_path.join(file)
+    };
+    let relative = absolute
+        .strip_prefix(&bucket_root)
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| file.clone());
+    let file_name = relative
+        .to_str()
+        .ok_or_else(|| BucketError::from("Invalid UTF-8 path."))?
+        .to_string();
+
+    let full_path = bucket_root.join(&file_name);
+    let loaded = RuntimeManager::block_on(Commit::load_last_commit_async(bucket.id));
+    if !full_path.exists() {
+        // A deleted file can be brought back, but only if the last commit has it.
+        let in_commit =
+            matches!(&loaded, Ok(Some(c)) if c.files.iter().any(|f| f.name == file_name));
+        if !in_commit {
+            return Err(BucketError::from(Error::new(
+                ErrorKind::NotFound,
+                "File not found.",
+            )));
+        }
     }
 
-    let bucket = Bucket::from_meta_data(bucket_path)?;
-
-    let previous_commit = RuntimeManager::block_on(Commit::load_last_commit_async(bucket.id))
+    let previous_commit = loaded
         .map_err(|err| {
             error!("Failed to load previous commit: {}", err);
             BucketError::from(Error::other("Failed to load previous commit."))
+        })?
+        .ok_or_else(|| {
+            BucketError::from(Error::new(ErrorKind::NotFound, "No previous commit found."))
         })?;
 
-    match previous_commit {
-        None => Err(BucketError::from(Error::new(
-            ErrorKind::NotFound,
-            "No previous commit found.",
-        ))),
-        Some(previous_commit) => {
-            let file_name = file
-                .to_str()
-                .ok_or_else(|| BucketError::from("Invalid UTF-8 path."))?; // Handle UTF-8 conversion error
+    let committed = previous_commit
+        .files
+        .iter()
+        .find(|committed_file| committed_file.name == file_name)
+        .ok_or_else(|| {
+            BucketError::from(Error::new(
+                ErrorKind::NotFound,
+                format!("'{}' is not in the last commit.", file_name),
+            ))
+        })?;
 
-            let file_hash = hash_file(file)?; // Properly propagate error
-
-            let found_file = previous_commit.files.iter().find(|committed_file| {
-                committed_file.name == file_name && committed_file.hash == file_hash
-            });
-
-            match found_file {
-                None => Err(BucketError::from(Error::new(
-                    ErrorKind::NotFound,
-                    "File not found in previous commit.",
-                ))),
-                Some(file_to_restore) => {
-                    file_to_restore.restore(bucket_path)?; // Propagate any error from restore_file
-                    Ok(())
-                }
-            }
-        }
+    if full_path.is_file() && hash_file_fast(&full_path)? == committed.hash {
+        println!("{} already matches the last commit.", file_name);
+        return Ok(());
     }
+
+    committed.restore_version(&bucket_root, &committed.hash)?;
+    println!("Restored {} from the last commit.", file_name);
+    Ok(())
 }
 
 fn rollback_all(bucket_path: &Path) -> Result<(), BucketError> {
-    // Read the bucket's metadata
-    let bucket = Bucket::from_meta_data(bucket_path)?;
-    let bucket_files = bucket.list_files_with_metadata_in_bucket()?;
-    if bucket_files.files.is_empty() {
+    let bucket_root = find_bucket_path(bucket_path).ok_or(BucketError::NotAValidBucket)?;
+    let bucket = Bucket::from_meta_data(&bucket_root)?;
+    let bucket_files = crate::commands::commit::list_bucket_files(&bucket_root)?;
+    let loaded = RuntimeManager::block_on(Commit::load_last_commit_async(bucket.id));
+    if bucket_files.files.is_empty() && !matches!(&loaded, Ok(Some(c)) if !c.files.is_empty()) {
         println!("No files in bucket");
         return Ok(());
     }
 
-    let previous_commit = RuntimeManager::block_on(Commit::load_last_commit_async(bucket.id))
+    let previous_commit = loaded
         .map_err(|err| {
             error!("Failed to load previous commit: {}", err);
             BucketError::from(Error::other("Failed to load previous commit."))
+        })?
+        .ok_or_else(|| {
+            BucketError::from(Error::new(ErrorKind::NotFound, "No previous commit found."))
         })?;
 
-    match previous_commit {
-        None => {
-            return Err(BucketError::from(Error::new(
-                ErrorKind::NotFound,
-                "No previous commit found.",
-            )));
-        }
-        Some(previous_commit) => {
-            let changes = bucket_files
-                .compare(&previous_commit)
-                .ok_or_else(|| BucketError::from(Error::other("Failed to compare files.")))?;
+    let Some(changes) = bucket_files.compare(&previous_commit) else {
+        println!("No changes detected. Rollback cancelled.");
+        return Ok(());
+    };
 
-            if changes
-                .iter()
-                .filter(|change| change.status == CommitStatus::Modified)
-                .count()
-                == 0
-            {
-                println!("No changes detected. Rollback cancelled.");
-                return Ok(());
+    let mut restored = 0;
+    let mut failures = Vec::new();
+    for change in &changes {
+        // Modified files go back to their committed version and deleted files
+        // come back. New, never-committed files are left alone.
+        let version = match change.status {
+            CommitStatus::Modified => change.previous_hash,
+            CommitStatus::Deleted => change.hash,
+            _ => continue,
+        };
+        match change.restore_version(&bucket_root, &version) {
+            Ok(()) => restored += 1,
+            Err(e) => {
+                error!("Failed to restore {}: {}", change.name, e);
+                failures.push(format!("{}: {}", change.name, e));
             }
-
-            changes
-                .iter()
-                .filter(|change| change.status == CommitStatus::Modified)
-                .for_each(|change| {
-                    if let Err(e) = change.restore(bucket_path) {
-                        error!("Failed to restore file: {}", e);
-                    }
-                });
         }
     }
 
+    if !failures.is_empty() {
+        return Err(BucketError::from(
+            format!("Could not restore some files:\n  {}", failures.join("\n  ")).as_str(),
+        ));
+    }
+    if restored == 0 {
+        println!("No committed files were changed. Rollback cancelled.");
+    } else {
+        println!("Restored {} file(s) from the last commit.", restored);
+    }
     Ok(())
 }
 

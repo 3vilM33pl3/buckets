@@ -1,6 +1,10 @@
 # Storing, compressing and hashing objects
 
-Every bucket stores objects in a storage directory. The objects are compressed and hashed before being stored. The hash is used as the filename of the object and is stored in a directory named after the first 4 characters of the hash. The remaining characters are used as the filename.
+Objects are stored once per repository in `.buckets/objects`. Each file is hashed with BLAKE3 and compressed with zstd. The object lives in a directory named after the first 2 hex characters of the hash, and the remaining characters are the file name, for example `.buckets/objects/4f/a91c...`. Objects are written to a temporary file, fsynced and renamed into place, and the content is re-hashed while it is compressed so a file that changes mid-commit is rejected.
+
+Repositories created by older versions stored objects flat in each bucket's `.b/storage/<hash>`. Those objects are still found when restoring.
+
+A remote store (see `buckets remote set`) uses the same layout, so `push` and `pull` copy compressed objects as they are.
 
 ## Compression algorithm
 For compression, we use zstd. It is a fast compression algorithm with a good compression ratio. It is faster than zlib and has a better compression ratio.

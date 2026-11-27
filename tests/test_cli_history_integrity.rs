@@ -1,0 +1,260 @@
+mod common;
+
+/// End-to-end checks for commit history, rollback, revert, locks, stash and
+/// push/pull, run against a real PostgreSQL container.
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+    use std::fs;
+    use std::path::Path;
+
+    use serde_json::Value;
+    use serial_test::serial;
+
+    use crate::common::tests::RepoFixture;
+
+    fn fixture_or_skip() -> Option<RepoFixture> {
+        match RepoFixture::new() {
+            Ok(f) => Some(f),
+            Err(message) => {
+                eprintln!("Skipping history integrity test: {message}");
+                None
+            }
+        }
+    }
+
+    fn buckets(dir: &Path, args: &[&str]) -> assert_cmd::assert::Assert {
+        let mut cmd = assert_cmd::Command::cargo_bin("buckets").expect("binary");
+        cmd.current_dir(dir).env("BUCKETS_USER", "tester");
+        for a in args {
+            cmd.arg(a);
+        }
+        cmd.assert()
+    }
+
+    fn json(dir: &Path, args: &[&str]) -> Value {
+        let out = buckets(dir, args).success().get_output().stdout.clone();
+        serde_json::from_slice(&out).unwrap_or_else(|e| {
+            panic!(
+                "invalid JSON from {:?}: {}\n{}",
+                args,
+                e,
+                String::from_utf8_lossy(&out)
+            )
+        })
+    }
+
+    /// Map of file name to status from `buckets status --json`.
+    fn status(dir: &Path) -> BTreeMap<String, String> {
+        json(dir, &["status", "--json"])["files"]
+            .as_array()
+            .expect("files array")
+            .iter()
+            .map(|f| {
+                (
+                    f["name"].as_str().unwrap_or_default().to_string(),
+                    f["status"].as_str().unwrap_or_default().to_string(),
+                )
+            })
+            .collect()
+    }
+
+    fn all_committed(dir: &Path, names: &[&str]) -> bool {
+        let s = status(dir);
+        s.len() == names.len()
+            && names
+                .iter()
+                .all(|n| s.get(*n).map(String::as_str) == Some("committed"))
+    }
+
+    #[test]
+    #[serial]
+    fn unchanged_and_deleted_files_are_tracked_across_commits() {
+        let Some(fx) = fixture_or_skip() else { return };
+        let b = fx.bucket_dir.clone();
+        fs::write(b.join("a.txt"), "a1").unwrap();
+        fs::write(b.join("b.txt"), "b1").unwrap();
+        fs::write(b.join("c.txt"), "c1").unwrap();
+        buckets(&b, &["commit", "one"]).success();
+        assert!(all_committed(&b, &["a.txt", "b.txt", "c.txt"]));
+
+        // Edit one file: the others must still read as committed afterwards.
+        fs::write(b.join("a.txt"), "a2").unwrap();
+        assert_eq!(
+            status(&b).get("a.txt").map(String::as_str),
+            Some("modified")
+        );
+        let summary = json(&b, &["commit", "two", "--json"]);
+        assert_eq!(summary["modified"], serde_json::json!(["a.txt"]));
+        assert!(all_committed(&b, &["a.txt", "b.txt", "c.txt"]));
+
+        // Delete a file: the deletion is recorded.
+        fs::remove_file(b.join("c.txt")).unwrap();
+        assert_eq!(status(&b).get("c.txt").map(String::as_str), Some("deleted"));
+        let summary = json(&b, &["commit", "three", "--json"]);
+        assert_eq!(summary["deleted"], serde_json::json!(["c.txt"]));
+        assert!(all_committed(&b, &["a.txt", "b.txt"]));
+
+        // Nothing changed: no new commit.
+        let summary = json(&b, &["commit", "noop", "--json"]);
+        assert!(summary["commit_id"].is_null());
+
+        // Identical content is stored once in the shared store.
+        let objects = fx.repo_dir.join(".buckets").join("objects");
+        let count = walkdir::WalkDir::new(&objects)
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|e| e.file_type().is_file())
+            .count();
+        assert_eq!(count, 4, "a1, a2, b1, c1");
+    }
+
+    #[test]
+    #[serial]
+    fn rollback_and_revert_restore_committed_versions() {
+        let Some(fx) = fixture_or_skip() else { return };
+        let b = fx.bucket_dir.clone();
+        fs::write(b.join("model.blend"), "v1").unwrap();
+        fs::write(b.join("tex.png"), "t1").unwrap();
+        let first = json(&b, &["commit", "v1", "--json"])["commit_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        fs::write(b.join("model.blend"), "v2").unwrap();
+        buckets(&b, &["commit", "v2"]).success();
+
+        // Single-file rollback of an edited file.
+        fs::write(b.join("model.blend"), "scratch").unwrap();
+        buckets(&b, &["rollback", "--path", "model.blend"]).success();
+        assert_eq!(fs::read_to_string(b.join("model.blend")).unwrap(), "v2");
+
+        // Rollback of everything brings back deleted files too.
+        fs::remove_file(b.join("tex.png")).unwrap();
+        fs::write(b.join("model.blend"), "scratch").unwrap();
+        buckets(&b, &["rollback"]).success();
+        assert_eq!(fs::read_to_string(b.join("tex.png")).unwrap(), "t1");
+        assert_eq!(fs::read_to_string(b.join("model.blend")).unwrap(), "v2");
+
+        // Revert to the first commit restores every file it held, not just changed ones.
+        fs::remove_file(b.join("tex.png")).unwrap();
+        buckets(&b, &["revert", "--commit", &first]).success();
+        assert_eq!(fs::read_to_string(b.join("model.blend")).unwrap(), "v1");
+        assert_eq!(fs::read_to_string(b.join("tex.png")).unwrap(), "t1");
+    }
+
+    #[test]
+    #[serial]
+    fn locks_block_other_owners_from_committing() {
+        let Some(fx) = fixture_or_skip() else { return };
+        let b = fx.bucket_dir.clone();
+        fs::write(b.join("L_Island.umap"), "m1").unwrap();
+        buckets(&b, &["commit", "map"]).success();
+
+        let mut lock = assert_cmd::Command::cargo_bin("buckets").unwrap();
+        lock.current_dir(&b)
+            .env("BUCKETS_USER", "agent-a")
+            .args(["lock", "L_Island.umap"])
+            .assert()
+            .success();
+
+        let locks = json(&b, &["locks", "--json"]);
+        assert_eq!(locks[0]["owner"], "agent-a");
+
+        fs::write(b.join("L_Island.umap"), "m2").unwrap();
+        buckets(&b, &["commit", "not mine"])
+            .failure()
+            .stderr(predicates::str::contains("locked by someone else"));
+        buckets(&b, &["unlock", "L_Island.umap"]).failure();
+
+        let mut commit = assert_cmd::Command::cargo_bin("buckets").unwrap();
+        commit
+            .current_dir(&b)
+            .env("BUCKETS_USER", "agent-a")
+            .args(["commit", "mine"])
+            .assert()
+            .success();
+        buckets(&b, &["unlock", "--force", "L_Island.umap"]).success();
+        assert_eq!(json(&b, &["locks", "--json"]), serde_json::json!([]));
+    }
+
+    #[test]
+    #[serial]
+    fn stash_saves_and_restores_changes() {
+        let Some(fx) = fixture_or_skip() else { return };
+        let b = fx.bucket_dir.clone();
+        fs::write(b.join("keep.txt"), "k1").unwrap();
+        fs::write(b.join("gone.txt"), "g1").unwrap();
+        buckets(&b, &["commit", "base"]).success();
+
+        fs::write(b.join("keep.txt"), "k2").unwrap();
+        fs::remove_file(b.join("gone.txt")).unwrap();
+        fs::write(b.join("new.txt"), "n1").unwrap();
+        buckets(&b, &["stash", "save", "-m", "wip"]).success();
+        assert!(all_committed(&b, &["keep.txt", "gone.txt"]));
+        assert!(!b.join("new.txt").exists());
+
+        let list = json(&b, &["stash", "list", "--json"]);
+        assert_eq!(list[0]["message"], "wip");
+
+        buckets(&b, &["stash", "pop"]).success();
+        assert_eq!(fs::read_to_string(b.join("keep.txt")).unwrap(), "k2");
+        assert_eq!(fs::read_to_string(b.join("new.txt")).unwrap(), "n1");
+        assert!(!b.join("gone.txt").exists());
+        assert_eq!(
+            json(&b, &["stash", "list", "--json"]),
+            serde_json::json!([])
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn push_and_pull_share_objects_through_a_remote_directory() {
+        let Some(fx) = fixture_or_skip() else { return };
+        let b = fx.bucket_dir.clone();
+        let remote = tempfile::tempdir().unwrap();
+        let remote_path = remote.path().join("objects");
+        buckets(
+            &fx.repo_dir,
+            &["remote", "set", remote_path.to_str().unwrap()],
+        )
+        .success();
+
+        fs::write(b.join("a.uasset"), "a1").unwrap();
+        fs::write(b.join("b.uasset"), "b1").unwrap();
+        buckets(&b, &["commit", "one"]).success();
+        let pushed = json(&fx.repo_dir, &["push", "--json"]);
+        assert_eq!(pushed["objects_copied"], 2);
+
+        // Simulate a second machine: same database, empty local store and an old checkout.
+        fs::remove_dir_all(fx.repo_dir.join(".buckets").join("objects")).unwrap();
+        fs::write(b.join("a.uasset"), "a2").unwrap();
+        fs::write(b.join("c.uasset"), "c1").unwrap();
+        fs::remove_file(b.join("b.uasset")).unwrap();
+        buckets(&b, &["commit", "two"]).success();
+        buckets(&fx.repo_dir, &["push"]).success();
+
+        // Go back to the first state locally, as if this machine had not seen commit two.
+        fs::write(b.join("a.uasset"), "a1").unwrap();
+        fs::write(b.join("b.uasset"), "b1").unwrap();
+        fs::remove_file(b.join("c.uasset")).unwrap();
+        fs::write(b.join("untracked.txt"), "mine").unwrap();
+        fs::remove_dir_all(fx.repo_dir.join(".buckets").join("objects")).unwrap();
+
+        let pulled = json(&b, &["pull", "--json"]);
+        assert_eq!(pulled[0]["conflicts"], serde_json::json!([]));
+        assert_eq!(fs::read_to_string(b.join("a.uasset")).unwrap(), "a2");
+        assert_eq!(fs::read_to_string(b.join("c.uasset")).unwrap(), "c1");
+        assert!(!b.join("b.uasset").exists(), "deleted upstream");
+        assert!(b.join("untracked.txt").exists(), "untracked files are kept");
+
+        // A local edit is never overwritten without --force.
+        fs::write(b.join("a.uasset"), "local edit").unwrap();
+        buckets(&b, &["pull"]).failure();
+        assert_eq!(
+            fs::read_to_string(b.join("a.uasset")).unwrap(),
+            "local edit"
+        );
+        buckets(&b, &["pull", "--force"]).success();
+        assert_eq!(fs::read_to_string(b.join("a.uasset")).unwrap(), "a2");
+    }
+}

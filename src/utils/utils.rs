@@ -39,6 +39,7 @@ fn make_relative_path(path: &Path, base: &Path) -> Option<PathBuf> {
     path.strip_prefix(base).ok().map(PathBuf::from)
 }
 
+#[allow(dead_code)]
 pub(crate) fn hash_file<P: AsRef<Path>>(path: P) -> io::Result<Hash> {
     let path = path.as_ref();
     ensure_file_readable(path)?;
@@ -58,6 +59,7 @@ pub(crate) fn hash_file<P: AsRef<Path>>(path: P) -> io::Result<Hash> {
     Ok(hasher.finalize())
 }
 
+#[allow(dead_code)]
 fn ensure_file_readable(path: &Path) -> io::Result<()> {
     #[cfg(unix)]
     {

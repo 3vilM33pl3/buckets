@@ -99,6 +99,7 @@ pub fn compress_file(
 /// # Returns
 /// * `Ok(())` on success
 /// * `Err(io::Error)` on failure with descriptive error message
+#[allow(dead_code)]
 pub fn decompress_file(input_path: &Path, output_path: &Path) -> io::Result<()> {
     let input_file = File::open(input_path).map_err(|e| {
         io::Error::new(

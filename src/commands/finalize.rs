@@ -53,14 +53,35 @@ impl BucketCommand for Finalize {
                 return Ok(());
             }
 
-            // 3. Interactive Selection
-            let pebble_descriptions: Vec<String> =
-                pebbles.iter().map(|p| p.description.clone()).collect();
-
-            let selections = MultiSelect::with_theme(&ColorfulTheme::default())
-                .with_prompt("Select pebbles to resolve (Space to select, Enter to confirm):")
-                .items(&pebble_descriptions)
-                .interact()?; // This might need error mapping
+            // 3. Selection: flags for scripts and agents, a menu otherwise.
+            let selections: Vec<usize> = if self.args.all {
+                (0..pebbles.len()).collect()
+            } else if !self.args.pebbles.is_empty() {
+                let mut picked = Vec::new();
+                for wanted in &self.args.pebbles {
+                    let index = pebbles
+                        .iter()
+                        .position(|p| p.id.to_string() == *wanted || p.description == *wanted)
+                        .ok_or_else(|| {
+                            BucketError::NotFound(format!("No active pebble matches '{}'", wanted))
+                        })?;
+                    if !picked.contains(&index) {
+                        picked.push(index);
+                    }
+                }
+                picked
+            } else if !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+                return Err(BucketError::from(
+                    "No terminal to prompt on. Use --all or --pebble <id or description>.",
+                ));
+            } else {
+                let pebble_descriptions: Vec<String> =
+                    pebbles.iter().map(|p| p.description.clone()).collect();
+                MultiSelect::with_theme(&ColorfulTheme::default())
+                    .with_prompt("Select pebbles to resolve (Space to select, Enter to confirm):")
+                    .items(&pebble_descriptions)
+                    .interact()?
+            };
 
             if selections.is_empty() {
                 println!("No pebbles selected.");
@@ -71,7 +92,14 @@ impl BucketCommand for Finalize {
             for selection_idx in selections {
                 let pebble = &pebbles[selection_idx];
                 Pebble::resolve(&db, pebble.id).await?;
-                println!("Resolved: {}", pebble.description);
+                if self.args.shared.json {
+                    println!(
+                        "{}",
+                        serde_json::json!({"resolved": pebble.id.to_string(), "description": pebble.description})
+                    );
+                } else {
+                    println!("Resolved: {}", pebble.description);
+                }
 
                 // Also update the linked Expectation if it was intrinsic?
                 // Logic: If pebble marks completion of an expectation, we should update expectation status.

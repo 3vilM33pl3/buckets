@@ -69,11 +69,18 @@ impl BucketCommand for Expect {
             };
 
             // 2.5. Generate Embedding & Check for Duplicates
-            let embedding = match EmbeddingGenerator::generate(description) {
-                Ok(vec) => Some(vec),
-                Err(e) => {
-                    warn!("Failed to generate embedding: {}", e);
-                    None
+            // Skipped when asked to, or when the server has no pgvector.
+            let similarity_disabled = self.args.no_similarity
+                || std::env::var("BUCKETS_NO_EMBEDDINGS").is_ok_and(|v| v == "1" || v == "true");
+            let embedding = if similarity_disabled || !db.has_vector_support().await {
+                None
+            } else {
+                match EmbeddingGenerator::generate(description) {
+                    Ok(vec) => Some(vec),
+                    Err(e) => {
+                        warn!("Failed to generate embedding: {}", e);
+                        None
+                    }
                 }
             };
 
@@ -153,7 +160,14 @@ impl BucketCommand for Expect {
                 );
             }
 
-            println!("Expectation recorded.");
+            if self.args.shared.json {
+                println!(
+                    "{}",
+                    serde_json::json!({"expectation": expectation.id.to_string(), "description": description})
+                );
+            } else {
+                println!("Expectation recorded.");
+            }
             Ok(())
         })
     }
