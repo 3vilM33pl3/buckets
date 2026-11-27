@@ -60,17 +60,17 @@ fn rollback_single_file(bucket_path: &Path, file: &PathBuf) -> Result<(), Bucket
         .strip_prefix(&bucket_root)
         .map(PathBuf::from)
         .unwrap_or_else(|_| file.clone());
-    let file_name = relative
-        .to_str()
-        .ok_or_else(|| BucketError::from("Invalid UTF-8 path."))?
-        .to_string();
+    if relative.to_str().is_none() {
+        return Err(BucketError::from("Invalid UTF-8 path."));
+    }
+    // Manifest keys always use `/`, whatever the platform.
+    let file_name = crate::utils::scan::portable_path(&relative);
 
     let full_path = bucket_root.join(&file_name);
     let loaded = RuntimeManager::block_on(Commit::load_last_commit_async(bucket.id));
     if !full_path.exists() {
         // A deleted file can be brought back, but only if the last commit has it.
-        let in_commit =
-            matches!(&loaded, Ok(Some(c)) if c.files.iter().any(|f| f.name == file_name));
+        let in_commit = matches!(&loaded, Ok(Some(c)) if c.files.iter().any(|f| f.name.replace('\\', "/") == file_name));
         if !in_commit {
             return Err(BucketError::from(Error::new(
                 ErrorKind::NotFound,
@@ -91,7 +91,7 @@ fn rollback_single_file(bucket_path: &Path, file: &PathBuf) -> Result<(), Bucket
     let committed = previous_commit
         .files
         .iter()
-        .find(|committed_file| committed_file.name == file_name)
+        .find(|committed_file| committed_file.name.replace('\\', "/") == file_name)
         .ok_or_else(|| {
             BucketError::from(Error::new(
                 ErrorKind::NotFound,

@@ -7,6 +7,7 @@ use crate::errors::BucketError;
 use crate::utils::checks;
 use crate::utils::object_store::{remove_file_and_prune, ObjectStore};
 use crate::utils::runtime::RuntimeManager;
+use crate::utils::scan::portable_path;
 use crate::utils::utils::{find_bucket_path, find_files_excluding_top_level_b};
 use crate::CURRENT_DIR;
 use log::{debug, error};
@@ -85,18 +86,19 @@ impl Revert {
         } else {
             current_dir.join(&candidate)
         };
-        let relative_path = absolute
-            .strip_prefix(bucket_path)
-            .map(PathBuf::from)
-            .unwrap_or(candidate)
-            .to_string_lossy()
-            .to_string();
+        // Manifest keys always use `/`, whatever the platform.
+        let relative_path = portable_path(
+            &absolute
+                .strip_prefix(bucket_path)
+                .map(PathBuf::from)
+                .unwrap_or(candidate),
+        );
 
         let (commit, display) = self.load_target(&bucket)?;
         let file = commit
             .files
             .iter()
-            .find(|f| f.name == relative_path)
+            .find(|f| f.name.replace('\\', "/") == relative_path)
             .ok_or_else(|| match &self.args.commit_id {
                 Some(commit_id) => BucketError::from(
                     format!("File '{}' not found in commit '{}'", file_path, commit_id).as_str(),
