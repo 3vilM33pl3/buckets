@@ -30,7 +30,10 @@ every bucket. For each bucket it brings the working files to the latest commit:
   path that changed between file and directory updates cleanly.
 - Files the bucket never committed are untracked and always kept.
 - A file with local edits is a **conflict**: it is left untouched and the
-  command fails, unless `--force` is given.
+  command fails, unless `--force` is given. On case-insensitive filesystems
+  (macOS, Windows) a local file that differs only in case from an incoming one
+  (`Model.blend` vs `model.blend`) is a conflict too.
+- A parent folder that is a symlink is always a conflict, even with `--force`.
 
 `--json` returns one entry per bucket:
 `{"bucket", "commit_id", "updated", "removed", "conflicts", "objects_fetched"}`.

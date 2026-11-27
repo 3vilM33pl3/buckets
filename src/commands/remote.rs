@@ -423,7 +423,13 @@ pub fn pull_bucket(
                 Ok(meta) => !meta.is_dir() || meta.file_type().is_symlink(),
                 Err(_) => false,
             });
-        if blocked_by_ancestor || dest.is_dir() {
+        // On case-insensitive filesystems `model.blend` and a local
+        // `Model.blend` are the same file. The scanner only knows the local
+        // spelling, so a destination that exists but was not scanned under
+        // this name is someone's file (untracked, or a kept local edit).
+        let alias_in_place =
+            !force && !local_files.contains_key(path) && fs::symlink_metadata(&dest).is_ok();
+        if blocked_by_ancestor || dest.is_dir() || alias_in_place {
             summary.conflicts.push(path.clone());
             continue;
         }
