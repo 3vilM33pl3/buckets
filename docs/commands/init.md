@@ -168,8 +168,26 @@ host = "localhost"
 port = 5432
 database = "buckets"
 username = "myuser"
-password = "mypass"
 ```
+The password is **not** written here, so `.buckets/` can be shared or committed
+without leaking it.
+
+#### `~/.buckets_credentials.toml`
+`init` stores the database password in a per-user credentials file outside the
+repository, created with `0600` permissions and keyed by
+`user@host:port/database`:
+```toml
+"myuser@localhost:5432/buckets" = "mypass"
+```
+When connecting, the password is taken from, in order:
+1. `BUCKETS_DB_PASSWORD`,
+2. the credentials file (`BUCKETS_CREDENTIALS_FILE` points to another file),
+3. the global `~/.buckets_config.toml` URL, if it has the same host, port and user.
+
+On another machine, run `buckets init` there or add the line to that machine's
+credentials file (or set `BUCKETS_DB_PASSWORD`). Older repositories with
+`password = ...` in `db_config.toml` still work but print a warning; move the
+password to the credentials file and delete that line.
 
 ## Database Schema
 
