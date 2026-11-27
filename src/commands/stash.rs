@@ -145,15 +145,10 @@ fn save(
         return Ok(());
     }
 
-    // 0. Check every file we will restore can be written inside the bucket,
+    // 0. Check every file we will restore or remove stays inside the bucket,
     // before anything is recorded or changed.
     for change in &changes {
-        if matches!(
-            change.status,
-            CommitStatus::Modified | CommitStatus::Deleted
-        ) {
-            check_no_symlinked_parent(&bucket_path.join(&change.name), bucket_path)?;
-        }
+        check_no_symlinked_parent(&bucket_path.join(&change.name), bucket_path)?;
     }
 
     // 1. Save the changed contents.
@@ -232,7 +227,8 @@ fn pop(bucket: &Bucket, bucket_path: &Path, force: bool, json: bool) -> Result<(
     }
 
     let store = ObjectStore::for_path(bucket_path).ok_or(BucketError::NotInRepo)?;
-    for file in entry.files.iter().filter(|f| f.hash.is_some()) {
+    // Check restores and deletions alike before changing anything.
+    for file in &entry.files {
         check_no_symlinked_parent(&bucket_path.join(&file.path), bucket_path)?;
     }
     // Removals first, then restores, for the same reason as in `save`.

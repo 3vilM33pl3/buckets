@@ -228,6 +228,9 @@ pub fn check_no_symlinked_parent(dest: &Path, root: &Path) -> io::Result<()> {
 /// Delete a working file, then remove any parent directories (below `root`)
 /// left empty, so a later restore can put a file where that directory was.
 pub fn remove_file_and_prune(file: &Path, root: &Path) -> io::Result<()> {
+    // Never delete through a symlinked folder: that would remove a file
+    // outside the bucket.
+    check_no_symlinked_parent(file, root)?;
     if file.is_file() || file.is_symlink() {
         fs::remove_file(file)?;
     }

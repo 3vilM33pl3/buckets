@@ -465,6 +465,19 @@ mod tests {
             "not yours"
         );
 
+        // A stash that deletes a file inside the folder never deletes through the link.
+        fs::remove_file(b.join("assets")).unwrap();
+        fs::create_dir_all(b.join("assets")).unwrap();
+        buckets(&b, &["stash", "save"]).success(); // records deletion of assets/model.blend
+        fs::remove_dir_all(b.join("assets")).unwrap();
+        std::os::unix::fs::symlink(outside.path(), b.join("assets")).unwrap();
+        buckets(&b, &["stash", "pop", "--force"]).failure();
+        assert_eq!(
+            fs::read_to_string(outside.path().join("model.blend")).unwrap(),
+            "not yours"
+        );
+        buckets(&b, &["stash", "drop"]).success();
+
         // A full revert removes the link itself and restores a real folder.
         buckets(&b, &["revert", "--commit", &first]).success();
         assert_eq!(

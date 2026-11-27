@@ -48,8 +48,17 @@ impl BucketCommand for Finalize {
             // 2. Fetch Active Pebbles
             let pebbles = Pebble::get_active_in_bucket(&db, bucket_id).await?;
 
+            let json = self.args.shared.json;
+            let print_resolved = |resolved: &[serde_json::Value]| {
+                println!("{}", serde_json::json!({ "resolved": resolved }));
+            };
+
             if pebbles.is_empty() {
-                println!("{}", style("No active pebbles to resolve.").yellow());
+                if json {
+                    print_resolved(&[]);
+                } else {
+                    println!("{}", style("No active pebbles to resolve.").yellow());
+                }
                 return Ok(());
             }
 
@@ -84,19 +93,25 @@ impl BucketCommand for Finalize {
             };
 
             if selections.is_empty() {
-                println!("No pebbles selected.");
+                if json {
+                    print_resolved(&[]);
+                } else {
+                    println!("No pebbles selected.");
+                }
                 return Ok(());
             }
 
-            // 4. Resolve selected pebbles
+            // 4. Resolve selected pebbles. With --json, one document is printed
+            // at the end: {"resolved": [{"id", "description"}, ...]}.
+            let mut resolved = Vec::new();
             for selection_idx in selections {
                 let pebble = &pebbles[selection_idx];
                 Pebble::resolve(&db, pebble.id).await?;
-                if self.args.shared.json {
-                    println!(
-                        "{}",
-                        serde_json::json!({"resolved": pebble.id.to_string(), "description": pebble.description})
-                    );
+                if json {
+                    resolved.push(serde_json::json!({
+                        "id": pebble.id.to_string(),
+                        "description": pebble.description,
+                    }));
                 } else {
                     println!("Resolved: {}", pebble.description);
                 }
@@ -118,6 +133,9 @@ impl BucketCommand for Finalize {
                 }
             }
 
+            if json {
+                print_resolved(&resolved);
+            }
             Ok(())
         })
     }
