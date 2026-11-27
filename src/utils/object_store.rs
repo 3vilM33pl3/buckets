@@ -255,11 +255,9 @@ where
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
     fs::create_dir_all(&parent)?;
-    let file_name = dest
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_default();
-    let tmp = parent.join(format!(".{}.{}.tmp", file_name, Uuid::new_v4().simple()));
+    // A fixed-length name, so long asset names never push the temporary
+    // file past the filesystem's 255-byte limit.
+    let tmp = parent.join(format!(".buckets-{}.tmp", Uuid::new_v4().simple()));
 
     let result = (|| {
         let file = File::create(&tmp)?;
