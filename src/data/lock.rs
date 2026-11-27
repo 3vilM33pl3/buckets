@@ -34,18 +34,23 @@ pub fn current_owner() -> String {
             return user.trim().to_string();
         }
     }
-    let user = std::env::var("USER")
-        .or_else(|_| std::env::var("USERNAME"))
-        .unwrap_or_else(|_| "unknown".to_string());
-    let host = std::env::var("HOSTNAME")
+    let non_empty = |s: String| {
+        let s = s.trim().to_string();
+        (!s.is_empty()).then_some(s)
+    };
+    let user = whoami::username()
         .ok()
-        .filter(|h| !h.trim().is_empty())
-        .or_else(|| {
-            std::fs::read_to_string("/etc/hostname")
-                .ok()
-                .map(|h| h.trim().to_string())
-                .filter(|h| !h.is_empty())
-        })
+        .and_then(non_empty)
+        .or_else(|| std::env::var("USER").ok().and_then(non_empty))
+        .or_else(|| std::env::var("USERNAME").ok().and_then(non_empty))
+        .unwrap_or_else(|| "unknown".to_string());
+    // Ask the OS (works on Windows and macOS too, where /etc/hostname and
+    // $HOSTNAME are usually missing), so two machines never share an identity.
+    let host = whoami::hostname()
+        .ok()
+        .and_then(non_empty)
+        .or_else(|| std::env::var("COMPUTERNAME").ok().and_then(non_empty))
+        .or_else(|| std::env::var("HOSTNAME").ok().and_then(non_empty))
         .unwrap_or_else(|| "localhost".to_string());
     format!("{}@{}", user, host)
 }

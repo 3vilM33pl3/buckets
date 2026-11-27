@@ -435,4 +435,49 @@ mod tests {
             "not yours"
         );
     }
+
+    #[cfg(unix)]
+    #[test]
+    #[serial]
+    fn stash_and_revert_never_write_through_a_symlinked_directory() {
+        let Some(fx) = fixture_or_skip() else { return };
+        let b = fx.bucket_dir.clone();
+        fs::create_dir_all(b.join("assets")).unwrap();
+        fs::write(b.join("assets").join("model.blend"), "v1").unwrap();
+        let first = json(&b, &["commit", "v1", "--json"])["commit_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        let outside = tempfile::tempdir().unwrap();
+        fs::write(outside.path().join("model.blend"), "not yours").unwrap();
+        fs::remove_dir_all(b.join("assets")).unwrap();
+        std::os::unix::fs::symlink(outside.path(), b.join("assets")).unwrap();
+
+        buckets(&b, &["stash", "save"]).failure();
+        assert_eq!(
+            json(&b, &["stash", "list", "--json"]),
+            serde_json::json!([])
+        );
+        buckets(&b, &["rollback"]).failure();
+        assert_eq!(
+            fs::read_to_string(outside.path().join("model.blend")).unwrap(),
+            "not yours"
+        );
+
+        // A full revert removes the link itself and restores a real folder.
+        buckets(&b, &["revert", "--commit", &first]).success();
+        assert_eq!(
+            fs::read_to_string(outside.path().join("model.blend")).unwrap(),
+            "not yours"
+        );
+        assert!(!fs::symlink_metadata(b.join("assets"))
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(
+            fs::read_to_string(b.join("assets").join("model.blend")).unwrap(),
+            "v1"
+        );
+    }
 }

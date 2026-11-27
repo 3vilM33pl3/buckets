@@ -621,6 +621,7 @@ dependencies = [
  "toml",
  "uuid",
  "walkdir",
+ "whoami",
  "zstd",
 ]
 

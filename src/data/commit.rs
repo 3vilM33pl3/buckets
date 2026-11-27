@@ -8,7 +8,7 @@ use std::path::Path;
 use uuid::Uuid;
 
 use crate::utils::compression::{compress_file, DEFAULT_COMPRESSION_LEVEL};
-use crate::utils::object_store::ObjectStore;
+use crate::utils::object_store::{check_no_symlinked_parent, ObjectStore};
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub enum CommitStatus {
@@ -174,11 +174,9 @@ impl CommittedFile {
     pub fn restore_version(&self, bucket_path: &Path, hash: &Hash) -> io::Result<()> {
         let store = ObjectStore::for_path(bucket_path)
             .unwrap_or_else(|| ObjectStore::at(bucket_path.join(".b").join("objects")));
-        store.restore(
-            &hash.to_hex(),
-            &bucket_path.join(&self.name),
-            Some(bucket_path),
-        )
+        let dest = bucket_path.join(&self.name);
+        check_no_symlinked_parent(&dest, bucket_path)?;
+        store.restore(&hash.to_hex(), &dest, Some(bucket_path))
     }
 }
 

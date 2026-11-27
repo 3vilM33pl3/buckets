@@ -17,7 +17,9 @@ use crate::commands::BucketCommand;
 use crate::data::bucket::{Bucket, BucketTrait};
 use crate::data::commit::CommitStatus;
 use crate::errors::BucketError;
-use crate::utils::object_store::{remove_file_and_prune, write_atomically, ObjectStore};
+use crate::utils::object_store::{
+    check_no_symlinked_parent, remove_file_and_prune, write_atomically, ObjectStore,
+};
 use crate::utils::runtime::RuntimeManager;
 use crate::utils::utils::find_bucket_path;
 use crate::CURRENT_DIR;
@@ -143,6 +145,17 @@ fn save(
         return Ok(());
     }
 
+    // 0. Check every file we will restore can be written inside the bucket,
+    // before anything is recorded or changed.
+    for change in &changes {
+        if matches!(
+            change.status,
+            CommitStatus::Modified | CommitStatus::Deleted
+        ) {
+            check_no_symlinked_parent(&bucket_path.join(&change.name), bucket_path)?;
+        }
+    }
+
     // 1. Save the changed contents.
     let mut files = Vec::new();
     for change in &changes {
@@ -219,6 +232,9 @@ fn pop(bucket: &Bucket, bucket_path: &Path, force: bool, json: bool) -> Result<(
     }
 
     let store = ObjectStore::for_path(bucket_path).ok_or(BucketError::NotInRepo)?;
+    for file in entry.files.iter().filter(|f| f.hash.is_some()) {
+        check_no_symlinked_parent(&bucket_path.join(&file.path), bucket_path)?;
+    }
     // Removals first, then restores, for the same reason as in `save`.
     for file in entry.files.iter().filter(|f| f.hash.is_none()) {
         remove_file_and_prune(&bucket_path.join(&file.path), bucket_path)?;

@@ -201,6 +201,30 @@ impl<R: io::Read> io::Read for HashingReader<R> {
     }
 }
 
+/// Refuse to write `dest` when a directory between `root` and it is a
+/// symlink: writing would follow the link and could change a file outside
+/// the bucket.
+pub fn check_no_symlinked_parent(dest: &Path, root: &Path) -> io::Result<()> {
+    let Ok(relative) = dest.strip_prefix(root) else {
+        return Ok(());
+    };
+    let mut current = root.to_path_buf();
+    let parents: Vec<_> = relative.components().collect();
+    for component in parents.iter().take(parents.len().saturating_sub(1)) {
+        current.push(component);
+        if let Ok(meta) = fs::symlink_metadata(&current) {
+            if meta.file_type().is_symlink() {
+                return Err(io::Error::other(format!(
+                    "{} is a symlink; refusing to write {} through it",
+                    current.display(),
+                    dest.display()
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Delete a working file, then remove any parent directories (below `root`)
 /// left empty, so a later restore can put a file where that directory was.
 pub fn remove_file_and_prune(file: &Path, root: &Path) -> io::Result<()> {
