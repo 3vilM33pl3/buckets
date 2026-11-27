@@ -82,11 +82,10 @@ fn require_remote(repo_root: &Path) -> Result<ObjectStore, BucketError> {
     Ok(ObjectStore::at(config.path))
 }
 
-/// Every bucket directory in the repository with its metadata.
+/// Every bucket directory in the repository with its metadata, at any depth.
 fn discover_buckets(repo_root: &Path) -> Vec<(Bucket, PathBuf)> {
     let mut found = Vec::new();
     for entry in WalkDir::new(repo_root)
-        .max_depth(6)
         .into_iter()
         .filter_entry(|e| {
             let name = e.file_name().to_string_lossy();
@@ -447,7 +446,11 @@ mod tests {
     #[test]
     fn discovers_nested_buckets() {
         let dir = tempdir().unwrap();
-        for (name, rel) in [("art", "art"), ("tex", "stage/tex")] {
+        for (name, rel) in [
+            ("art", "art"),
+            ("tex", "stage/tex"),
+            ("deep", "a/b/c/d/e/f/g/deep"),
+        ] {
             let b = dir.path().join(rel).join(".b");
             fs::create_dir_all(&b).unwrap();
             fs::write(
@@ -466,6 +469,6 @@ mod tests {
             .map(|(b, _)| b.name)
             .collect();
         names.sort();
-        assert_eq!(names, vec!["art", "tex"]);
+        assert_eq!(names, vec!["art", "deep", "tex"]);
     }
 }

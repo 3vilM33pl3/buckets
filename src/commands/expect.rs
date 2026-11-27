@@ -88,20 +88,27 @@ impl BucketCommand for Expect {
                 match Expectation::find_similar(&db, vec, 3, 0.85).await {
                     Ok(founds) => {
                         if !founds.is_empty() {
-                            println!(
-                                "{}",
-                                style("Warning: Similar expectations found:")
-                                    .yellow()
-                                    .bold()
-                            );
+                            // With --json, stdout carries only the JSON result.
+                            let json = self.args.shared.json;
+                            let say = |line: String| {
+                                if json {
+                                    eprintln!("{}", line);
+                                } else {
+                                    println!("{}", line);
+                                }
+                            };
+                            say(style("Warning: Similar expectations found:")
+                                .yellow()
+                                .bold()
+                                .to_string());
                             for (exp, score) in founds {
-                                println!(
+                                say(format!(
                                     "  - \"{}\" (Similarity: {:.1}%)",
                                     style(exp.description).cyan(),
                                     score * 100.0
-                                );
+                                ));
                             }
-                            println!("{}", style("creating anyway...").dim());
+                            say(style("creating anyway...").dim().to_string());
                         }
                     }
                     Err(e) => warn!("Failed to check for duplicates: {}", e),

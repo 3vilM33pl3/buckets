@@ -36,8 +36,8 @@ When executed without arguments, the command:
    - Compares current files with the committed versions
    
 3. **Performs Rollback**:
-   - Only processes files that have been modified (same path but different hash)
-   - Restores each modified file from the `.b/storage/` directory
+   - Restores modified files and brings back deleted files from the shared `.buckets/objects/` store
+   - `--path <file>` rolls back a single file
    - Skips the operation if no changes are detected
    
 4. **Output Messages**:
@@ -114,11 +114,11 @@ Error: No previous commit found.
 
 ## Important Notes
 
-- **Modified Files Only**: The rollback operation only affects files that have been modified (different hash). New files that haven't been committed are not removed, and deleted files are not restored.
+- **Modified and Deleted Files**: Rollback restores modified files and files deleted since the last commit. New files that haven't been committed are not removed.
 - **Hash-Based Comparison**: Files are compared using their content hash (BLAKE3), not timestamps or other metadata.
-- **Storage Location**: Files are restored from compressed versions stored in `.b/storage/` using the file's hash as the filename.
+- **Storage Location**: Files are restored from compressed objects in `.buckets/objects/` (legacy `.b/storage/` is still read), named by hash.
 - **Single Commit Limitation**: This command only works with the most recent commit. To restore from older commits, use the `revert` command.
-- **Atomic Operation**: Each file is restored individually. If one file fails to restore, others may still be successfully restored.
+- **Atomic Writes**: Each file is written to a temporary file and renamed into place, so an interrupted rollback never leaves a half-written file. Files are restored one by one, so if one fails, earlier ones are already restored.
 
 ## Technical Details
 

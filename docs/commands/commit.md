@@ -29,19 +29,22 @@ The commit operation scans the current bucket directory recursively, processing 
 ### Change Detection
 For each commit:
 1. **First Commit**: All files are processed and stored
-2. **Subsequent Commits**: Only files that have changed (different BLAKE3 hash) are processed
-3. **No Changes**: If no files have changed since the last commit, the operation is cancelled
+2. **Subsequent Commits**: Only files that have changed (different BLAKE3 hash) are hashed into new objects, but every commit records a **full manifest** of all files in the bucket, so unchanged files stay `committed` and deleted files are recorded as deletions
+3. **No Changes**: If no files have changed since the last commit, no commit is created (`commit_id` is `null` with `--json`)
+4. **Locks**: If a changed file is locked by someone else (`buckets lock`), the commit is refused and nothing is written
+
+A stat cache in `.b/index.json` (size + modification time) lets unchanged files skip re-hashing; files touched within the last two seconds are always re-hashed.
 
 ### File Processing
 For each changed file:
 1. Calculate BLAKE3 hash for content verification
 2. Compress file using zstd compression
-3. Store compressed file in `.b/storage/` directory
-4. Record file metadata in PostgreSQL database
+3. Store the compressed object in the shared repository store `.buckets/objects/<first 2 hex>/<hash>` (written to a temporary file, fsynced, then renamed; identical content is stored once across all buckets). The content is re-hashed while compressing and the commit is refused if the file changed mid-commit
+4. Record the commit and its full manifest in PostgreSQL in **one transaction**, so a failed commit leaves no partial rows
 
 ### Database Operations
 Each commit creates records in:
-- `commits` table: Commit metadata with UUID, bucket ID, message, and timestamp
+- `commits` table: Commit metadata with UUID, bucket ID, message, timestamp and `manifest = true`
 - `files` table: File records linking to the commit with path and hash information
 
 ## EXAMPLES
@@ -188,7 +191,7 @@ Error: No space left on device
 ### File Content Security
 - File contents are stored compressed but not encrypted
 - Sensitive files should use external encryption before committing
-- The `.b/storage/` directory contains all committed file data
+- The `.buckets/objects/` directory contains all committed file data (older repositories may still have objects in `.b/storage/`, which are read as a fallback)
 
 ### Hash Integrity
 - BLAKE3 hashes provide cryptographic verification of file integrity
