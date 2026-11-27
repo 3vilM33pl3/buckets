@@ -28,7 +28,7 @@ buckets revert <file_path> -c <commit_id>
    - Otherwise, searches for the file in the most recent commit
 
 2. **Restoration Process**:
-   - Retrieves the compressed file from the `.b/storage/` directory using the file's hash
+   - Retrieves the compressed object from `.buckets/objects/` (falling back to the legacy `.b/storage/`) using the file's hash
    - Decompresses the file using zstd decompression
    - Creates parent directories if they don't exist
    - Overwrites the existing file (if present) with the restored version
@@ -69,6 +69,7 @@ Output: `Restored docs/readme.md from latest commit`
 ## Notes
 
 - The command preserves the file structure and creates necessary parent directories
-- Files are stored in compressed format (zstd) in the `.b/storage/` directory
+- Files are stored in compressed format (zstd) in the shared `.buckets/objects/` store
+- Reverting the whole bucket first checks that every object is available (nothing changes if one is missing), then deletes files that are not in the target commit, then restores the commit's full manifest. This also handles a path that changed between file and directory, and a target commit in which every file was deleted
 - The original file (if it exists) is completely replaced by the restored version
 - This command only affects the specified file, leaving other files unchanged

@@ -1,7 +1,7 @@
 use crate::errors::BucketError;
 use crate::postgres_db::{init_database, DatabaseConfig, TlsConfig};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 // Only external PostgreSQL databases are supported
 
@@ -101,14 +101,100 @@ fn parse_database_config(content: &str) -> Result<DatabaseConfig, BucketError> {
         }
     };
 
-    Ok(DatabaseConfig {
+    let mut config = DatabaseConfig {
         host,
         port,
         database,
         username,
         password,
         tls,
-    })
+    };
+    if config.password.is_some() {
+        log::warn!(
+            "db_config.toml contains a database password. Move it out of the repository: \
+             run `buckets init` again or set BUCKETS_DB_PASSWORD, then delete the password line."
+        );
+    } else {
+        config.password = std::env::var("BUCKETS_DB_PASSWORD")
+            .ok()
+            .filter(|p| !p.is_empty())
+            .or_else(|| lookup_password(&config))
+            .or_else(|| global_config_password(&config));
+    }
+    Ok(config)
+}
+
+/// File holding database passwords outside any repository, readable only by
+/// the user: `BUCKETS_CREDENTIALS_FILE`, or `~/.buckets_credentials.toml`.
+pub fn credentials_path() -> Option<PathBuf> {
+    if let Ok(path) = std::env::var("BUCKETS_CREDENTIALS_FILE") {
+        if !path.is_empty() {
+            return Some(PathBuf::from(path));
+        }
+    }
+    dirs::home_dir().map(|home| home.join(".buckets_credentials.toml"))
+}
+
+fn credential_key(config: &DatabaseConfig) -> String {
+    format!(
+        "{}@{}:{}/{}",
+        config.username, config.host, config.port, config.database
+    )
+}
+
+fn load_credentials(path: &Path) -> toml::Table {
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|text| text.parse::<toml::Table>().ok())
+        .unwrap_or_default()
+}
+
+/// Password from the global config's connection string, when it points at
+/// the same server and user.
+fn global_config_password(config: &DatabaseConfig) -> Option<String> {
+    let global = crate::utils::config::GlobalConfig::load().ok()?;
+    let url = global.postgresql_connection?;
+    let parsed = DatabaseConfig::from_url(&url).ok()?;
+    (parsed.host == config.host && parsed.port == config.port && parsed.username == config.username)
+        .then_some(parsed.password)
+        .flatten()
+}
+
+/// The stored password for this user, host, port and database, if any.
+pub fn lookup_password(config: &DatabaseConfig) -> Option<String> {
+    let path = credentials_path()?;
+    load_credentials(&path)
+        .get(&credential_key(config))
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+}
+
+/// Save the config's password in the credentials file (mode 0600 on Unix).
+pub fn store_password(config: &DatabaseConfig) -> Result<(), BucketError> {
+    let Some(password) = &config.password else {
+        return Ok(());
+    };
+    let path = credentials_path()
+        .ok_or_else(|| BucketError::from("Could not find a home directory for credentials"))?;
+    let mut table = load_credentials(&path);
+    table.insert(
+        credential_key(config),
+        toml::Value::String(password.clone()),
+    );
+    let text = toml::to_string(&table).map_err(|e| BucketError::from(e.to_string().as_str()))?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    crate::utils::object_store::write_atomically(&path, |w| {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            w.get_ref()
+                .set_permissions(fs::Permissions::from_mode(0o600))?;
+        }
+        std::io::Write::write_all(w, text.as_bytes())
+    })?;
+    Ok(())
 }
 
 /// Save database configuration to file
@@ -122,8 +208,11 @@ pub fn save_database_config(repo_path: &Path, config: &DatabaseConfig) -> Result
     content.push_str(&format!("port = {}\n", config.port));
     content.push_str(&format!("database = \"{}\"\n", config.database));
     content.push_str(&format!("username = \"{}\"\n", config.username));
-    if let Some(pwd) = &config.password {
-        content.push_str(&format!("password = \"{}\"\n", pwd));
+    // The password never goes into the repository: it is kept in the user's
+    // credentials file (see `credentials_path`) or supplied through
+    // BUCKETS_DB_PASSWORD / DATABASE_URL.
+    if config.password.is_some() {
+        store_password(config)?;
     }
 
     if let Some(tls) = &config.tls {

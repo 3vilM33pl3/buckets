@@ -54,11 +54,19 @@ impl Expectation {
         let status = "pending";
         let vector = embedding.map(Vector::from);
 
-        db.execute(
-            "INSERT INTO expectations (id, bucket_id, target_bucket_id, description, status, embedding) VALUES ($1, $2, $3, $4, $5, $6)",
-            &[&id, &bucket_id, &target_bucket_id, &description, &status, &vector],
-        )
-        .await?;
+        if db.has_vector_support().await {
+            db.execute(
+                "INSERT INTO expectations (id, bucket_id, target_bucket_id, description, status, embedding) VALUES ($1, $2, $3, $4, $5, $6)",
+                &[&id, &bucket_id, &target_bucket_id, &description, &status, &vector],
+            )
+            .await?;
+        } else {
+            db.execute(
+                "INSERT INTO expectations (id, bucket_id, target_bucket_id, description, status) VALUES ($1, $2, $3, $4, $5)",
+                &[&id, &bucket_id, &target_bucket_id, &description, &status],
+            )
+            .await?;
+        }
 
         // Fetch the created record to get the timestamp
         let row = db
@@ -86,6 +94,9 @@ impl Expectation {
         limit: i64,
         similarity_threshold: f64,
     ) -> Result<Vec<(Self, f64)>, BucketError> {
+        if !db.has_vector_support().await {
+            return Ok(Vec::new());
+        }
         let vector = Vector::from(embedding.to_vec());
         let rows = db
             .query(

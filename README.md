@@ -200,11 +200,42 @@ buckets rollback --path assets/texture.png
 ```
 
 #### `buckets stash`
-Temporarily save current changes to work on something else.
+Set uncommitted changes aside and put the bucket back to its last commit.
+Stashes are kept per bucket in `.b/stash.json`, with contents in the shared object store.
 
 ```bash
-buckets stash
+buckets stash                   # same as: buckets stash save
+buckets stash save -m "wip"
+buckets stash list
+buckets stash pop               # re-apply the newest stash
+buckets stash drop
 ```
+
+### Locks
+Lock files that cannot be merged (`.uasset`, `.umap`, `.blend`, ...). While a file is
+locked, `buckets commit` refuses changes to it from anyone except the lock owner.
+The owner is `BUCKETS_USER` when set (useful for agents), otherwise `user@host`.
+
+```bash
+buckets lock Maps/L_Island.umap
+buckets locks
+buckets unlock Maps/L_Island.umap
+buckets unlock --force Maps/L_Island.umap   # break someone else's lock
+```
+
+### Sharing between machines
+Commit metadata lives in the shared PostgreSQL database; file contents travel through a
+remote object store, which is any directory (for example a NAS mount).
+
+```bash
+buckets remote set /mnt/nas/buckets-objects   # stored in .buckets/remote.toml
+buckets push                                  # copy committed objects the remote lacks
+buckets pull                                  # bring working files up to the latest commit
+buckets pull --force                          # also overwrite local, uncommitted edits
+```
+
+`BUCKETS_REMOTE` overrides the configured path. `pull` only fetches the objects the latest
+commit needs, keeps untracked files, and never overwrites a local edit without `--force`.
 
 ### Expectations and Workflow
 
@@ -222,19 +253,21 @@ Verify if all expectations are met.
 buckets check
 ```
 
-#### `buckets link`
-Create a link between buckets for workflow dependencies.
-
-```bash
-buckets link
-```
-
 #### `buckets finalize`
-Mark a bucket as complete when all expectations are met.
+Resolve active pebbles in a bucket. Prompts with a menu in a terminal; scripts and
+agents pass `--all` or `--pebble <id or description>` (repeatable).
 
 ```bash
 buckets finalize
+buckets finalize --all
+buckets finalize --pebble "Concept art is approved"
 ```
+
+### Scripting and agents
+Every command accepts `--json` (before or after its arguments) and prints
+machine-readable output, for example `buckets status --json` or `buckets commit "msg" --json`.
+`buckets expect --no-similarity` (or `BUCKETS_NO_EMBEDDINGS=1`) skips the duplicate check and
+the embedding model download.
 
 ### Database Operations
 
@@ -296,10 +329,23 @@ buckets/
 
 ## Technical Details
 
-- **Storage**: Files are stored compressed (zstd) in `.b/storage/` using content-addressable hashing
-- **Database**: PostgreSQL stores metadata, commit history, and bucket information
-- **Hashing**: BLAKE3 for fast, secure content hashing
-- **Compression**: Zstd compression for efficient storage
+- **Storage**: File contents are stored once per repository, zstd-compressed and named by their
+  BLAKE3 hash, in `.buckets/objects/<2 hex>/<rest>`. Identical files in different buckets are
+  stored once. Writes go to a temporary file, are fsynced and then renamed, so a crash never
+  leaves a half-written object. Repositories made by older versions kept objects in each
+  bucket's `.b/storage/`; those are still read.
+- **Commits**: Each commit records a full manifest (every file and its hash), so unchanged and
+  deleted files are tracked exactly. The commit and its file rows are written in one database
+  transaction after the objects are stored. Commits made by versions before 0.5 only recorded
+  changed files; their history is read by folding earlier commits together.
+- **Status cache**: `.b/index.json` caches each file's size, modification time and hash, so
+  `status` and `commit` only re-hash files that changed. Hashing uses a 1 MiB buffer and all CPU cores.
+- **Database**: PostgreSQL stores metadata, commit history, locks and expectations.
+  `pgvector` is optional: without it, duplicate-expectation search is turned off.
+- **Credentials**: Database passwords are never written into the repository. They come from
+  `DATABASE_URL`, `BUCKETS_DB_PASSWORD`, the global config, or `~/.buckets_credentials.toml`
+  (mode 0600; override the path with `BUCKETS_CREDENTIALS_FILE`). `buckets init --external-password`
+  stores the password there.
 
 ## Contributing
 

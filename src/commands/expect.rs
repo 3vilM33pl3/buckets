@@ -69,11 +69,18 @@ impl BucketCommand for Expect {
             };
 
             // 2.5. Generate Embedding & Check for Duplicates
-            let embedding = match EmbeddingGenerator::generate(description) {
-                Ok(vec) => Some(vec),
-                Err(e) => {
-                    warn!("Failed to generate embedding: {}", e);
-                    None
+            // Skipped when asked to, or when the server has no pgvector.
+            let similarity_disabled = self.args.no_similarity
+                || std::env::var("BUCKETS_NO_EMBEDDINGS").is_ok_and(|v| v == "1" || v == "true");
+            let embedding = if similarity_disabled || !db.has_vector_support().await {
+                None
+            } else {
+                match EmbeddingGenerator::generate(description) {
+                    Ok(vec) => Some(vec),
+                    Err(e) => {
+                        warn!("Failed to generate embedding: {}", e);
+                        None
+                    }
                 }
             };
 
@@ -81,20 +88,27 @@ impl BucketCommand for Expect {
                 match Expectation::find_similar(&db, vec, 3, 0.85).await {
                     Ok(founds) => {
                         if !founds.is_empty() {
-                            println!(
-                                "{}",
-                                style("Warning: Similar expectations found:")
-                                    .yellow()
-                                    .bold()
-                            );
+                            // With --json, stdout carries only the JSON result.
+                            let json = self.args.shared.json;
+                            let say = |line: String| {
+                                if json {
+                                    eprintln!("{}", line);
+                                } else {
+                                    println!("{}", line);
+                                }
+                            };
+                            say(style("Warning: Similar expectations found:")
+                                .yellow()
+                                .bold()
+                                .to_string());
                             for (exp, score) in founds {
-                                println!(
+                                say(format!(
                                     "  - \"{}\" (Similarity: {:.1}%)",
                                     style(exp.description).cyan(),
                                     score * 100.0
-                                );
+                                ));
                             }
-                            println!("{}", style("creating anyway...").dim());
+                            say(style("creating anyway...").dim().to_string());
                         }
                     }
                     Err(e) => warn!("Failed to check for duplicates: {}", e),
@@ -153,7 +167,14 @@ impl BucketCommand for Expect {
                 );
             }
 
-            println!("Expectation recorded.");
+            if self.args.shared.json {
+                println!(
+                    "{}",
+                    serde_json::json!({"expectation": expectation.id.to_string(), "description": description})
+                );
+            } else {
+                println!("Expectation recorded.");
+            }
             Ok(())
         })
     }

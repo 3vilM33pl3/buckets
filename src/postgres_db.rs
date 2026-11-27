@@ -276,7 +276,9 @@ impl DatabaseManager {
             BucketError::from(format!("Failed to get database connection: {}", e).as_str())
         })?;
 
-        let runner = migrations::runner();
+        // V3 (pgvector) was rewritten to be optional. Databases that ran the
+        // original V3 hold a different checksum for it, which is expected.
+        let runner = migrations::runner().set_abort_divergent(false);
 
         // Run migrations
         runner
@@ -298,6 +300,19 @@ impl DatabaseManager {
         pool.get().await.map_err(|e| {
             BucketError::from(format!("Failed to get database connection: {}", e).as_str())
         })
+    }
+
+    /// True when the `expectations.embedding` column exists, i.e. pgvector
+    /// was available when the schema was migrated.
+    pub async fn has_vector_support(&self) -> bool {
+        self.query(
+            "SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'expectations' AND column_name = 'embedding'",
+            &[],
+        )
+        .await
+        .map(|rows| !rows.is_empty())
+        .unwrap_or(false)
     }
 
     /// Execute a query that returns no results

@@ -99,7 +99,7 @@ Buckets has a two-tier configuration system:
 ### Database & Storage
 - **PostgreSQL** with **pgvector** extension for data persistence and semantic search
 - Schema in `src/postgres_db.rs`, migrations in `src/sql/migrations/`
-- File storage: Content-addressable in `.b/storage/` within each bucket
+- File storage: Content-addressable, shared per repository in `.buckets/objects/` (legacy `.b/storage/` still read); commits store full manifests (V4 migration)
 - File hashing: BLAKE3 for content integrity
 - Compression: zstd for efficient storage
 - UUID-based object identification

@@ -86,6 +86,13 @@ fn dispatch() -> Result<(), BucketError> {
         Command::Revert(command) => commands::revert::Revert::new(command).execute()?,
         Command::Rollback(command) => commands::rollback::Rollback::new(command).execute()?,
         Command::Stash(command) => commands::stash::Stash::new(command).execute()?,
+        // Locks and remote store
+        Command::Lock(command) => commands::lock::Lock::new(command).execute()?,
+        Command::Unlock(command) => commands::lock::Unlock::new(command).execute()?,
+        Command::Locks(command) => commands::lock::Locks::new(command).execute()?,
+        Command::Remote(command) => commands::remote::Remote::new(command).execute()?,
+        Command::Push(command) => commands::remote::Push::new(command).execute()?,
+        Command::Pull(command) => commands::remote::Pull::new(command).execute()?,
         // Informational commands
         Command::Status(command) => commands::status::Status::new(command).execute()?,
         Command::History(command) => commands::history::execute(command.clone())?,
@@ -94,7 +101,6 @@ fn dispatch() -> Result<(), BucketError> {
         // Expectation commands
         Command::Expect(command) => commands::expect::Expect::new(command).execute()?,
         Command::Check(command) => commands::check::Check::new(command).execute()?,
-        Command::Link(command) => commands::link::Link::new(command).execute()?,
         Command::Finalize(command) => commands::finalize::Finalize::new(command).execute()?,
         Command::Schema(command) => commands::schema::Schema::new(command).execute()?,
         // Global commands
@@ -115,7 +121,8 @@ fn command_requires_repository(command: &Command) -> bool {
         | Command::Setup(_)
         | Command::Schema(_)
         | Command::Completions(_)
-        | Command::Config(_) => false,
+        | Command::Config(_)
+        | Command::Remote(_) => false,
         Command::Doctor(args) => args.use_repo,
         _ => true,
     }

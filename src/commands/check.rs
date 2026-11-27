@@ -56,6 +56,46 @@ impl BucketCommand for Check {
                 )
                 .await?;
 
+            if self.args.shared.json {
+                let expectations: Vec<serde_json::Value> = expectations_rows
+                    .iter()
+                    .map(|row| {
+                        let id: uuid::Uuid = row.get(0);
+                        let desc: String = row.get(1);
+                        let status: String = row.get(2);
+                        let target: Option<String> = row.get(3);
+                        serde_json::json!({"id": id.to_string(), "description": desc, "status": status, "from": target})
+                    })
+                    .collect();
+                let mut pebbles_json = Vec::new();
+                for pebble in Pebble::get_active_in_bucket(&db, bucket_id).await? {
+                    let origin: Option<String> = db
+                        .query(
+                            "SELECT name FROM buckets WHERE id = $1",
+                            &[&pebble.origin_bucket_id],
+                        )
+                        .await?
+                        .first()
+                        .map(|row| row.get(0));
+                    pebbles_json.push(serde_json::json!({
+                        "id": pebble.id.to_string(),
+                        "description": pebble.description,
+                        "origin": origin,
+                    }));
+                }
+                let met = expectations.iter().filter(|e| e["status"] == "met").count();
+                let output = serde_json::json!({
+                    "expectations": expectations,
+                    "active_pebbles": pebbles_json,
+                    "all_met": met == expectations.len(),
+                });
+                match serde_json::to_string_pretty(&output) {
+                    Ok(text) => println!("{}", text),
+                    Err(e) => eprintln!("Error serializing to JSON: {}", e),
+                }
+                return Ok(());
+            }
+
             println!(
                 "\n{}",
                 style("Expectations (Defined by this bucket):").bold()

@@ -48,30 +48,73 @@ impl BucketCommand for Finalize {
             // 2. Fetch Active Pebbles
             let pebbles = Pebble::get_active_in_bucket(&db, bucket_id).await?;
 
+            let json = self.args.shared.json;
+            let print_resolved = |resolved: &[serde_json::Value]| {
+                println!("{}", serde_json::json!({ "resolved": resolved }));
+            };
+
             if pebbles.is_empty() {
-                println!("{}", style("No active pebbles to resolve.").yellow());
+                if json {
+                    print_resolved(&[]);
+                } else {
+                    println!("{}", style("No active pebbles to resolve.").yellow());
+                }
                 return Ok(());
             }
 
-            // 3. Interactive Selection
-            let pebble_descriptions: Vec<String> =
-                pebbles.iter().map(|p| p.description.clone()).collect();
-
-            let selections = MultiSelect::with_theme(&ColorfulTheme::default())
-                .with_prompt("Select pebbles to resolve (Space to select, Enter to confirm):")
-                .items(&pebble_descriptions)
-                .interact()?; // This might need error mapping
+            // 3. Selection: flags for scripts and agents, a menu otherwise.
+            let selections: Vec<usize> = if self.args.all {
+                (0..pebbles.len()).collect()
+            } else if !self.args.pebbles.is_empty() {
+                let mut picked = Vec::new();
+                for wanted in &self.args.pebbles {
+                    let index = pebbles
+                        .iter()
+                        .position(|p| p.id.to_string() == *wanted || p.description == *wanted)
+                        .ok_or_else(|| {
+                            BucketError::NotFound(format!("No active pebble matches '{}'", wanted))
+                        })?;
+                    if !picked.contains(&index) {
+                        picked.push(index);
+                    }
+                }
+                picked
+            } else if !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+                return Err(BucketError::from(
+                    "No terminal to prompt on. Use --all or --pebble <id or description>.",
+                ));
+            } else {
+                let pebble_descriptions: Vec<String> =
+                    pebbles.iter().map(|p| p.description.clone()).collect();
+                MultiSelect::with_theme(&ColorfulTheme::default())
+                    .with_prompt("Select pebbles to resolve (Space to select, Enter to confirm):")
+                    .items(&pebble_descriptions)
+                    .interact()?
+            };
 
             if selections.is_empty() {
-                println!("No pebbles selected.");
+                if json {
+                    print_resolved(&[]);
+                } else {
+                    println!("No pebbles selected.");
+                }
                 return Ok(());
             }
 
-            // 4. Resolve selected pebbles
+            // 4. Resolve selected pebbles. With --json, one document is printed
+            // at the end: {"resolved": [{"id", "description"}, ...]}.
+            let mut resolved = Vec::new();
             for selection_idx in selections {
                 let pebble = &pebbles[selection_idx];
                 Pebble::resolve(&db, pebble.id).await?;
-                println!("Resolved: {}", pebble.description);
+                if json {
+                    resolved.push(serde_json::json!({
+                        "id": pebble.id.to_string(),
+                        "description": pebble.description,
+                    }));
+                } else {
+                    println!("Resolved: {}", pebble.description);
+                }
 
                 // Also update the linked Expectation if it was intrinsic?
                 // Logic: If pebble marks completion of an expectation, we should update expectation status.
@@ -90,6 +133,9 @@ impl BucketCommand for Finalize {
                 }
             }
 
+            if json {
+                print_resolved(&resolved);
+            }
             Ok(())
         })
     }

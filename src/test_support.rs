@@ -46,6 +46,16 @@ pub mod docker {
             let connection_string =
                 format!("postgresql://buckets:password@127.0.0.1:{host_port}/{db_name}");
 
+            // Keep test passwords out of the real ~/.buckets_credentials.toml.
+            if env::var("BUCKETS_CREDENTIALS_FILE").is_err() {
+                env::set_var(
+                    "BUCKETS_CREDENTIALS_FILE",
+                    env::temp_dir().join(format!(
+                        "buckets_test_credentials_{}.toml",
+                        std::process::id()
+                    )),
+                );
+            }
             let previous_database_url = env::var("DATABASE_URL").ok();
             env::set_var("DATABASE_URL", &connection_string);
             if wait_for_postgres_ready().is_none() {
@@ -193,4 +203,34 @@ pub mod docker {
             })
             .expect("Failed to initialize test database");
     }
+}
+
+/// A command for the `buckets` binary, for unit tests inside the binary crate.
+///
+/// `assert_cmd::Command::cargo_bin` guesses the binary's location from the test
+/// executable's path. Newer Cargo versions put test executables under a
+/// separate build directory, so that guess fails; fall back to the binary
+/// Cargo uplifts into `target/<profile>/`.
+#[allow(clippy::expect_used)]
+pub fn buckets_command() -> assert_cmd::Command {
+    if let Ok(cmd) = assert_cmd::Command::cargo_bin("buckets") {
+        return cmd;
+    }
+    let exe = std::env::current_exe().expect("current test executable");
+    let name = format!("buckets{}", std::env::consts::EXE_SUFFIX);
+    let profile = if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    };
+    let target_dir = std::env::var_os("CARGO_TARGET_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target"));
+    exe.ancestors()
+        .skip(1)
+        .map(|dir| dir.join(&name))
+        .chain(std::iter::once(target_dir.join(profile).join(&name)))
+        .find(|candidate| candidate.is_file())
+        .map(assert_cmd::Command::new)
+        .expect("buckets binary not found; run `cargo build` first")
 }

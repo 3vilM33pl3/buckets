@@ -7,7 +7,10 @@ use std::io;
 use std::path::Path;
 use uuid::Uuid;
 
-use crate::utils::compression::{compress_file, decompress_file, DEFAULT_COMPRESSION_LEVEL};
+use crate::utils::compression::{compress_file, DEFAULT_COMPRESSION_LEVEL};
+use crate::utils::object_store::{
+    check_no_symlinked_parent, is_safe_relative, unsafe_path_error, ObjectStore,
+};
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub enum CommitStatus {
@@ -149,6 +152,8 @@ impl CommittedFile {
         }
     }
 
+    /// Legacy per-bucket storage writer, kept for older tooling and tests.
+    #[allow(dead_code)]
     pub fn compress_and_store(&self, bucket_path: &Path) -> io::Result<()> {
         let input_path = bucket_path.join(&self.name);
         let output_path = bucket_path
@@ -159,19 +164,24 @@ impl CommittedFile {
         compress_file(&input_path, &output_path, DEFAULT_COMPRESSION_LEVEL)
     }
 
+    /// Restore the version recorded in `previous_hash` into the working tree.
+    #[allow(dead_code)]
     pub fn restore(&self, bucket_path: &Path) -> io::Result<()> {
-        let input_path = bucket_path
-            .join(".b")
-            .join("storage")
-            .join(self.previous_hash.to_string());
-        let output_path = bucket_path.join(&self.name);
+        self.restore_version(bucket_path, &self.previous_hash)
+    }
 
-        // Create parent directories if they don't exist
-        if let Some(parent) = output_path.parent() {
-            std::fs::create_dir_all(parent)?;
+    /// Restore the given version of this file into the working tree, reading
+    /// from the repository's shared object store (or the bucket's legacy
+    /// `.b/storage`). The file is replaced atomically.
+    pub fn restore_version(&self, bucket_path: &Path, hash: &Hash) -> io::Result<()> {
+        let store = ObjectStore::for_path(bucket_path)
+            .unwrap_or_else(|| ObjectStore::at(bucket_path.join(".b").join("objects")));
+        if !is_safe_relative(&self.name) {
+            return Err(unsafe_path_error(&self.name));
         }
-
-        decompress_file(&input_path, &output_path)
+        let dest = bucket_path.join(&self.name);
+        check_no_symlinked_parent(&dest, bucket_path)?;
+        store.restore(&hash.to_hex(), &dest, Some(bucket_path))
     }
 }
 

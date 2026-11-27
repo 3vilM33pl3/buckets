@@ -1,18 +1,18 @@
 use crate::args::RevertCommand;
 use crate::commands::BucketCommand;
 use crate::data::bucket::{Bucket, BucketTrait};
+use crate::data::commit::Commit as CommitData;
+use crate::data::manifest::load_commit_async;
 use crate::errors::BucketError;
-use crate::postgres_db::get_database;
 use crate::utils::checks;
+use crate::utils::object_store::{remove_file_and_prune, ObjectStore};
 use crate::utils::runtime::RuntimeManager;
+use crate::utils::scan::portable_path;
 use crate::utils::utils::{find_bucket_path, find_files_excluding_top_level_b};
 use crate::CURRENT_DIR;
 use log::{debug, error};
 use std::collections::HashSet;
-use std::fs::File;
-use std::io::{BufReader, BufWriter};
 use std::path::{Path, PathBuf};
-use tokio_postgres::types::ToSql;
 use uuid::Uuid;
 
 /// Revert a file from a specific commit or the most recent commit
@@ -49,232 +49,124 @@ impl BucketCommand for Revert {
 }
 
 impl Revert {
+    fn parsed_commit_id(&self) -> Result<Option<Uuid>, BucketError> {
+        self.args
+            .commit_id
+            .as_ref()
+            .map(|id| {
+                Uuid::parse_str(id).map_err(|e| {
+                    BucketError::from(format!("Invalid commit id '{}': {}", id, e).as_str())
+                })
+            })
+            .transpose()
+    }
+
+    fn load_target(&self, bucket: &Bucket) -> Result<(CommitData, String), BucketError> {
+        let commit_id = self.parsed_commit_id()?;
+        let resolved = RuntimeManager::block_on(load_commit_async(bucket.id, commit_id))?;
+        let display = commit_id
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| "latest".to_string());
+        match resolved {
+            Some(r) => Ok((r.data, display)),
+            None => Err(BucketError::from("No commits found in this bucket")),
+        }
+    }
+
     fn revert_single_file(
         &self,
         bucket: Bucket,
         bucket_path: &PathBuf,
         file_path: &String,
     ) -> Result<(), BucketError> {
-        // Get the file's hash from the specified commit or the last commit
-        let hash = RuntimeManager::block_on(async {
-            let db = get_database().await?;
-
-            let relative_path = PathBuf::from(&file_path)
+        let current_dir = CURRENT_DIR.with(|dir| dir.clone());
+        let candidate = PathBuf::from(file_path);
+        let absolute = if candidate.is_absolute() {
+            candidate.clone()
+        } else {
+            current_dir.join(&candidate)
+        };
+        // Manifest keys always use `/`, whatever the platform.
+        let relative_path = portable_path(
+            &absolute
                 .strip_prefix(bucket_path)
-                .unwrap_or(&PathBuf::from(&file_path))
-                .to_string_lossy()
-                .to_string();
-
-            let bucket_id = bucket.id;
-            let parsed_commit_id = self
-                .args
-                .commit_id
-                .as_ref()
-                .map(|id| {
-                    Uuid::parse_str(id).map_err(|e| {
-                        BucketError::from(format!("Invalid commit id '{}': {}", id, e).as_str())
-                    })
-                })
-                .transpose()?;
-
-            let (query, params): (String, Vec<&(dyn ToSql + Sync)>) =
-                match parsed_commit_id.as_ref() {
-                    Some(commit_uuid) => {
-                        // Query for specific commit ID
-                        let query = "SELECT f.hash 
-                        FROM files f
-                        JOIN commits c ON f.commit_id = c.id
-                        WHERE f.file_path = $1
-                        AND c.id = $2
-                        AND c.bucket_id = $3"
-                            .to_string();
-                        let params: Vec<&(dyn ToSql + Sync)> =
-                            vec![&relative_path, commit_uuid, &bucket_id];
-                        (query, params)
-                    }
-                    None => {
-                        // Query for latest commit (existing behavior)
-                        let query = "SELECT f.hash 
-                        FROM files f
-                        JOIN commits c ON f.commit_id = c.id
-                        WHERE f.file_path = $1
-                        AND c.created_at = (
-                            SELECT MAX(created_at) 
-                            FROM commits 
-                            WHERE bucket_id = $2
-                        )"
-                        .to_string();
-                        let params: Vec<&(dyn ToSql + Sync)> = vec![&relative_path, &bucket_id];
-                        (query, params)
-                    }
-                };
-
-            let rows = db.query(&query, &params).await?;
-
-            match rows.first() {
-                Some(row) => {
-                    let hash: String = row.get(0);
-                    Ok(hash)
-                }
-                None => match &self.args.commit_id {
-                    Some(commit_id) => Err(BucketError::from(
-                        format!("File '{}' not found in commit '{}'", file_path, commit_id)
-                            .as_str(),
-                    )),
-                    None => Err(BucketError::FileNotFound(file_path.clone())),
-                },
-            }
-        })?;
-
-        // Construct paths
-        let storage_path = bucket_path.join(".b").join("storage").join(&hash);
-        let target_path = PathBuf::from(&file_path);
-
-        debug!(
-            "Reverting {} from {}",
-            target_path.display(),
-            storage_path.display()
+                .map(PathBuf::from)
+                .unwrap_or(candidate),
         );
 
-        // Decompress and copy the file from storage
-        self.decompress_and_revert_file(&storage_path, &target_path)
-            .map_err(|e| {
-                error!("Failed to revert file: {}", e);
-                BucketError::from(e)
+        let (commit, display) = self.load_target(&bucket)?;
+        let file = commit
+            .files
+            .iter()
+            .find(|f| f.name.replace('\\', "/") == relative_path)
+            .ok_or_else(|| match &self.args.commit_id {
+                Some(commit_id) => BucketError::from(
+                    format!("File '{}' not found in commit '{}'", file_path, commit_id).as_str(),
+                ),
+                None => BucketError::FileNotFound(file_path.clone()),
             })?;
 
+        debug!("Reverting {} to {}", relative_path, file.hash);
+        file.restore_version(bucket_path, &file.hash).map_err(|e| {
+            error!("Failed to revert file: {}", e);
+            BucketError::from(e)
+        })?;
+
         match &self.args.commit_id {
-            Some(commit_id) => println!("Reverted {} from commit {}", file_path, commit_id),
+            Some(_) => println!("Reverted {} from commit {}", file_path, display),
             None => println!("Reverted {} from latest commit", file_path),
         }
         Ok(())
     }
 
     fn revert_all(&self, bucket: Bucket, bucket_path: &Path) -> Result<(), BucketError> {
-        let (files_to_restore, commit_id_str) = RuntimeManager::block_on(async {
-            let db = get_database().await?;
-            let bucket_id = bucket.id;
+        let (commit, commit_id_str) = self.load_target(&bucket)?;
 
-            let parsed_commit_id = self
-                .args
-                .commit_id
-                .as_ref()
-                .map(|id| {
-                    Uuid::parse_str(id).map_err(|e| {
-                        BucketError::from(format!("Invalid commit id '{}': {}", id, e).as_str())
-                    })
-                })
-                .transpose()?;
-
-            let (query, params, display_id): (String, Vec<&(dyn ToSql + Sync)>, String) =
-                match parsed_commit_id.as_ref() {
-                    Some(commit_uuid) => {
-                        let query = "SELECT f.file_path, f.hash 
-                        FROM files f
-                        JOIN commits c ON f.commit_id = c.id
-                        WHERE c.id = $1
-                        AND c.bucket_id = $2"
-                            .to_string();
-                        let params: Vec<&(dyn ToSql + Sync)> = vec![commit_uuid, &bucket_id];
-                        (query, params, commit_uuid.to_string())
-                    }
-                    None => {
-                        let query = "SELECT f.file_path, f.hash 
-                        FROM files f
-                        JOIN commits c ON f.commit_id = c.id
-                        WHERE c.created_at = (
-                            SELECT MAX(created_at) 
-                            FROM commits 
-                            WHERE bucket_id = $1
-                        ) AND c.bucket_id = $1"
-                            .to_string();
-                        let params: Vec<&(dyn ToSql + Sync)> = vec![&bucket_id];
-                        (query, params, "latest".to_string())
-                    }
-                };
-
-            let rows = db.query(&query, &params).await?;
-
-            let mut files = Vec::new();
-            for row in rows {
-                let path: String = row.get(0);
-                let hash: String = row.get(1);
-                files.push((path, hash));
+        // An empty manifest is a valid target (every file was deleted): the
+        // deletion pass below then empties the working tree.
+        // Check every object is available first, so nothing is deleted when one is missing.
+        let store = ObjectStore::for_path(bucket_path)
+            .unwrap_or_else(|| ObjectStore::at(bucket_path.join(".b").join("objects")));
+        for file in &commit.files {
+            if store
+                .locate(&file.hash.to_hex(), Some(bucket_path))
+                .is_none()
+            {
+                return Err(BucketError::from(
+                    format!(
+                        "Object for {} ({}) is missing; nothing was changed",
+                        file.name,
+                        file.hash.to_hex()
+                    )
+                    .as_str(),
+                ));
             }
-            Ok((files, display_id))
-        })?;
-
-        if files_to_restore.is_empty() {
-            println!("No files found in commit {}", commit_id_str);
-            return Ok(());
         }
 
-        // Get current workspace files
-        let current_files = find_files_excluding_top_level_b(bucket_path);
-        let target_files_set: HashSet<PathBuf> = files_to_restore
+        // Delete files that are not part of the target commit first, so a
+        // file that became a directory (or the reverse) can be restored.
+        let target_files_set: HashSet<PathBuf> = commit
+            .files
             .iter()
-            .map(|(p, _)| PathBuf::from(p))
+            .map(|f| PathBuf::from(&f.name))
             .collect();
-
-        // 1. Delete files not in target
-        for file in current_files {
+        for file in find_files_excluding_top_level_b(bucket_path) {
             if !target_files_set.contains(&file) {
                 let full_path = bucket_path.join(&file);
                 debug!("Deleting {}", full_path.display());
-                if full_path.exists() {
-                    std::fs::remove_file(&full_path)?;
-                }
+                remove_file_and_prune(&full_path, bucket_path)?;
             }
         }
 
-        // 2. Restore/Overwrite files from target
-        for (rel_path, hash) in files_to_restore {
-            let target_path = bucket_path.join(&rel_path);
-            let storage_path = bucket_path.join(".b").join("storage").join(&hash);
-
-            debug!(
-                "Restoring {} from {}",
-                target_path.display(),
-                storage_path.display()
-            );
-            self.decompress_and_revert_file(&storage_path, &target_path)
-                .map_err(|e| {
-                    error!("Failed to revert file {}: {}", rel_path, e);
-                    BucketError::from(e)
-                })?;
+        for file in &commit.files {
+            debug!("Restoring {} ({})", file.name, file.hash);
+            file.restore_version(bucket_path, &file.hash).map_err(|e| {
+                error!("Failed to revert file {}: {}", file.name, e);
+                BucketError::from(e)
+            })?;
         }
 
         println!("Reverted entire bucket to commit {}", commit_id_str);
-        Ok(())
-    }
-    fn decompress_and_revert_file(
-        &self,
-        storage_path: &PathBuf,
-        target_path: &PathBuf,
-    ) -> std::io::Result<()> {
-        // Create parent directories if they don't exist
-        if let Some(parent) = target_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-
-        // Open the compressed file
-        let input_file = File::open(storage_path)?;
-        let reader = BufReader::new(input_file);
-
-        // Delete the target file if it exists
-        if target_path.exists() {
-            std::fs::remove_file(target_path)?;
-        }
-
-        // Create the output file
-        let output_file = File::create(target_path)?;
-        let writer = BufWriter::new(output_file);
-
-        // Create a zstd decoder
-        let mut decoder = zstd::Decoder::new(reader)?;
-
-        // Copy data from decoder to output
-        std::io::copy(&mut decoder, &mut BufWriter::new(writer))?;
         Ok(())
     }
 }
@@ -288,6 +180,7 @@ mod tests {
     use serial_test::serial;
 
     use super::*;
+    use std::fs::File;
     use std::io::Write;
     use std::{env, fs};
     use tempfile::tempdir;
@@ -305,7 +198,7 @@ mod tests {
         log::debug!("temp_dir: {:?}", temp_dir);
 
         // First try to initialize - if it fails due to network issues, skip the test
-        let mut cmd1 = assert_cmd::Command::cargo_bin("buckets").expect("invalid command");
+        let mut cmd1 = crate::test_support::buckets_command();
         let init_output = cmd1
             .env("DATABASE_URL", db.connection_string())
             .current_dir(temp_dir.as_path())
@@ -339,7 +232,7 @@ mod tests {
         let original_content = b"original content";
         file.write_all(original_content).expect("invalid write");
 
-        let mut cmd3 = assert_cmd::Command::cargo_bin("buckets").expect("invalid command");
+        let mut cmd3 = crate::test_support::buckets_command();
         cmd3.env("DATABASE_URL", db.connection_string())
             .current_dir(bucket_dir.as_path())
             .arg("commit")
@@ -398,14 +291,13 @@ mod tests {
         // Create reverted file path
         let reverted_path = temp_dir.path().join("reverted.txt");
 
-        // Call the function we're testing
-        let revert_cmd = Revert::new(&RevertCommand {
-            shared: crate::args::SharedArguments::default(),
-            file: Some("test".to_string()),
-            commit_id: None,
-        });
-        revert_cmd
-            .decompress_and_revert_file(&compressed_path, &reverted_path)
+        // Restore through the object store's legacy-storage fallback.
+        let bucket = temp_dir.path().join("bucket");
+        let legacy = bucket.join(".b").join("storage");
+        fs::create_dir_all(&legacy).expect("create legacy storage");
+        fs::rename(&compressed_path, legacy.join("deadbeef")).expect("move object");
+        crate::utils::object_store::ObjectStore::at(temp_dir.path().join("objects"))
+            .restore("deadbeef", &reverted_path, Some(&bucket))
             .expect("Failed to decompress and revert file");
 
         // Read the reverted content
@@ -429,7 +321,7 @@ mod tests {
         let temp_dir = tempdir().expect("invalid temp dir").keep();
 
         // 1. Init
-        let mut cmd1 = assert_cmd::Command::cargo_bin("buckets").expect("invalid command");
+        let mut cmd1 = crate::test_support::buckets_command();
         cmd1.env("DATABASE_URL", db.connection_string())
             .current_dir(temp_dir.as_path())
             .arg("init")
@@ -447,7 +339,7 @@ mod tests {
         fs::write(&file1, "v1").unwrap();
         fs::write(&file2, "v1").unwrap();
 
-        let mut cmd = assert_cmd::Command::cargo_bin("buckets").expect("invalid command");
+        let mut cmd = crate::test_support::buckets_command();
         cmd.env("DATABASE_URL", db.connection_string())
             .current_dir(&bucket_dir)
             .arg("commit")

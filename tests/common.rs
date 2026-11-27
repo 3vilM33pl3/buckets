@@ -94,6 +94,16 @@ pub mod tests {
             let connection_string =
                 format!("postgresql://buckets:password@127.0.0.1:{host_port}/{db_name}");
 
+            // Keep test passwords out of the real ~/.buckets_credentials.toml.
+            if env::var("BUCKETS_CREDENTIALS_FILE").is_err() {
+                env::set_var(
+                    "BUCKETS_CREDENTIALS_FILE",
+                    env::temp_dir().join(format!(
+                        "buckets_test_credentials_{}.toml",
+                        std::process::id()
+                    )),
+                );
+            }
             let previous_database_url = env::var("DATABASE_URL").ok();
             env::set_var("DATABASE_URL", &connection_string);
 

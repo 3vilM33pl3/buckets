@@ -1,4 +1,4 @@
-use crate::utils::checks::validate_path;
+use crate::utils::checks::validate_restore_path;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
@@ -11,6 +11,14 @@ pub enum Command {
     Revert(RevertCommand),
     Rollback(RollbackCommand),
     Stash(StashCommand),
+    // File locks for unmergeable assets
+    Lock(LockCommand),
+    Unlock(UnlockCommand),
+    Locks(LocksCommand),
+    // Sharing objects with a remote store (e.g. a NAS mount)
+    Remote(RemoteCommand),
+    Push(PushCommand),
+    Pull(PullCommand),
     // Information commands
     Status(StatusCommand),
     History(HistoryCommand),
@@ -19,7 +27,6 @@ pub enum Command {
     // Expectation commands
     Expect(ExpectCommand),
     Check(CheckCommand),
-    Link(LinkCommand),
     Finalize(FinalizeCommand),
     Schema(SchemaCommand),
     // Global commands
@@ -38,13 +45,18 @@ impl Command {
             Command::Revert(cmd) => &cmd.shared,
             Command::Rollback(cmd) => &cmd.shared,
             Command::Stash(cmd) => &cmd.shared,
+            Command::Lock(cmd) => &cmd.shared,
+            Command::Unlock(cmd) => &cmd.shared,
+            Command::Locks(cmd) => &cmd.shared,
+            Command::Remote(cmd) => &cmd.shared,
+            Command::Push(cmd) => &cmd.shared,
+            Command::Pull(cmd) => &cmd.shared,
             Command::Status(cmd) => &cmd.shared,
             Command::History(cmd) => &cmd.shared,
             Command::List(cmd) => &cmd.shared,
             Command::Stats(cmd) => &cmd.shared,
             Command::Expect(cmd) => &cmd.shared,
             Command::Check(cmd) => &cmd.shared,
-            Command::Link(cmd) => &cmd.shared,
             Command::Finalize(cmd) => &cmd.shared,
             Command::Schema(cmd) => &cmd.shared,
             Command::Setup(cmd) => &cmd.shared,
@@ -68,10 +80,10 @@ pub struct CliArguments {
 
 #[derive(Args, Default, Debug, Clone)]
 pub struct SharedArguments {
-    #[clap(short, long)]
+    #[clap(short, long, global = true, help = "Show debug logging")]
     pub verbose: bool,
 
-    #[clap(long)]
+    #[clap(long, global = true, help = "Print machine-readable JSON")]
     pub json: bool,
 }
 
@@ -136,7 +148,7 @@ pub struct RevertCommand {
 
 #[derive(Args, Clone)]
 pub struct RollbackCommand {
-    #[clap(short, long, value_name = "PATH", value_parser = validate_path)]
+    #[clap(short, long, value_name = "PATH", value_parser = validate_restore_path)]
     pub path: Option<PathBuf>,
 
     #[clap(flatten)]
@@ -144,9 +156,100 @@ pub struct RollbackCommand {
 }
 
 #[derive(Args, Clone)]
+#[command(about = "Set uncommitted changes aside and restore the last commit")]
 pub struct StashCommand {
     #[clap(flatten)]
     pub shared: SharedArguments,
+
+    #[command(subcommand)]
+    pub action: Option<StashAction>,
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum StashAction {
+    /// Save uncommitted changes and restore the last commit (the default)
+    Save {
+        #[clap(short, long, help = "Description of the stash")]
+        message: Option<String>,
+    },
+    /// Re-apply the most recent stash and remove it
+    Pop {
+        #[clap(long, help = "Apply even if the bucket has uncommitted changes")]
+        force: bool,
+    },
+    /// List stashes, newest first
+    List,
+    /// Delete the most recent stash without applying it
+    Drop,
+}
+
+#[derive(Args, Clone)]
+#[command(about = "Lock files so nobody else can commit changes to them")]
+pub struct LockCommand {
+    #[clap(flatten)]
+    pub shared: SharedArguments,
+
+    #[clap(required = true, help = "Files to lock, relative to the bucket")]
+    pub files: Vec<String>,
+}
+
+#[derive(Args, Clone)]
+#[command(about = "Release file locks")]
+pub struct UnlockCommand {
+    #[clap(flatten)]
+    pub shared: SharedArguments,
+
+    #[clap(required = true, help = "Files to unlock, relative to the bucket")]
+    pub files: Vec<String>,
+
+    #[clap(long, help = "Break a lock held by someone else")]
+    pub force: bool,
+}
+
+#[derive(Args, Clone)]
+#[command(about = "List locked files in the current bucket")]
+pub struct LocksCommand {
+    #[clap(flatten)]
+    pub shared: SharedArguments,
+}
+
+#[derive(Args, Clone)]
+#[command(about = "Configure the remote object store (a directory such as a NAS mount)")]
+pub struct RemoteCommand {
+    #[clap(flatten)]
+    pub shared: SharedArguments,
+
+    #[command(subcommand)]
+    pub action: RemoteAction,
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum RemoteAction {
+    /// Use a directory as the remote store
+    Set { path: PathBuf },
+    /// Show the configured remote store
+    Show,
+    /// Remove the remote store setting
+    Unset,
+}
+
+#[derive(Args, Clone)]
+#[command(about = "Copy committed objects to the remote store")]
+pub struct PushCommand {
+    #[clap(flatten)]
+    pub shared: SharedArguments,
+}
+
+#[derive(Args, Clone)]
+#[command(
+    about = "Update the working files to the latest commit, fetching objects from the remote store"
+)]
+pub struct PullCommand {
+    #[clap(flatten)]
+    pub shared: SharedArguments,
+
+    #[clap(long, help = "Overwrite local edits that are not committed")]
+    pub force: bool,
 }
 
 #[derive(Args, Clone)]
@@ -189,6 +292,9 @@ pub struct ExpectCommand {
         help = "Bucket to add expectation to (optional, defaults to current)"
     )]
     pub in_bucket: Option<String>,
+
+    #[clap(long, help = "Skip the duplicate check (no embedding model download)")]
+    pub no_similarity: bool,
 }
 
 #[derive(Args, Clone)]
@@ -201,18 +307,22 @@ pub struct CheckCommand {
 }
 
 #[derive(Args, Clone)]
-pub struct LinkCommand {
-    #[clap(flatten)]
-    pub shared: SharedArguments,
-}
-
-#[derive(Args, Clone)]
 pub struct FinalizeCommand {
     #[clap(flatten)]
     pub shared: SharedArguments,
 
     #[clap(help = "Bucket to finalize (optional, defaults to current)")]
     pub bucket: Option<String>,
+
+    #[clap(long, help = "Resolve all active pebbles without prompting")]
+    pub all: bool,
+
+    #[clap(
+        long = "pebble",
+        value_name = "ID_OR_DESCRIPTION",
+        help = "Resolve a specific pebble without prompting (repeatable)"
+    )]
+    pub pebbles: Vec<String>,
 }
 
 #[derive(Args, Clone)]

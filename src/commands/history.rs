@@ -141,7 +141,7 @@ mod tests {
         ensure_database_initialized(db.connection_string());
 
         let temp_dir = tempdir().expect("invalid temp dir").keep();
-        let mut cmd1 = assert_cmd::Command::cargo_bin("buckets").expect("invalid command");
+        let mut cmd1 = crate::test_support::buckets_command();
         let init_output = cmd1
             .env("DATABASE_URL", db.connection_string())
             .current_dir(temp_dir.as_path())
@@ -173,7 +173,7 @@ mod tests {
         let file_path = bucket_dir.join("test_file.txt");
         let mut file = File::create(&file_path).expect("invalid file");
         file.write_all(b"test").expect("invalid write");
-        let mut cmd3 = assert_cmd::Command::cargo_bin("buckets").expect("invalid command");
+        let mut cmd3 = crate::test_support::buckets_command();
         cmd3.env("DATABASE_URL", db.connection_string())
             .current_dir(bucket_dir.as_path())
             .arg("commit")
@@ -219,7 +219,7 @@ mod tests {
         let temp_dir = tempdir().expect("invalid temp dir").keep();
 
         // First try to initialize - if it fails due to network issues, skip the test
-        let mut cmd1 = assert_cmd::Command::cargo_bin("buckets").expect("invalid command");
+        let mut cmd1 = crate::test_support::buckets_command();
         let init_output = cmd1
             .env("DATABASE_URL", db.connection_string())
             .current_dir(temp_dir.as_path())
@@ -251,7 +251,7 @@ mod tests {
         let file_path = bucket_dir.join("test_file.txt");
         let mut file = File::create(&file_path).expect("invalid file");
         file.write_all(b"test").expect("invalid write");
-        let mut cmd3 = assert_cmd::Command::cargo_bin("buckets").expect("invalid command");
+        let mut cmd3 = crate::test_support::buckets_command();
         cmd3.env("DATABASE_URL", db.connection_string())
             .current_dir(bucket_dir.as_path())
             .arg("commit")
