@@ -1,5 +1,6 @@
 [workspace]
 members = [".", "buckets-tui", "buckets-server"]
+exclude = ["buckets-desktop"]
 
 [package]
 name = "buckets"

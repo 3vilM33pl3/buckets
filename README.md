@@ -43,6 +43,12 @@ Consider creating a 3D model for a game that needs concept art and textures:
 
 Once the concept art is ready and approved, you finalize the bucket. The 3D model bucket automatically receives the latest version of the concept art, satisfying its first expectation.
 
+## Desktop app
+
+`buckets-desktop/` is a desktop app (Tauri) with a pipeline board, visual
+texture diffs, history and file locks, aimed at artists as well as
+programmers. See [buckets-desktop/README.md](buckets-desktop/README.md).
+
 ## Installation
 
 ### From Source

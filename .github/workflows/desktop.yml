@@ -1,0 +1,64 @@
+name: Desktop app
+
+on:
+  push:
+    branches: ["main"]
+    paths: ["buckets-desktop/**", "src/**", "Cargo.toml", ".github/workflows/desktop.yml"]
+  pull_request:
+    branches: ["main"]
+    paths: ["buckets-desktop/**", "src/**", "Cargo.toml", ".github/workflows/desktop.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  desktop:
+    name: Desktop on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    defaults:
+      run:
+        working-directory: buckets-desktop/src-tauri
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: System libraries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libssl-dev
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: buckets-desktop/src-tauri
+
+      - name: Test
+        run: cargo test
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Bundle
+        if: github.event_name != 'pull_request'
+        run: |
+          cargo install tauri-cli --version "^2" --locked
+          if [ "$RUNNER_OS" = "Linux" ]; then cargo tauri build --bundles deb,appimage; else cargo tauri build --bundles dmg; fi
+
+      - name: Upload bundles
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: buckets-desktop-${{ runner.os }}
+          path: |
+            buckets-desktop/src-tauri/target/release/bundle/deb/*.deb
+            buckets-desktop/src-tauri/target/release/bundle/appimage/*.AppImage
+            buckets-desktop/src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: warn
