@@ -201,6 +201,31 @@ impl<R: io::Read> io::Read for HashingReader<R> {
     }
 }
 
+/// A path recorded in a commit or stash must stay inside the bucket: not
+/// absolute, no `.`/`..` or empty parts, whichever separator it uses. A file
+/// literally named `..\\x` on Linux would otherwise become `../x` once
+/// separators are normalised.
+pub fn is_safe_relative(path: &str) -> bool {
+    !path.is_empty()
+        && !Path::new(path).has_root()
+        && !path.starts_with('/')
+        && !path.starts_with('\\')
+        && path
+            .split(['/', '\\'])
+            .all(|part| !part.is_empty() && part != "." && part != ".." && !part.contains(':'))
+}
+
+/// Error for a stored path that would leave the bucket.
+pub fn unsafe_path_error(path: &str) -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidData,
+        format!(
+            "Refusing to use '{}': the path would leave the bucket",
+            path
+        ),
+    )
+}
+
 /// Refuse to write `dest` when a directory between `root` and it is a
 /// symlink: writing would follow the link and could change a file outside
 /// the bucket.
@@ -285,6 +310,32 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stored_paths_must_stay_inside_the_bucket() {
+        for ok in [
+            "a.txt",
+            "assets/model.blend",
+            "deep/er/file.uasset",
+            "dots.in.name",
+        ] {
+            assert!(is_safe_relative(ok), "{ok}");
+        }
+        for bad in [
+            "",
+            "/etc/passwd",
+            "../x",
+            "a/../../x",
+            "..\\outside.txt",
+            "a\\..\\..\\x",
+            "./a",
+            "a//b",
+            "C:\\x",
+            "\\\\server\\share",
+        ] {
+            assert!(!is_safe_relative(bad), "{bad}");
+        }
+    }
     use tempfile::tempdir;
 
     #[test]

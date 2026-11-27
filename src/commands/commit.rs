@@ -89,6 +89,23 @@ impl BucketCommand for Commit {
             },
         };
 
+        // A name such as `..\\x.txt` is legal on Linux but would point outside
+        // the bucket on Windows, or once separators are normalised.
+        let unsafe_names: Vec<&str> = changes
+            .iter()
+            .map(|c| c.name.as_str())
+            .filter(|n| !crate::utils::object_store::is_safe_relative(n))
+            .collect();
+        if !unsafe_names.is_empty() {
+            return Err(BucketError::from(
+                format!(
+                    "These file names can't be committed because they would point outside the bucket on some systems: {}",
+                    unsafe_names.join(", ")
+                )
+                .as_str(),
+            ));
+        }
+
         // Refuse to commit over someone else's lock.
         let changed_names: Vec<String> = changes.iter().map(|c| c.name.clone()).collect();
         let owner = current_owner();

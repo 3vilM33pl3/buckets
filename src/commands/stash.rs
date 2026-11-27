@@ -18,7 +18,8 @@ use crate::data::bucket::{Bucket, BucketTrait};
 use crate::data::commit::CommitStatus;
 use crate::errors::BucketError;
 use crate::utils::object_store::{
-    check_no_symlinked_parent, remove_file_and_prune, write_atomically, ObjectStore,
+    check_no_symlinked_parent, is_safe_relative, remove_file_and_prune, unsafe_path_error,
+    write_atomically, ObjectStore,
 };
 use crate::utils::runtime::RuntimeManager;
 use crate::utils::utils::find_bucket_path;
@@ -228,6 +229,9 @@ fn pop(bucket: &Bucket, bucket_path: &Path, force: bool, json: bool) -> Result<(
 
     let store = ObjectStore::for_path(bucket_path).ok_or(BucketError::NotInRepo)?;
     // Check restores and deletions alike before changing anything.
+    if let Some(bad) = entry.files.iter().find(|f| !is_safe_relative(&f.path)) {
+        return Err(BucketError::from(unsafe_path_error(&bad.path)));
+    }
     for file in &entry.files {
         check_no_symlinked_parent(&bucket_path.join(&file.path), bucket_path)?;
     }

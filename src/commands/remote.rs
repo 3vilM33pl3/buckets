@@ -21,7 +21,9 @@ use crate::data::bucket::{read_bucket_info, Bucket, BucketTrait};
 use crate::data::manifest::{known_hashes_by_path, load_commit_with_store, referenced_hashes};
 use crate::errors::BucketError;
 use crate::postgres_db::get_database;
-use crate::utils::object_store::{remove_file_and_prune, write_atomically, ObjectStore};
+use crate::utils::object_store::{
+    is_safe_relative, remove_file_and_prune, unsafe_path_error, write_atomically, ObjectStore,
+};
 use crate::utils::runtime::RuntimeManager;
 use crate::utils::scan::scan_bucket;
 use crate::utils::utils::{find_bucket_path, find_bucket_repo};
@@ -326,7 +328,7 @@ pub fn pull_bucket(
     // Commits made on Windows by older versions may use `\` separators.
     let portable = |p: &str| p.replace('\\', "/");
     let mut known_portable: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for (path, hashes) in known {
+    for (path, hashes) in known.into_iter().filter(|(p, _)| is_safe_relative(p)) {
         known_portable
             .entry(portable(&path))
             .or_default()
@@ -338,6 +340,15 @@ pub fn pull_bucket(
     };
     summary.commit_id = Some(resolved.id.to_string());
 
+    // Never trust a stored path to stay inside the bucket.
+    if let Some(bad) = resolved
+        .data
+        .files
+        .iter()
+        .find(|f| !is_safe_relative(&f.name))
+    {
+        return Err(BucketError::from(unsafe_path_error(&bad.name)));
+    }
     let target: BTreeMap<String, String> = resolved
         .data
         .files

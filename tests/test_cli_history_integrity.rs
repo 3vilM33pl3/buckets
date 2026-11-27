@@ -493,4 +493,16 @@ mod tests {
             "v1"
         );
     }
+
+    #[cfg(unix)]
+    #[test]
+    #[serial]
+    fn names_that_escape_the_bucket_are_never_committed() {
+        let Some(fx) = fixture_or_skip() else { return };
+        let b = fx.bucket_dir.clone();
+        fs::write(b.join("..\\outside.txt"), "x").unwrap();
+        buckets(&b, &["commit", "escape"])
+            .failure()
+            .stderr(predicates::str::contains("outside the bucket"));
+    }
 }
